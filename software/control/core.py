@@ -45,9 +45,6 @@ import scipy.signal
 import cv2
 import imageio as iio
 
-
-import control.celesta as celesta
-
 class ObjectiveStore:
     def __init__(self, objectives_dict=OBJECTIVES, default_objective=DEFAULT_OBJECTIVE, parent=None):
         self.objectives_dict = objectives_dict
