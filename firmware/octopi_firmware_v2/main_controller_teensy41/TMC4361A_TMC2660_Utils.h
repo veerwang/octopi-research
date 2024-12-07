@@ -18,6 +18,8 @@
 // Functions for user-facing API
 void tmc4361A_tmc2660_config(TMC4361ATypeDef *tmc4361A, float tmc2660_cscale, float tmc4361a_hold_scale_val, float tmc4361a_drv2_scale_val, float tmc4361a_drv1_scale_val, float tmc4361a_boost_scale_val, float pitch_mm, uint16_t steps_per_rev, uint16_t microsteps, uint8_t dac_idx = NO_DAC, uint32_t dac_fullscale_msteps = 0);
 void tmc4361A_tmc2660_init(TMC4361ATypeDef *tmc4361A, uint32_t clk_Hz_TMC4361);
+void tmc4361A_tmc2660_enable_driver(TMC4361ATypeDef *tmc4361A);
+void tmc4361A_tmc2660_disable_driver(TMC4361ATypeDef *tmc4361A);
 void tmc4361A_tmc2660_update(TMC4361ATypeDef *tmc4361A);
 void tmc4361A_setMaxSpeed(TMC4361ATypeDef *tmc4361A, int32_t velocity);
 void tmc4361A_setSpeed(TMC4361ATypeDef *tmc4361A, int32_t velocity);
@@ -41,7 +43,7 @@ int32_t tmc4361A_currentPosition(TMC4361ATypeDef *tmc4361A);
 int32_t tmc4361A_targetPosition(TMC4361ATypeDef *tmc4361A);
 int8_t tmc4361A_setCurrentPosition(TMC4361ATypeDef *tmc4361A, int32_t position);
 void tmc4361A_stop(TMC4361ATypeDef *tmc4361A);
-bool tmc4361A_isRunning(TMC4361ATypeDef *tmc4361A);
+bool tmc4361A_isRunning(TMC4361ATypeDef *tmc4361A, bool pid_enable);
 int32_t tmc4361A_xmmToMicrosteps(TMC4361ATypeDef *tmc4361A, float mm);
 float   tmc4361A_xmicrostepsTomm(TMC4361ATypeDef *tmc4361A, int32_t microsteps);
 int32_t tmc4361A_vmmToMicrosteps(TMC4361ATypeDef *tmc4361A, float mm);
@@ -49,7 +51,7 @@ float   tmc4361A_vmicrostepsTomm(TMC4361ATypeDef *tmc4361A, int32_t microsteps);
 int32_t tmc4361A_ammToMicrosteps(TMC4361ATypeDef *tmc4361A, float mm);
 float   tmc4361A_amicrostepsTomm(TMC4361ATypeDef *tmc4361A, int32_t microsteps);
 void tmc4361A_enableLimitSwitch(TMC4361ATypeDef *tmc4361A, uint8_t polarity, uint8_t which, uint8_t flipped);
-void tmc4361A_enableHomingLimit(TMC4361ATypeDef *tmc4361A, uint8_t polarity, uint8_t which);
+void tmc4361A_enableHomingLimit(TMC4361ATypeDef *tmc4361A, uint8_t polarity, uint8_t which, uint16_t safety_margin);
 uint8_t tmc4361A_readLimitSwitches(TMC4361ATypeDef *tmc4361A);
 void tmc4361A_setHome(TMC4361ATypeDef *tmc4361A);
 void tmc4361A_moveToExtreme(TMC4361ATypeDef *tmc4361A, int32_t vel, int8_t dir);
@@ -63,6 +65,7 @@ void tmc4361A_setVirtualStop(TMC4361ATypeDef *tmc4361A, uint8_t which, int32_t t
 int8_t tmc4361A_setVirtualLimit(TMC4361ATypeDef *tmc4361A, int dir, int32_t limit);
 void tmc4361A_disableVirtualLimitSwitch(TMC4361ATypeDef *tmc4361A, int dir);
 void tmc4361A_enableVirtualLimitSwitch(TMC4361ATypeDef *tmc4361A, int dir);
+int16_t tmc4361A_config_init_stallGuard(TMC4361ATypeDef *tmc4361A, int8_t sensitivity, bool filter_en, uint32_t vstall_lim);
 
 // The following does not need to be accessed by the end user
 // Default motor settings - can override using tmc4361A_setPitch(), tmc4361A_setMicrosteps(), tmc4361A_setSPR()

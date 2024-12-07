@@ -90,7 +90,8 @@ class Camera(object):
             # self.set_wb_ratios(self.get_awb_ratios())
             print(self.get_awb_ratios())
             # self.set_wb_ratios(1.28125,1.0,2.9453125)
-            self.set_wb_ratios(2,1,2)
+            # self.set_wb_ratios(2,1,2)
+            self.set_wb_ratios(AWB_RATIOS_R, AWB_RATIOS_G, AWB_RATIOS_B)
 
         # temporary
         self.camera.AcquisitionFrameRate.set(1000)
@@ -218,6 +219,20 @@ class Camera(object):
         if wb_b is not None:
             self.camera.BalanceRatioSelector.set(2)
             awb_b = self.camera.BalanceRatio.set(wb_b)
+
+    def set_balance_white_auto(self, value):
+        if value in [0, 1, 2]:
+            if self.camera.BalanceWhiteAuto.is_implemented():
+                if self.camera.BalanceWhiteAuto.is_writable():
+                    self.camera.BalanceWhiteAuto.set(value)
+
+    def get_balance_white_auto(self):
+        if self.camera.BalanceWhiteAuto.is_implemented():
+            if self.camera.BalanceWhiteAuto.is_readable():
+                return self.camera.BalanceWhiteAuto.get()
+
+    def get_is_color(self):
+        return self.is_color
 
     def set_reverse_x(self,value):
         self.camera.ReverseX.set(value)
@@ -415,7 +430,7 @@ class Camera(object):
         self.camera.LineSource.set(gx.GxLineSourceEntry.EXPOSURE_ACTIVE)
 
 class Camera_Simulation(object):
-    
+
     def __init__(self,sn=None,is_global_shutter=False,rotate_image_angle=None,flip_image=None):
         # many to be purged
         self.sn = sn
@@ -464,13 +479,16 @@ class Camera_Simulation(object):
 
         self.is_live = False
 
-        self.Width = 3000
-        self.Height = 3000
+        self.Width = Acquisition.CROP_WIDTH
+        self.Height = Acquisition.CROP_HEIGHT
+        # self.resolution=(self.Width,self.Height)
+        # self.res_list = [(1000,1000), (2000,2000), (3000,3000), (4000,3000)]
         self.WidthMax = 4000
         self.HeightMax = 3000
         self.OffsetX = 0
         self.OffsetY = 0
 
+        self.new_image_callback_external = None
 
     def open(self,index=0):
         pass
@@ -505,6 +523,15 @@ class Camera_Simulation(object):
     def set_wb_ratios(self, wb_r=None, wb_g=None, wb_b=None):
         pass
 
+    def set_balance_white_auto(self, value):
+        pass
+
+    def get_balance_white_auto(self):
+        return 0
+
+    def get_is_color(self):
+        return False
+
     def start_streaming(self):
         self.frame_ID_software = 0
 
@@ -530,15 +557,15 @@ class Camera_Simulation(object):
         self.timestamp = time.time()
         if self.frame_ID == 1:
             if self.pixel_format == 'MONO8':
-                self.current_frame = np.random.randint(255,size=(2000,2000),dtype=np.uint8)
-                self.current_frame[901:1100,901:1100] = 200
+                self.current_frame = np.random.randint(255,size=(self.Height,self.Width),dtype=np.uint8)
+                self.current_frame[self.Height//2-99:self.Height//2+100,self.Width//2-99:self.Width//2+100] = 200
             elif self.pixel_format == 'MONO12':
-                self.current_frame = np.random.randint(4095,size=(2000,2000),dtype=np.uint16)
-                self.current_frame[901:1100,901:1100] = 200*16
+                self.current_frame = np.random.randint(4095,size=(self.Height,self.Width),dtype=np.uint16)
+                self.current_frame[self.Height//2-99:self.Height//2+100,self.Width//2-99:self.Width//2+100] = 200*16
                 self.current_frame = self.current_frame << 4
             elif self.pixel_format == 'MONO16':
-                self.current_frame = np.random.randint(65535,size=(2000,2000),dtype=np.uint16)
-                self.current_frame[901:1100,901:1100] = 200*256
+                self.current_frame = np.random.randint(65535,size=(self.Height,self.Width),dtype=np.uint16)
+                self.current_frame[self.Height//2-99:self.Height//2+100,self.Width//2-99:self.Width//2+100] = 200*256
         else:
             self.current_frame = np.roll(self.current_frame,10,axis=0)
             pass 
