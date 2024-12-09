@@ -1,5 +1,6 @@
 import serial
 import time
+from enum import Enum
 
 from PyQt5.QtCore import QObject
 
@@ -180,3 +181,146 @@ class Microscope(QObject):
         self.microcontroller.close()
         if USE_ZABER_EMISSION_FILTER_WHEEL or USE_OPTOSPIN_EMISSION_FILTER_WHEEL:
             self.emission_filter_wheel.close()
+
+
+
+class LightSourceType(Enum):
+    Squid = 0
+    LDI = 1
+    CELESTA = 2
+    VersaLase = 3
+    SCI = 4
+
+class IntensityControlMode(Enum):
+    OnBoardDAC = 0
+    Software = 1
+    USB = 2
+
+class ShutterControlMode(Enum):
+    TTL = 0
+    Software = 1
+    USB = 2
+
+class IlluminationController():
+    def __init__(self, microcontroller, intensity_control, shutter_control, light_source_type=None, light_source=None):
+        self.microcontroller = microcontroller
+        self.intensity_control_mode = intensity_control
+        self.shutter_control_mode = shutter_control
+        self.light_source_type = light_source_type
+        self.light_source = light_source
+        self.channel_mappings_TTL = {
+            405: 11,
+            470: 12,
+            488: 12,
+            545: 14,
+            550: 14
+            555: 14,
+            561: 14,
+            638: 13,
+            640: 13
+            730: 15,
+            735: 15,
+            750: 15
+        }
+        
+        self.channel_mappings_software = {}
+        self.is_on = {}
+        self.intensity_settings = {}
+        self.pmin, self.pmax = 0, 1000
+        self.current_channel = None
+
+        if self.light_source_type is not None:
+            self.configure_light_source()
+
+    def configure_light_source(self):
+        if self.light_source_type == LightSourceType.CELESTA:
+            self.intensity_control_mode = IntensityControlMode.Software
+            self.set_shutter_control_mode(ShutterControlMode.TTL)
+            self.shutter_control_mode = ShutterControlMode.TTL
+            self.channel_mappings_software = {
+                405: 0,
+                470: 2,
+                488: 2,
+                545: 4,
+                550: 4
+                555: 4,
+                561: 4,
+                638: 5,
+                640: 5
+                730: 6,
+                735: 6,
+                750: 6
+            }
+            self.get_power_range()
+            for ch in self.channel_mappings_software:
+                self.intensity_settings[ch] = self.get_intensity(self.channel_mappings_software[ch])
+                self.is_on[ch] = self.light_source.get_shutter_state(self.channel_mappings_software[ch])
+
+    def set_intensity_control_mode(self, mode):
+        if self.light_source_type == LightSourceType.CELESTA:
+            return
+
+    def get_intensity_control_mode(self):
+        if self.light_source_type == LightSourceType.CELESTA:
+            return self.shutter_control_mode
+
+    def set_shutter_control_mode(self, mode):
+        if self.light_source_type == LightSourceType.CELESTA:
+            if mode == ShutterControlMode.TTL:
+                self.light_source.setExtControl(True)
+            elif mode == ShutterControlMode.Software:
+                self.LightSourceType.setExtControl(False)
+
+    def get_shutter_control_mode(self):
+        if self.light_source_type == LightSourceType.CELESTA:
+            if self.light_source.getExtControl():
+                self.shutter_control_mode = ShutterControlMode.TTL
+            else:
+                self.shutter_control_mode = ShutterControlMode.Software
+            return self.shutter_control_mode
+
+    def get_power_range(self, channel=None):
+        if self.light_source_type == LightSourceType.CELESTA:
+            [self.pmin, self.pmax] = self.light_source.getPowerRange()
+
+    def get_intensity(self, channel):
+        if self.light_source_type == LightSourceType.CELESTA:
+            power = self.light_source.getPower(self.channel_mappings_software[channel])
+
+            intensity = power / (self.pmax - self.pmin)
+            self.intensity_settings[channel] = intensity
+            return intensity
+
+    def turn_on_illumination(self, channel=None):
+        if self.light_source_type == LightSourceType.CELESTA:
+            if self.shutter_control_mode == ShutterControlMode.Software:
+                self.light_source.setLaserOnOff(self.channel_mappings_software[channel], on=True)
+            elif self.shutter_control_mode == ShutterControlMode.TTL:
+
+        self.is_on[channel] = True
+
+
+    def turn_off_illumination(self, channel=None):
+        if self.light_source_type == LightSourceType.CELESTA:
+            if self.shutter_control_mode == ShutterControlMode.Software:
+                self.light_source.setLaserOnOff(self.channel_mappings_software[channel], on=False)
+            elif self.shutter_control_mode == ShutterControlMode.TTL:
+
+        self.is_on[channel] = False
+
+    def set_current_channel(self, channel):
+        self.current_channel = channel
+
+    def set_intensity(self, channel, intensity):
+        if self.light_source_type == LightSourceType.CELESTA:
+            if intensity != self.intensity_settings[channel]:
+                power = intensity * (self.pmax - self.pmin) + self.pmin
+                self.light_source.setPower(channel, power)
+                self.intensity_settings[channel] = intensity
+
+    def get_shutter_state(self):
+        return self.is_on
+
+    def close(self):
+        if self.light_source_type == LightSourceType.CELESTA:
+            self.light_source.shutdown()
