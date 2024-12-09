@@ -296,6 +296,7 @@ class IlluminationController():
             if self.shutter_control_mode == ShutterControlMode.Software:
                 self.light_source.setLaserOnOff(self.channel_mappings_software[channel], on=True)
             elif self.shutter_control_mode == ShutterControlMode.TTL:
+                self.microcontroller.turn_on_illumination()
 
         self.is_on[channel] = True
 
@@ -305,6 +306,7 @@ class IlluminationController():
             if self.shutter_control_mode == ShutterControlMode.Software:
                 self.light_source.setLaserOnOff(self.channel_mappings_software[channel], on=False)
             elif self.shutter_control_mode == ShutterControlMode.TTL:
+                self.microcontroller.turn_off_illumination()
 
         self.is_on[channel] = False
 
