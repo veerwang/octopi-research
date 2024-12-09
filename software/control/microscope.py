@@ -212,11 +212,11 @@ class IlluminationController():
             470: 12,
             488: 12,
             545: 14,
-            550: 14
+            550: 14,
             555: 14,
             561: 14,
             638: 13,
-            640: 13
+            640: 13,
             730: 15,
             735: 15,
             750: 15
@@ -240,19 +240,19 @@ class IlluminationController():
                 470: 2,
                 488: 2,
                 545: 4,
-                550: 4
+                550: 4,
                 555: 4,
                 561: 4,
                 638: 5,
-                640: 5
+                640: 5,
                 730: 6,
                 735: 6,
                 750: 6
             }
             self.get_power_range()
             for ch in self.channel_mappings_software:
-                self.intensity_settings[ch] = self.get_intensity(self.channel_mappings_software[ch])
-                self.is_on[ch] = self.light_source.get_shutter_state(self.channel_mappings_software[ch])
+                self.intensity_settings[ch] = self.get_intensity(ch)
+                self.is_on[ch] = self.light_source.getLaserOnOff(self.channel_mappings_software[ch])
 
     def set_intensity_control_mode(self, mode):
         if self.light_source_type == LightSourceType.CELESTA:
@@ -267,7 +267,7 @@ class IlluminationController():
             if mode == ShutterControlMode.TTL:
                 self.light_source.setExtControl(True)
             elif mode == ShutterControlMode.Software:
-                self.LightSourceType.setExtControl(False)
+                self.light_source.setExtControl(False)
 
     def get_shutter_control_mode(self):
         if self.light_source_type == LightSourceType.CELESTA:
@@ -284,10 +284,9 @@ class IlluminationController():
     def get_intensity(self, channel):
         if self.light_source_type == LightSourceType.CELESTA:
             power = self.light_source.getPower(self.channel_mappings_software[channel])
-
-            intensity = power / (self.pmax - self.pmin)
+            intensity = power / self.pmax * 100
             self.intensity_settings[channel] = intensity
-            return intensity
+            return intensity # 0 - 100
 
     def turn_on_illumination(self, channel=None):
         if channel is None:
@@ -318,8 +317,8 @@ class IlluminationController():
     def set_intensity(self, channel, intensity):
         if self.light_source_type == LightSourceType.CELESTA:
             if intensity != self.intensity_settings[channel]:
-                power = intensity * (self.pmax - self.pmin) + self.pmin
-                self.light_source.setPower(channel, power)
+                power = intensity / 100 * self.pmax
+                self.light_source.setPower(self.channel_mappings_software[channel], power)
                 self.intensity_settings[channel] = intensity
 
     def get_shutter_state(self):
