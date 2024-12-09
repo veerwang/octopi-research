@@ -185,27 +185,26 @@ class Microscope(QObject):
 
 
 class LightSourceType(Enum):
-    Squid = 0
-    LDI = 1
-    CELESTA = 2
-    VersaLase = 3
-    SCI = 4
+    SquidLED = 0
+    SquidLaser = 1
+    LDI = 2
+    CELESTA = 3
+    VersaLase = 4
+    SCI = 5
 
 class IntensityControlMode(Enum):
-    OnBoardDAC = 0
+    SquidControllerDAC = 0
     Software = 1
-    USB = 2
 
 class ShutterControlMode(Enum):
     TTL = 0
     Software = 1
-    USB = 2
 
 class IlluminationController():
-    def __init__(self, microcontroller, intensity_control, shutter_control, light_source_type=None, light_source=None):
+    def __init__(self, microcontroller, intensity_control_mode, shutter_control_mode, light_source_type=None, light_source=None):
         self.microcontroller = microcontroller
-        self.intensity_control_mode = intensity_control
-        self.shutter_control_mode = shutter_control
+        self.intensity_control_mode = intensity_control_mode
+        self.shutter_control_mode = shutter_control_mode
         self.light_source_type = light_source_type
         self.light_source = light_source
         self.channel_mappings_TTL = {
@@ -234,9 +233,8 @@ class IlluminationController():
 
     def configure_light_source(self):
         if self.light_source_type == LightSourceType.CELESTA:
-            self.intensity_control_mode = IntensityControlMode.Software
-            self.set_shutter_control_mode(ShutterControlMode.TTL)
-            self.shutter_control_mode = ShutterControlMode.TTL
+            self.set_intensity_control_mode(self.intensity_control_mode)
+            self.set_shutter_control_mode(self.shutter_control_mode)
             self.channel_mappings_software = {
                 405: 0,
                 470: 2,
@@ -292,6 +290,8 @@ class IlluminationController():
             return intensity
 
     def turn_on_illumination(self, channel=None):
+        if channel is None:
+            channel = self.current_channel
         if self.light_source_type == LightSourceType.CELESTA:
             if self.shutter_control_mode == ShutterControlMode.Software:
                 self.light_source.setLaserOnOff(self.channel_mappings_software[channel], on=True)
@@ -302,6 +302,8 @@ class IlluminationController():
 
 
     def turn_off_illumination(self, channel=None):
+        if channel is None:
+            channel = self.current_channel
         if self.light_source_type == LightSourceType.CELESTA:
             if self.shutter_control_mode == ShutterControlMode.Software:
                 self.light_source.setLaserOnOff(self.channel_mappings_software[channel], on=False)
