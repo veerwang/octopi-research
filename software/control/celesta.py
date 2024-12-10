@@ -18,7 +18,7 @@ def lumencor_httpcommand(command = 'GET IP',ip = '192.168.201.200'):
         message = eval(response.read()) # the default is conveniently JSON so eval creates dictionary
     return message
 
-class CELESTA(object):
+class CELESTA(LightSource):
     """
     This controls a lumencor object (default: Celesta) using HTTP.
     Please connect the provided cat5e, RJ45 ethernet cable between the PC and Lumencor system.
@@ -32,9 +32,9 @@ class CELESTA(object):
         [self.pmin, self.pmax] = 0,1000
         try:
             # See if the system returns back the right IP.
-            self.message = self.getIP()
+            self.message = self.get_IP()
             assert (self.message['message'] == 'A IP '+self.ip)
-            self.n_lasers = self.getNumberLasers()
+            self.n_lasers = self.get_number_lasers()
             self.live = True
         except:
             print(traceback.format_exc())
@@ -42,49 +42,67 @@ class CELESTA(object):
             print("Failed to connect to Lumencor Laser at ip:", ip)
 
         if self.live:
-            [self.pmin, self.pmax] = self.getPowerRange()
-            self.setExtControl(True)
+            [self.pmin, self.pmax] = self.get_power_range()
+            self.set_shutter_control_mode(True)
             for i in range(self.n_lasers):
-                if (not self.getLaserOnOff(i)):
-                    self.setLaserOnOff(i,False)
+                if (not self.get_shutter_state(i)):
+                    self.set_shutter_state(i,False)
 
-    def getNumberLasers(self):
+        self.channel_mappings = {
+            405: 0,
+            470: 2,
+            488: 2,
+            545: 4,
+            550: 4,
+            555: 4,
+            561: 4,
+            638: 5,
+            640: 5,
+            730: 6,
+            735: 6,
+            750: 6
+        }
+
+    def get_number_lasers(self):
         """Return the number of lasers the current lumencor system can control"""
         self.message = lumencor_httpcommand(command ='GET CHMAP', ip=self.ip)
         if self.message['message'][0]=='A':
             return len(self.message['message'].split(' '))-2
         return 0
 
-    def getColor(self,laser_id):
+    def get_color(self,laser_id):
         """Returns the color of the current laser"""
         self.message = lumencor_httpcommand(command ='GET CHMAP', ip=self.ip)
         colors = self.message['message'].split(' ')[2:]
         print(colors)
         return colors[int(laser_id)]
 
-    def getIP(self):
+    def get_IP(self):
         self.message = lumencor_httpcommand(command = 'GET IP', ip=self.ip)
         return self.message
 
-    def getExtControl(self):
+    def get_shutter_control_mode(self):
         """
         Return True/False the lasers can be controlled with TTL.
         """
         self.message = lumencor_httpcommand(command = 'GET TTLENABLE', ip=self.ip)
         response = self.message['message']
-        return response[-1]=='1'
+        if response[-1]=='1':
+            return ShutterControlMode.TTL
+        else:
+            return ShutterControlMode.Software
 
-    def setExtControl(self, mode):
+    def set_shutter_control_mode(self, mode):
         """
         Turn on/off external TTL control mode.
         """
-        if mode:
+        if mode == ShutterControlMode.TTL
             ttl_enable = '1'
         else:
             ttl_enable = '0'
         self.message = lumencor_httpcommand(command = 'SET TTLENABLE '+ttl_enable,ip=self.ip)
 
-    def getLaserOnOff(self,laser_id):
+    def get_shutter_state(self,laser_id):
         """
         Return True/False the laser is on/off.
         """
@@ -93,7 +111,7 @@ class CELESTA(object):
         self.on = response[-1]=='1'
         return self.on
 
-    def getPowerRange(self):
+    def get_power_range(self):
         """
         Return [minimum power, maximum power].
         """
@@ -103,7 +121,7 @@ class CELESTA(object):
             max_int = float(self.message['message'].split(' ')[-1])
         return [0, max_int]
 
-    def getPower(self,laser_id):
+    def get_power(self,laser_id):
         """
         Return the current laser power.
         """
@@ -113,7 +131,7 @@ class CELESTA(object):
         power = float(response.split(' ')[-1])
         return power
 
-    def setLaserOnOff(self, laser_id, on):
+    def set_shutter_state(self, laser_id, on):
         """
         Turn the laser on/off.
         """
@@ -125,7 +143,7 @@ class CELESTA(object):
             self.on = False
         print("Turning On/Off", self.on, self.message)
 
-    def setPower(self, laser_id, power_in_mw):
+    def set_power(self, laser_id, power_in_mw):
         """
         power_in_mw - The desired laser power in mW.
         """
@@ -137,16 +155,16 @@ class CELESTA(object):
             return True
         return False
 
-    def shutDown(self):
+    def shut_down(self):
         """
         Turn the laser off.
         """
         if self.live:
             for i in range(self.n_lasers):
-                self.setPower(i,0)
-                self.setLaserOnOff(i,False)
+                self.set_intensity(i,0)
+                self.set_shutter_state(i,False)
 
-    def getStatus(self):
+    def get_status(self):
         """
         Get the status
         """

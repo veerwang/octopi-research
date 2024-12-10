@@ -141,6 +141,7 @@ class HighContentScreeningGui(QMainWindow):
         self.contrastManager = core.ContrastManager()
         self.streamHandler = core.StreamHandler(display_resolution_scaling=DEFAULT_DISPLAY_CROP/100)
         self.liveController = core.LiveController(self.camera, self.microcontroller, self.configurationManager, parent=self)
+        self.illuminationController = None
         if USE_PRIOR_STAGE:
             self.navigationController = NavigationController_PriorStage(self.priorstage, self.microcontroller, self.objectiveStore, parent=self)
         else:
@@ -170,6 +171,7 @@ class HighContentScreeningGui(QMainWindow):
     def loadSimulationObjects(self):
         self.log.debug("Loading simulated hardware objects...")
         # Initialize simulation objects
+        self.microcontroller = microcontroller.Microcontroller(existing_serial=microcontroller.SimSerial(),is_simulation=True)
         if ENABLE_SPINNING_DISK_CONFOCAL:
             self.xlight = serial_peripherals.XLight_Simulation()
         if ENABLE_NL5:
@@ -181,13 +183,13 @@ class HighContentScreeningGui(QMainWindow):
             self.camera_focus = camera_fc.Camera_Simulation()
         if USE_LDI_SERIAL_CONTROL:
             self.ldi = serial_peripherals.LDI_Simulation()
+            self.illuminationController = control.microscope.IlluminationController(self.microcontroller, )
         self.camera = camera.Camera_Simulation(rotate_image_angle=ROTATE_IMAGE_ANGLE, flip_image=FLIP_IMAGE)
         self.camera.set_pixel_format(DEFAULT_PIXEL_FORMAT)
         if USE_ZABER_EMISSION_FILTER_WHEEL:
             self.emission_filter_wheel = serial_peripherals.FilterController_Simulation(115200, 8, serial.PARITY_NONE, serial.STOPBITS_ONE)
         if USE_OPTOSPIN_EMISSION_FILTER_WHEEL:
             self.emission_filter_wheel = serial_peripherals.Optospin_Simulation(SN=None)
-        self.microcontroller = microcontroller.Microcontroller(existing_serial=microcontroller.SimSerial(),is_simulation=True)
 
     def loadHardwareObjects(self):
         # Initialize hardware objects
@@ -219,11 +221,17 @@ class HighContentScreeningGui(QMainWindow):
         if USE_LDI_SERIAL_CONTROL:
             try:
                 self.ldi = serial_peripherals.LDI()
-                self.ldi.run()
-                self.ldi.set_intensity_mode(LDI_INTENSITY_MODE)
-                self.ldi.set_shutter_mode(LDI_SHUTTER_MODE)
+                self.illuminationController = control.microscope.IlluminationController(self.microcontroller, self.ldi.intensity_mode, self.ldi.shutter_mode, LightSourceType.LDI, self.ldi)
             except Exception:
                 self.log.error("Error initializing LDI")
+                raise
+
+        if USE_CELESTA_ETHENET_CONTROL:
+            try:
+                self.celesta = celesta.CELESTA()
+                self.illuminationController = control.microscope.IlluminationController(self.microcontroller, IntensityControlMode.Software, ShutterControlMode.TTL, LightSourceType.CELESTA, self.celesta)
+            except Exception:
+                self.log.error("Error initializing CELESTA")
                 raise
 
         if SUPPORT_LASER_AUTOFOCUS:
