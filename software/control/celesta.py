@@ -111,7 +111,7 @@ class CELESTA(LightSource):
         self.on = response[-1]=='1'
         return self.on
 
-    def get_power_range(self):
+    def get_intensity_range(self):
         """
         Return [minimum power, maximum power].
         """
@@ -121,7 +121,7 @@ class CELESTA(LightSource):
             max_int = float(self.message['message'].split(' ')[-1])
         return [0, max_int]
 
-    def get_power(self,laser_id):
+    def get_intensity(self,laser_id):
         """
         Return the current laser power.
         """
@@ -143,7 +143,7 @@ class CELESTA(LightSource):
             self.on = False
         print("Turning On/Off", self.on, self.message)
 
-    def set_power(self, laser_id, power_in_mw):
+    def set_intensity(self, laser_id, power_in_mw):
         """
         power_in_mw - The desired laser power in mW.
         """

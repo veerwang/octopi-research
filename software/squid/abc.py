@@ -103,33 +103,9 @@ class LightSource(ABC):
             float: Current intensity value
         """
         pass
-
-        @abstractmethod
-    def set_power(self, channel, power):
-        """
-        Set the power for a specific channel.
-        
-        Args:
-            channel: Channel ID
-            power: Power value
-        """
-        pass
     
     @abstractmethod
-    def get_power(self, channel) -> float:
-        """
-        Get the current power of a specific channel.
-        
-        Args:
-            channel: Channel ID
-            
-        Returns:
-            float: Current power value
-        """
-        pass
-    
-    @abstractmethod
-    def get_power_range(self) -> Tuple[float, float]:
+    def get_intensity_range(self) -> Tuple[float, float]:
         """
         Get the valid intensity range.
         
