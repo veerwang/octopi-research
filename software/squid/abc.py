@@ -1,4 +1,5 @@
 from abc import ABC, abstractmethod
+from typing import Tuple
 
 class LightSource(ABC):
     """Abstract base class defining the interface for different light sources."""

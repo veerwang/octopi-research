@@ -470,7 +470,7 @@ class LiveController(QObject):
 
     # illumination control
     def turn_on_illumination(self):
-        if self.illuminationController is not None:          
+        if self.illuminationController is not None and not 'LED matrix' in self.currentConfiguration.name:
             self.illuminationController.turn_on_illumination(int(self.configurationManager.extract_wavelength(self.currentConfiguration.name)))
         elif SUPPORT_SCIMICROSCOPY_LED_ARRAY and 'LED matrix' in self.currentConfiguration.name:
             self.led_array.turn_on_illumination()
@@ -479,7 +479,7 @@ class LiveController(QObject):
         self.illumination_on = True
 
     def turn_off_illumination(self):
-        if self.illuminationController is not None:          
+        if self.illuminationController is not None and not 'LED matrix' in self.currentConfiguration.name:
             self.illuminationController.turn_off_illumination(int(self.configurationManager.extract_wavelength(self.currentConfiguration.name)))
         elif SUPPORT_SCIMICROSCOPY_LED_ARRAY and 'LED matrix' in self.currentConfiguration.name:
             self.led_array.turn_off_illumination()

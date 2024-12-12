@@ -6,6 +6,8 @@ revised HL 2/2024
 """
 import urllib.request
 import traceback
+from squid.abc import LightSource
+from control.microscope import LightSourceType, IntensityControlMode, ShutterControlMode
 
 def lumencor_httpcommand(command = 'GET IP',ip = '192.168.201.200'):
     """
@@ -42,7 +44,7 @@ class CELESTA(LightSource):
             print("Failed to connect to Lumencor Laser at ip:", ip)
 
         if self.live:
-            [self.pmin, self.pmax] = self.get_power_range()
+            [self.pmin, self.pmax] = self.get_intensity_range()
             self.set_shutter_control_mode(True)
             for i in range(self.n_lasers):
                 if (not self.get_shutter_state(i)):
@@ -62,6 +64,15 @@ class CELESTA(LightSource):
             735: 6,
             750: 6
         }
+
+    def initialize(self):
+        pass
+
+    def set_intensity_control_mode(self, mode):
+        pass
+
+    def get_intensity_control_mode(self):
+        pass
 
     def get_number_lasers(self):
         """Return the number of lasers the current lumencor system can control"""
@@ -96,7 +107,7 @@ class CELESTA(LightSource):
         """
         Turn on/off external TTL control mode.
         """
-        if mode == ShutterControlMode.TTL
+        if mode == ShutterControlMode.TTL:
             ttl_enable = '1'
         else:
             ttl_enable = '0'

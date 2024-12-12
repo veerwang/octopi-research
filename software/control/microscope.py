@@ -236,7 +236,7 @@ class IlluminationController():
         self.set_intensity_control_mode(self.intensity_control_mode)
         self.set_shutter_control_mode(self.shutter_control_mode)
         self.channel_mappings_software = self.light_source.channel_mappings
-        self.get_power_range()
+        self.get_intensity_range()
         for ch in self.channel_mappings_software:
             self.intensity_settings[ch] = self.get_intensity(ch)
             self.is_on[ch] = self.light_source.get_shutter_state(self.channel_mappings_software[ch])
@@ -267,7 +267,7 @@ class IlluminationController():
 
     def get_intensity(self, channel):
         if self.intensity_control_mode == IntensityControlMode.Software:
-            power = self.light_source.get_power(self.channel_mappings_software[channel])
+            power = self.light_source.get_intensity(self.channel_mappings_software[channel])
             intensity = power / self.pmax * 100
             self.intensity_settings[channel] = intensity
             return intensity # 0 - 100
@@ -279,6 +279,8 @@ class IlluminationController():
         if self.shutter_control_mode == ShutterControlMode.Software:
             self.light_source.set_shutter_state(self.channel_mappings_software[channel], on=True)
         elif self.shutter_control_mode == ShutterControlMode.TTL:
+            print('TTL!!')
+            #self.microcontroller.set_illumination(self.channel_mappings_TTL[channel], self.intensity_settings[channel])
             self.microcontroller.turn_on_illumination()
 
         self.is_on[channel] = True
@@ -301,10 +303,9 @@ class IlluminationController():
         if self.intensity_control_mode == IntensityControlMode.Software:
             if intensity != self.intensity_settings[channel]:
                 power = intensity / 100 * self.pmax
-                self.light_source.set_power(self.channel_mappings_software[channel], power)
+                self.light_source.set_intensity(self.channel_mappings_software[channel], power)
                 self.intensity_settings[channel] = intensity
-        elif self.intensity_control_mode == IntensityControlMode.SquidControllerDAC:
-            self.microcontroller.set_illumination(self.channel_mappings_TTL[channel], intensity)
+        self.microcontroller.set_illumination(self.channel_mappings_TTL[channel], intensity)
 
     def get_shutter_state(self):
         return self.is_on

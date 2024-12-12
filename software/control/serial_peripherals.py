@@ -3,6 +3,7 @@ from serial.tools import list_ports
 import time
 from typing import Tuple, Optional
 import struct
+from squid.abc import LightSource
 
 import squid.logging
 log = squid.logging.get_logger(__name__)

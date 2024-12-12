@@ -17,6 +17,7 @@ import control.widgets as widgets
 import pyqtgraph.dockarea as dock
 import squid.logging
 import control.microscope
+from control.microscope import LightSourceType, IntensityControlMode, ShutterControlMode
 
 log = squid.logging.get_logger(__name__)
 
@@ -126,6 +127,7 @@ class HighContentScreeningGui(QMainWindow):
             settings_menu.addAction(led_matrix_action)
 
     def loadObjects(self, is_simulation):
+        self.illuminationController = None
         if is_simulation:
             self.loadSimulationObjects()
         else:
@@ -140,8 +142,7 @@ class HighContentScreeningGui(QMainWindow):
         self.configurationManager = core.ConfigurationManager(filename='./channel_configurations.xml')
         self.contrastManager = core.ContrastManager()
         self.streamHandler = core.StreamHandler(display_resolution_scaling=DEFAULT_DISPLAY_CROP/100)
-        self.liveController = core.LiveController(self.camera, self.microcontroller, self.configurationManager, parent=self)
-        self.illuminationController = None
+        self.liveController = core.LiveController(self.camera, self.microcontroller, self.configurationManager, self.illuminationController, parent=self)
         if USE_PRIOR_STAGE:
             self.navigationController = NavigationController_PriorStage(self.priorstage, self.microcontroller, self.objectiveStore, parent=self)
         else:
@@ -193,6 +194,12 @@ class HighContentScreeningGui(QMainWindow):
 
     def loadHardwareObjects(self):
         # Initialize hardware objects
+        try:
+            self.microcontroller = microcontroller.Microcontroller(version=CONTROLLER_VERSION, sn=CONTROLLER_SN)
+        except Exception:
+            self.log.error(f"Error initializing Microcontroller")
+            raise
+
         if ENABLE_SPINNING_DISK_CONFOCAL:
             try:
                 self.xlight = serial_peripherals.XLight(XLIGHT_SERIAL_NUMBER, XLIGHT_SLEEP_TIME_FOR_WHEEL)
@@ -228,7 +235,8 @@ class HighContentScreeningGui(QMainWindow):
 
         if USE_CELESTA_ETHENET_CONTROL:
             try:
-                self.celesta = celesta.CELESTA()
+                import control.celesta
+                self.celesta = control.celesta.CELESTA()
                 self.illuminationController = control.microscope.IlluminationController(self.microcontroller, IntensityControlMode.Software, ShutterControlMode.TTL, LightSourceType.CELESTA, self.celesta)
             except Exception:
                 self.log.error("Error initializing CELESTA")
@@ -273,12 +281,6 @@ class HighContentScreeningGui(QMainWindow):
             except Exception:
                 self.log.error("Error initializing Prior Stage")
                 raise
-
-        try:
-            self.microcontroller = microcontroller.Microcontroller(version=CONTROLLER_VERSION, sn=CONTROLLER_SN)
-        except Exception:
-            self.log.error(f"Error initializing Microcontroller")
-            raise
 
     def setupHardware(self):
         # Setup hardware components
