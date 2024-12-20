@@ -2460,7 +2460,7 @@ class MultiPointController(QObject):
         self.z_stacking_config = Z_STACKING_CONFIG
 
     def set_use_piezo(self, checked):
-        print("set use_piezo to", checked)
+        print("Use Piezo:", checked)
         self.use_piezo = checked
         if hasattr(self, 'multiPointWorker'):
             self.multiPointWorker.update_use_piezo(checked)
@@ -2633,7 +2633,7 @@ class MultiPointController(QObject):
                 else:
                     self.parent.imageDisplayTabs.setCurrentWidget(self.parent.imageArrayDisplayWindow.widget)
 
-            elif USE_NAPARI_FOR_MOSAIC_DISPLAY and self.coordinate_dict is not None:
+            elif USE_NAPARI_FOR_MOSAIC_DISPLAY and self.coordinate_dict is not None and self.NZ == 1:
                 self.parent.imageDisplayTabs.setCurrentWidget(self.parent.napariMosaicDisplayWidget)
 
             elif USE_NAPARI_FOR_MULTIPOINT:
@@ -3362,8 +3362,6 @@ class ImageDisplayWindow(QMainWindow):
 class NavigationViewer(QFrame):
 
     signal_coordinates_clicked = Signal(float, float)  # Will emit x_mm, y_mm when clicked
-    signal_update_live_scan_grid = Signal(float, float)
-    signal_update_well_coordinates = Signal(bool)
 
     def __init__(self, objectivestore, sample = 'glass slide', invertX = False, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -3383,7 +3381,6 @@ class NavigationViewer(QFrame):
         self.acquisition_size = Acquisition.CROP_HEIGHT
         self.x_mm = None
         self.y_mm = None
-        self.acquisition_started = False
         self.image_paths = {
             'glass slide': 'images/slide carrier_828x662.png',
             '4 glass slide': 'images/4 slide carrier_1509x1010.png',
@@ -3409,7 +3406,7 @@ class NavigationViewer(QFrame):
         self.graphics_widget = pg.GraphicsLayoutWidget()
         self.graphics_widget.setBackground("w")
 
-        self.view = self.graphics_widget.addViewBox(invertX=invertX, invertY=True)
+        self.view = self.graphics_widget.addViewBox(invertX=not INVERTED_OBJECTIVE, invertY=True)
         self.view.setAspectLocked(True)
 
         self.grid = QVBoxLayout()
@@ -3462,15 +3459,11 @@ class NavigationViewer(QFrame):
             self.mm_per_pixel = 0.084665
             self.origin_x_pixel = 50
             self.origin_y_pixel = 0
-            self.view.invertX(False)
-            self.view.invertY(True)
         else:
             self.location_update_threshold_mm = 0.05
             self.mm_per_pixel = 0.084665
             self.origin_x_pixel = self.a1_x_pixel - (self.a1_x_mm)/self.mm_per_pixel
             self.origin_y_pixel = self.a1_y_pixel - (self.a1_y_mm)/self.mm_per_pixel
-            self.view.invertX(False)
-            self.view.invertY(True)
         self.update_fov_size()
 
     def update_fov_size(self):
@@ -3480,13 +3473,7 @@ class NavigationViewer(QFrame):
     def on_objective_changed(self):
         self.clear_overlay()
         self.update_fov_size()
-        if self.x_mm is not None and self.y_mm is not None:
-            if 'glass slide'in self.sample:
-                self.signal_update_live_scan_grid.emit(self.x_mm, self.y_mm)
-            self.draw_current_fov(self.x_mm, self.y_mm)
-
-    def on_acquisition_start(self, acquisition_started):
-        self.acquisition_started = acquisition_started
+        self.draw_current_fov(self.x_mm, self.y_mm)
 
     def update_wellplate_settings(self, sample_format, a1_x_mm, a1_y_mm, a1_x_pixel, a1_y_pixel, well_size_mm, well_spacing_mm, number_of_skip, rows, cols):
         if isinstance(sample_format, QVariant):
@@ -3538,10 +3525,6 @@ class NavigationViewer(QFrame):
             self.x_mm = x_mm
             self.y_mm = y_mm
 
-    def draw_scan_grid(self, x_mm, y_mm):
-        if 'glass slide' in self.sample and not self.acquisition_started:
-            self.signal_update_live_scan_grid.emit(x_mm, y_mm)
-
     def get_FOV_pixel_coordinates(self, x_mm, y_mm):
         if self.sample == 'glass slide':
             current_FOV_top_left = (
@@ -3590,12 +3573,6 @@ class NavigationViewer(QFrame):
         self.background_image = self.background_image_copy.copy()
         self.background_item.setImage(self.background_image)
         self.draw_current_fov(self.x_mm, self.y_mm)
-
-    def update_slide(self):
-        self.background_image = self.background_image_copy.copy()
-        self.background_item.setImage(self.background_image)
-        self.draw_current_fov(self.x_mm, self.y_mm)
-        self.signal_update_well_coordinates.emit(True)
 
     def clear_overlay(self):
         self.scan_overlay.fill(0)
