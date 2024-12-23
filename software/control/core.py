@@ -3965,6 +3965,98 @@ class ScanCoordinates(object):
             _increasing = not _increasing
         return len(selected_wells) # if wells selected
 
+# class ScanCoordinates:
+#     def __init__(self):
+#         # Wellplate settings
+#         self.well_selector = None
+#         self.format = WELLPLATE_FORMAT
+#         self.a1_x_mm = A1_X_MM
+#         self.a1_y_mm = A1_Y_MM
+#         self.wellplate_offset_x_mm = WELLPLATE_OFFSET_X_MM
+#         self.wellplate_offset_y_mm = WELLPLATE_OFFSET_Y_MM
+#         self.well_spacing_mm = WELL_SPACING_MM
+#         self.well_size_mm = WELL_SIZE_MM
+#         self.a1_x_pixel = None
+#         self.a1_y_pixel = None
+#         self.number_of_skip = None
+
+#         # Centralized region management
+#         self.region_names = []  # Maintains order of regions
+#         self.region_centers = {}  # {region_id: [x, y, z]}
+#         self.region_fov_coordinates = {}  # {region_id: [(x,y,z), ...]}
+
+#     def add_region(self, region_id, center_coord, fov_coords):
+#         """Add or update a region with its center and FOV coordinates"""
+#         if region_id not in self.region_names:
+#             self.region_names.append(region_id)
+#         self.region_centers[region_id] = center_coord
+#         self.region_fov_coordinates[region_id] = fov_coords
+
+#     def remove_region(self, region_id):
+#         """Remove a region and all its associated data"""
+#         if region_id in self.region_names:
+#             self.region_names.remove(region_id)
+#             self.region_centers.pop(region_id, None)
+#             self.region_fov_coordinates.pop(region_id, None)
+
+#     def clear_regions(self):
+#         """Clear all region data"""
+#         self.region_names.clear()
+#         self.region_centers.clear()
+#         self.region_fov_coordinates.clear()
+
+#     # Keep existing wellplate-related methods
+#     def add_well_selector(self, well_selector):
+#         self.well_selector = well_selector
+
+#     def update_wellplate_settings(self, format_, a1_x_mm, a1_y_mm, a1_x_pixel, a1_y_pixel, size_mm, spacing_mm, number_of_skip):
+#         self.format = format_
+#         self.a1_x_mm = a1_x_mm
+#         self.a1_y_mm = a1_y_mm
+#         self.a1_x_pixel = a1_x_pixel
+#         self.a1_y_pixel = a1_y_pixel
+#         self.well_size_mm = size_mm
+#         self.well_spacing_mm = spacing_mm
+#         self.number_of_skip = number_of_skip
+
+#     def _index_to_row(self,index):
+#         index += 1
+#         row = ""
+#         while index > 0:
+#             index -= 1
+#             row = chr(index % 26 + ord('A')) + row
+#             index //= 26
+#         return row
+
+#     def get_selected_wells(self):
+#         # get selected wells from the widget
+#         print("getting selected wells for acquisition")
+#         if not self.well_selector or self.format == 'glass slide':
+#             return False
+#         selected_wells = self.well_selector.get_selected_cells()
+#         selected_wells = np.array(selected_wells)
+#         # clear the previous selection
+#         self.coordinates_mm = []
+#         self.name = []
+#         if len(selected_wells) == 0:
+#             return False # if no well selected
+#         # populate the coordinates
+#         rows = np.unique(selected_wells[:,0])
+#         _increasing = True
+#         for row in rows:
+#             items = selected_wells[selected_wells[:,0]==row]
+#             columns = items[:,1]
+#             columns = np.sort(columns)
+#             if _increasing==False:
+#                 columns = np.flip(columns)
+#             for column in columns:
+#                 x_mm = self.a1_x_mm + column*self.well_spacing_mm + self.wellplate_offset_x_mm
+#                 y_mm = self.a1_y_mm + row*self.well_spacing_mm + self.wellplate_offset_y_mm
+#                 self.coordinates_mm.append((x_mm,y_mm))
+#                 self.name.append(self._index_to_row(row)+str(column+1))
+#             _increasing = not _increasing
+#         return len(selected_wells) # if wells selected
+
 
 class LaserAutofocusController(QObject):
 
