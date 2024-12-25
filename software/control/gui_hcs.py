@@ -849,7 +849,7 @@ class HighContentScreeningGui(QMainWindow):
         is_flexible_acquisition = (index == self.recordTabWidget.indexOf(self.flexibleMultiPointWidget)) if ENABLE_FLEXIBLE_MULTIPOINT else False
         is_wellplate_acquisition = (index == self.recordTabWidget.indexOf(self.wellplateMultiPointWidget)) if ENABLE_WELLPLATE_MULTIPOINT else False
         self.scanCoordinates.clear_regions()
-        
+
         if is_wellplate_acquisition:
             if self.wellplateMultiPointWidget.combobox_shape.currentText() == 'Manual':
                 # trigger manual shape update

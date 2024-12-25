@@ -1900,7 +1900,7 @@ class MultiPointWorker(QObject):
             multipoint_custom_script_entry(self, current_path, region_id, fov)
             return
 
-        self.perform_autofocus(region_id)
+        self.perform_autofocus(region_id, fov)
 
         if self.NZ > 1:
             self.prepare_z_stack()
@@ -1983,34 +1983,16 @@ class MultiPointWorker(QObject):
             except AttributeError as e:
                 print(repr(e))
 
-    def perform_autofocus(self, region_id):
+    def perform_autofocus(self, region_id, fov):
         if self.do_reflection_af == False:
             # contrast-based AF; perform AF only if when not taking z stack or doing z stack from center
-            if ( (self.NZ == 1) or self.z_stacking_config == 'FROM CENTER' ) and (self.do_autofocus) and (self.af_fov_count%Acquisition.NUMBER_OF_FOVS_PER_AF==0):
+            if ((self.NZ == 1) or self.z_stacking_config == 'FROM CENTER') and (self.do_autofocus) and (self.af_fov_count % Acquisition.NUMBER_OF_FOVS_PER_AF == 0):
                 configuration_name_AF = MULTIPOINT_AUTOFOCUS_CHANNEL
                 config_AF = next((config for config in self.configurationManager.configurations if config.name == configuration_name_AF))
                 self.signal_current_configuration.emit(config_AF)
-                if (self.af_fov_count%Acquisition.NUMBER_OF_FOVS_PER_AF==0) or self.autofocusController.use_focus_map:
+                if (self.af_fov_count % Acquisition.NUMBER_OF_FOVS_PER_AF == 0) or self.autofocusController.use_focus_map:
                     self.autofocusController.autofocus()
                     self.autofocusController.wait_till_autofocus_has_completed()
-                # update z location of scan_region_coords_mm after AF
-                if len(self.scan_region_coords_mm[region_id]) == 3:
-                    self.scan_region_coords_mm[region_id][2] = self.navigationController.z_pos_mm
-
-                    # update the coordinate in the widget # TODO FIX
-                    # self.scanCoordinates.region_fov_coordinates[region_id][2] = self.navigationController.z_pos_mm
-                    # self.microscope.scanCoordinates.update_region_z_level(region_id, self.navigationController.z_pos_mm)
-                    try:
-                        self.microscope.scanCoordinates.update_region_z_level(region_id, self.navigationController.z_pos_mm)
-                    except:
-                        print("failed update to scanCoordinates z-level")
-                        pass
-                    try:
-                        self.microscope.flexibleMultiPointWidget._update_z(region_id, self.navigationController.z_pos_mm)
-                    except:
-                        print("failed update to flexible location_list z-level")
-                        pass
-                        
         else:
             # initialize laser autofocus if it has not been done
             if self.microscope.laserAutofocusController.is_initialized==False:
@@ -2018,7 +2000,7 @@ class MultiPointWorker(QObject):
                 # initialize the reflection AF
                 self.microscope.laserAutofocusController.initialize_auto()
                 # do contrast AF for the first FOV (if contrast AF box is checked)
-                if self.do_autofocus and ( (self.NZ == 1) or self.z_stacking_config == 'FROM CENTER' ) :
+                if self.do_autofocus and ((self.NZ == 1) or self.z_stacking_config == 'FROM CENTER'):
                     configuration_name_AF = MULTIPOINT_AUTOFOCUS_CHANNEL
                     config_AF = next((config for config in self.configurationManager.configurations if config.name == configuration_name_AF))
                     self.signal_current_configuration.emit(config_AF)
@@ -2039,6 +2021,22 @@ class MultiPointWorker(QObject):
                     saving_path = os.path.join(self.base_path, self.experiment_ID, str(self.time_point), file_ID)
                     iio.imwrite(saving_path, self.microscope.laserAutofocusController.image)
                     print('!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! laser AF failed !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!')
+
+        # Get new Z position after autofocus
+        new_z = self.navigationController.z_pos_mm
+
+        # Always update FOV-specific z-level
+        self.microscope.scanCoordinates.update_fov_z_level(region_id, fov, new_z)
+
+        # For first FOV, also update region center and/or location list
+        if (fov == 0 and
+            hasattr(self.microscope, 'recordTabWidget') and
+            hasattr(self.microscope, 'flexibleMultiPointWidget') and
+            isinstance(self.microscope.recordTabWidget.currentWidget(), type(self.microscope.flexibleMultiPointWidget)) and
+            region_id.startswith('R')):
+            # Get index from region_id (e.g., 'R0' -> 0)
+            index = int(region_id[1:])
+            self.microscope.flexibleMultiPointWidget.update_location_z_level(index, new_z)
 
     def prepare_z_stack(self):
         # move to bottom of the z stack
@@ -4019,18 +4017,28 @@ class ScanCoordinates:
             'max_y': np.max(fovs[:,1])
         }
 
-    def update_region_z_level(self, well_id, new_z):
-        if not self.validate_region(well_id):
-            print(f"Region {well_id} not found")
+    def update_fov_z_level(self, region_id, fov, new_z):
+        """Update z-level for a specific FOV and its region center"""
+        if not self.validate_region(region_id):
+            print(f"Region {region_id} not found")
             return
 
-        if len(self.region_centers[well_id]) == 3:
-            # [x, y, z] -> [x, y, new_z]
-            self.region_centers[well_id][2] = new_z
-        else:
-            # [x, y] -> [x, y, new_z]
-            self.region_centers[well_id].append(new_z)
-        print(f"Updated z-level to {new_z} for region {well_id}")
+        # Update FOV coordinates
+        fov_coords = self.region_fov_coordinates[region_id]
+        if fov < len(fov_coords):
+            # Handle both (x,y) and (x,y,z) cases
+            x, y = fov_coords[fov][:2]  # Takes first two elements regardless of length
+            self.region_fov_coordinates[region_id][fov] = (x, y, new_z)
+
+        # If first FOV, update region center coordinates
+        if fov == 0:
+            if len(self.region_centers[region_id]) == 3:
+                self.region_centers[region_id][2] = new_z
+            else:
+                self.region_centers[region_id].append(new_z)
+
+        print(f"Updated z-level to {new_z} for region:{region_id}, fov:{fov}")
+
 
     def add_region(self, well_id, center_x, center_y, scan_size_mm, overlap_percent=10, shape='Square'):
         pixel_size_um = self.objectiveStore.get_pixel_size()
@@ -4180,10 +4188,10 @@ class ScanCoordinates:
         for x, y in grid_points:
             if self.validate_coordinates(x, y) and self._is_in_polygon(x, y, shape_coords):
                 valid_points.append((x, y))
-        
+
         if not valid_points:
             return []
-            
+
         valid_points = np.array(valid_points)
 
         # Sort points

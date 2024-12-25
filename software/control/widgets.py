@@ -2650,13 +2650,16 @@ class FlexibleMultiPointWidget(QFrame):
                 self.add_location()
                 self.acquisition_in_place = True
 
-            self.update_fov_positions()
-
             if self.checkbox_set_z_range.isChecked():
                 # Set Z-range (convert from μm to mm)
                 minZ = self.entry_minZ.value() / 1000
                 maxZ = self.entry_maxZ.value() / 1000
                 self.multipointController.set_z_range(minZ, maxZ)
+            else:
+                z = self.navigationController.z_pos_mm
+                dz = self.entry_deltaZ.value()
+                Nz = self.entry_NZ.value()
+                self.multipointController.set_z_range(z, z + dz * (Nz - 1))
 
             self.setEnabled_all(False)
             # Set acquisition parameters
@@ -2726,11 +2729,9 @@ class FlexibleMultiPointWidget(QFrame):
             self.location_list = np.vstack((self.location_list, [[x, y, z]]))
             self.location_ids = np.append(self.location_ids, region_id)
 
-            # Display rounded values in UI
+            # Update both UI elements at the same time
             location_str = f"x:{round(x,3)} mm  y:{round(y,3)} mm  z:{round(z*1000,1)} μm"
             self.dropdown_location_list.addItem(location_str)
-
-            # Update table with rounded display values
             row = self.table_location_list.rowCount()
             self.table_location_list.insertRow(row)
             self.table_location_list.setItem(row, 0, QTableWidgetItem(str(round(x,3))))
@@ -2752,17 +2753,16 @@ class FlexibleMultiPointWidget(QFrame):
                                          self.entry_deltaX.value(),self.entry_deltaY.value()
                                      )
 
-            print(f"Added Region: {region_id} - x={x}, y={y}, z={z}")
-
             # Set the current index to the newly added location
             self.dropdown_location_list.setCurrentIndex(len(self.location_ids) - 1)
             self.table_location_list.selectRow(row)
 
-            # Re-enable signals after the addition is complete
+            # Re-enable signals
             self.table_location_list.blockSignals(False)
             self.dropdown_location_list.blockSignals(False)
+            print(f"Added Region: {region_id} - x={x}, y={y}, z={z}")
         else:
-            print("Duplicate location not added.")
+            print("Invalid Region: Duplicate Location")
 
     def remove_location(self):
         index = self.dropdown_location_list.currentIndex()
@@ -2775,16 +2775,18 @@ class FlexibleMultiPointWidget(QFrame):
             self.table_location_list.blockSignals(True)
             self.dropdown_location_list.blockSignals(True)
 
-            # Remove overlays and dictionaries
-            self.scanCoordinates.region_centers.pop(region_id, None)
-            for coord in self.scanCoordinates.region_fov_coordinates.pop(region_id, []):
-                self.navigationViewer.deregister_fov_to_image(coord[0], coord[1])
+            # Remove from data structures
             self.location_list = np.delete(self.location_list, index, axis=0)
             self.location_ids = np.delete(self.location_ids, index)
 
-            # Update UI
+            # Remove from both UI elements
             self.dropdown_location_list.removeItem(index)
             self.table_location_list.removeRow(index)
+
+            # Remove scanCoordinates dictionaries and remove region overlay
+            self.scanCoordinates.region_centers.pop(region_id, None)
+            for coord in self.scanCoordinates.region_fov_coordinates.pop(region_id, []):
+                self.navigationViewer.deregister_fov_to_image(coord[0], coord[1])
 
             # Reindex remaining regions and update UI
             for i in range(index, len(self.location_ids)):
@@ -2802,10 +2804,6 @@ class FlexibleMultiPointWidget(QFrame):
                 self.dropdown_location_list.setItemText(i, location_str)
                 self.table_location_list.setItem(i, 3, QTableWidgetItem(new_id))
 
-            # Re-enable signals
-            self.table_location_list.blockSignals(False)
-            self.dropdown_location_list.blockSignals(False)
-
             # Clear overlay if no locations remain
             if len(self.location_list) == 0:
                 self.navigationViewer.clear_overlay()
@@ -2815,19 +2813,23 @@ class FlexibleMultiPointWidget(QFrame):
                 for coord in fov_coords:
                     self.navigationViewer.register_fov_to_image(coord[0], coord[1])
 
-    def create_point_id(self):
-        self.scanCoordinates.get_selected_wells()
-        if len(self.scanCoordinates.region_centers.keys()) == 0:
-            print('Select a well first.')
-            return None
+            # Re-enable signals
+            self.table_location_list.blockSignals(False)
+            self.dropdown_location_list.blockSignals(False)
 
-        name = self.scanCoordinates.region_centers.keys()[0]
-        location_split_names = [int(x.split('-')[1]) for x in self.location_ids if x.split('-')[0] == name]
-        if len(location_split_names) > 0:
-            new_id = f'{name}-{np.max(location_split_names)+1}'
-        else:
-            new_id = f'{name}-0'
-        return new_id
+    # def create_point_id(self):
+    #     self.scanCoordinates.get_selected_wells()
+    #     if len(self.scanCoordinates.region_centers.keys()) == 0:
+    #         print('Select a well first.')
+    #         return None
+
+    #     name = self.scanCoordinates.region_centers.keys()[0]
+    #     location_split_names = [int(x.split('-')[1]) for x in self.location_ids if x.split('-')[0] == name]
+    #     if len(location_split_names) > 0:
+    #         new_id = f'{name}-{np.max(location_split_names)+1}'
+    #     else:
+    #         new_id = f'{name}-0'
+    #     return new_id
 
     def next(self):
         index = self.dropdown_location_list.currentIndex()
@@ -2937,10 +2939,18 @@ class FlexibleMultiPointWidget(QFrame):
         else:
             super().keyPressEvent(event)
 
-    def _update_z(self,index,z_mm):
+    def update_location_z_level(self,index,z_mm):
+        self.table_location_list.blockSignals(True)
+        self.dropdown_location_list.blockSignals(True)
+
         self.location_list[index,2] = z_mm
         location_str = 'x:' + str(round(self.location_list[index,0],3)) + 'mm  y:' + str(round(self.location_list[index,1],3)) + 'mm  z:' + str(round(1000*z_mm,1)) + 'μm'
         self.dropdown_location_list.setItemText(index, location_str)
+        if self.table_location_list.rowCount() > index:
+            self.table_location_list.setItem(index, 2, QTableWidgetItem(str(round(1000*z_mm,1))))
+
+        self.table_location_list.blockSignals(False)
+        self.dropdown_location_list.blockSignals(False)
 
     def export_location_list(self):
         file_path, _ = QFileDialog.getSaveFileName(self, "Export Location List", '', "CSV Files (*.csv);;All Files (*)")
@@ -3678,7 +3688,9 @@ class WellplateMultiPointWidget(QFrame):
                 print("set z-range", (minZ, maxZ))
             else:
                 z = self.navigationController.z_pos_mm
-                self.multipointController.set_z_range(z, z)
+                dz = self.entry_deltaZ.value()
+                Nz = self.entry_NZ.value()
+                self.multipointController.set_z_range(z, z + dz * (Nz - 1))
 
             self.multipointController.set_deltaZ(self.entry_deltaZ.value())
             self.multipointController.set_NZ(self.entry_NZ.value())
