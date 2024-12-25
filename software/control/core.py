@@ -12,7 +12,6 @@ from qtpy.QtGui import *
 
 # control
 from control._def import *
-
 if DO_FLUORESCENCE_RTP:
     from control.processing_handler import ProcessingHandler
     from control.processing_pipeline import *
@@ -2022,10 +2021,10 @@ class MultiPointWorker(QObject):
                     iio.imwrite(saving_path, self.microscope.laserAutofocusController.image)
                     print('!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! laser AF failed !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!')
 
-        # Get new Z position after autofocus
+        # update new Z position after autofocus
         new_z = self.navigationController.z_pos_mm
 
-        # Always update FOV-specific z-level
+        # update FOV-specific z-level
         self.microscope.scanCoordinates.update_fov_z_level(region_id, fov, new_z)
 
         # For first FOV, also update region center and/or location list
@@ -3976,71 +3975,8 @@ class ScanCoordinates:
         else:
             print("No Manual ROI found")
 
-    def remove_region(self, well_id):
-        if well_id in self.region_centers:
-            del self.region_centers[well_id]
-
-            if well_id in self.region_fov_coordinates:
-                region_scan_coordinates = self.region_fov_coordinates.pop(well_id)
-                for coord in region_scan_coordinates:
-                    self.navigationViewer.deregister_fov_to_image(coord[0], coord[1])
-
-            print(f"Removed Region: {well_id}")
-
-    def clear_regions(self):
-        self.region_centers.clear()
-        self.region_fov_coordinates.clear()
-        self.navigationViewer.clear_overlay()
-        print("Cleared All Regions")
-
-    def has_regions(self):
-        """Check if any regions exist"""
-        return len(self.region_centers) > 0
-
-    def validate_region(self, region_id):
-        """Validate a region exists"""
-        return region_id in self.region_centers and region_id in self.region_fov_coordinates
-
-    def validate_coordinates(self, x, y):
-        return (SOFTWARE_POS_LIMIT.X_NEGATIVE <= x <= SOFTWARE_POS_LIMIT.X_POSITIVE and
-                SOFTWARE_POS_LIMIT.Y_NEGATIVE <= y <= SOFTWARE_POS_LIMIT.Y_POSITIVE)
-
-    def get_region_bounds(self, region_id):
-        """Get region boundaries"""
-        if not self.validate_region(region_id):
-            return None
-        fovs = np.array(self.region_fov_coordinates[region_id])
-        return {
-            'min_x': np.min(fovs[:,0]),
-            'max_x': np.max(fovs[:,0]),
-            'min_y': np.min(fovs[:,1]),
-            'max_y': np.max(fovs[:,1])
-        }
-
-    def update_fov_z_level(self, region_id, fov, new_z):
-        """Update z-level for a specific FOV and its region center"""
-        if not self.validate_region(region_id):
-            print(f"Region {region_id} not found")
-            return
-
-        # Update FOV coordinates
-        fov_coords = self.region_fov_coordinates[region_id]
-        if fov < len(fov_coords):
-            # Handle both (x,y) and (x,y,z) cases
-            x, y = fov_coords[fov][:2]  # Takes first two elements regardless of length
-            self.region_fov_coordinates[region_id][fov] = (x, y, new_z)
-
-        # If first FOV, update region center coordinates
-        if fov == 0:
-            if len(self.region_centers[region_id]) == 3:
-                self.region_centers[region_id][2] = new_z
-            else:
-                self.region_centers[region_id].append(new_z)
-
-        print(f"Updated z-level to {new_z} for region:{region_id}, fov:{fov}")
-
-
     def add_region(self, well_id, center_x, center_y, scan_size_mm, overlap_percent=10, shape='Square'):
+        """add region based on user inputs"""
         pixel_size_um = self.objectiveStore.get_pixel_size()
         fov_size_mm = (pixel_size_um / 1000) * Acquisition.CROP_WIDTH
         step_size_mm = fov_size_mm * (1 - overlap_percent / 100)
@@ -4090,8 +4026,25 @@ class ScanCoordinates:
         self.region_centers[well_id] = [float(center_x), float(center_y), float(self.navigationController.z_pos_mm)]
         self.region_fov_coordinates[well_id] =  scan_coordinates
 
+    def remove_region(self, well_id):
+        if well_id in self.region_centers:
+            del self.region_centers[well_id]
+
+            if well_id in self.region_fov_coordinates:
+                region_scan_coordinates = self.region_fov_coordinates.pop(well_id)
+                for coord in region_scan_coordinates:
+                    self.navigationViewer.deregister_fov_to_image(coord[0], coord[1])
+
+            print(f"Removed Region: {well_id}")
+
+    def clear_regions(self):
+        self.region_centers.clear()
+        self.region_fov_coordinates.clear()
+        self.navigationViewer.clear_overlay()
+        print("Cleared All Regions")
+
     def add_flexible_region(self, region_id, center_x, center_y, center_z, Nx, Ny, overlap_percent=10):
-        """Convert grid parameters (NX, NY) to FOV coordinates based on overlap"""
+        """Convert grid parameters NX, NY to FOV coordinates based on overlap"""
         fov_size_mm = (self.objectiveStore.get_pixel_size() / 1000) * Acquisition.CROP_WIDTH
         step_size_mm = fov_size_mm * (1 - overlap_percent/100)
 
@@ -4122,6 +4075,7 @@ class ScanCoordinates:
             print(f"Region Out of Bounds: {region_id}")
 
     def add_flexible_region_with_step_size(self, region_id, center_x, center_y, center_z, Nx, Ny, dx, dy):
+        """Convert grid parameters NX, NY to FOV coordinates based on dx, dy"""
         grid_width_mm = (Nx - 1) * dx
         grid_height_mm = (Ny - 1) * dy
 
@@ -4148,6 +4102,7 @@ class ScanCoordinates:
             print(f"Region Out of Bounds: {region_id}")
 
     def add_manual_region(self, shape_coords, overlap_percent):
+        """Add region from manually drawn polygon shape"""
         if shape_coords is None or len(shape_coords) < 3:
             print("Invalid manual ROI data")
             return []
@@ -4188,10 +4143,8 @@ class ScanCoordinates:
         for x, y in grid_points:
             if self.validate_coordinates(x, y) and self._is_in_polygon(x, y, shape_coords):
                 valid_points.append((x, y))
-
         if not valid_points:
             return []
-
         valid_points = np.array(valid_points)
 
         # Sort points
@@ -4236,6 +4189,18 @@ class ScanCoordinates:
         ]
         return all((cx - center_x)**2 + (cy - center_y)**2 <= radius_squared for cx, cy in corners)
 
+    def has_regions(self):
+        """Check if any regions exist"""
+        return len(self.region_centers) > 0
+
+    def validate_region(self, region_id):
+        """Validate a region exists"""
+        return region_id in self.region_centers and region_id in self.region_fov_coordinates
+
+    def validate_coordinates(self, x, y):
+        return (SOFTWARE_POS_LIMIT.X_NEGATIVE <= x <= SOFTWARE_POS_LIMIT.X_POSITIVE and
+                SOFTWARE_POS_LIMIT.Y_NEGATIVE <= y <= SOFTWARE_POS_LIMIT.Y_POSITIVE)
+
     def sort_coordinates(self):
         print(f"Acquisition pattern: {self.acquisition_pattern}")
 
@@ -4267,6 +4232,40 @@ class ScanCoordinates:
         self.region_fov_coordinates = {k: self.region_fov_coordinates[k]
                                             for k, _ in sorted_items
                                             if k in self.region_fov_coordinates}
+
+    def get_region_bounds(self, region_id):
+        """Get region boundaries"""
+        if not self.validate_region(region_id):
+            return None
+        fovs = np.array(self.region_fov_coordinates[region_id])
+        return {
+            'min_x': np.min(fovs[:,0]),
+            'max_x': np.max(fovs[:,0]),
+            'min_y': np.min(fovs[:,1]),
+            'max_y': np.max(fovs[:,1])
+        }
+
+    def update_fov_z_level(self, region_id, fov, new_z):
+        """Update z-level for a specific FOV and its region center"""
+        if not self.validate_region(region_id):
+            print(f"Region {region_id} not found")
+            return
+
+        # Update FOV coordinates
+        fov_coords = self.region_fov_coordinates[region_id]
+        if fov < len(fov_coords):
+            # Handle both (x,y) and (x,y,z) cases
+            x, y = fov_coords[fov][:2]  # Takes first two elements regardless of length
+            self.region_fov_coordinates[region_id][fov] = (x, y, new_z)
+
+        # If first FOV, update region center coordinates
+        if fov == 0:
+            if len(self.region_centers[region_id]) == 3:
+                self.region_centers[region_id][2] = new_z
+            else:
+                self.region_centers[region_id].append(new_z)
+
+        print(f"Updated z-level to {new_z} for region:{region_id}, fov:{fov}")
 
 
 class LaserAutofocusController(QObject):

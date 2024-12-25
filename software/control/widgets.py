@@ -3673,7 +3673,7 @@ class WellplateMultiPointWidget(QFrame):
                 x = self.navigationController.x_pos_mm
                 y = self.navigationController.y_pos_mm
                 z = self.navigationController.z_pos_mm
-                self.add_region('current', x, y, z, scan_size_mm, overlap_percent, shape)
+                self.scanCoordinates.add_region('current', x, y, z, scan_size_mm, overlap_percent, shape)
 
             # Calculate total number of positions for signal emission # not needed ever
             total_positions = sum(len(coords) for coords in self.scanCoordinates.region_fov_coordinates.values())
