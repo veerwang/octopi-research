@@ -853,8 +853,8 @@ class HighContentScreeningGui(QMainWindow):
         if is_wellplate_acquisition:
             if self.wellplateMultiPointWidget.combobox_shape.currentText() == 'Manual':
                 # trigger manual shape update
-                if self.wellplateMultiPointWidget.manual_shapes:
-                    self.wellplateMultiPointWidget.update_manual_shape(self.wellplateMultiPointWidget.manual_shapes)
+                if self.wellplateMultiPointWidget.shapes_mm:
+                    self.wellplateMultiPointWidget.update_manual_shape(self.wellplateMultiPointWidget.shapes_mm)
             else:
                 # trigger wellplate update
                 self.wellplateMultiPointWidget.update_coordinates()

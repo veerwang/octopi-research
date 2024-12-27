@@ -35,6 +35,7 @@ from datetime import datetime
 import time
 import subprocess
 import shutil
+import itertools
 from lxml import etree
 import json
 import math
@@ -2292,9 +2293,12 @@ class MultiPointWorker(QObject):
         iio.imwrite(os.path.join(current_path, file_name), rgb_image)
 
     def handle_acquisition_abort(self, current_path, region_id=0):
-        current_pos = (self.navigationController.x_pos_mm, self.navigationController.y_pos_mm, self.navigationController.z_pos_mm)
-        self.move_to_coordinate(self.scanCoordinates.region_centers.get(region_id, current_pos))
-        self.coordinates_pd.to_csv(os.path.join(current_path,'coordinates.csv'),index=False,header=True)
+        # Move to the current region center
+        region_center = self.scan_region_coords_mm[self.scan_region_names.index(region_id)]
+        self.move_to_coordinate(region_center)
+
+        # Save coordinates.csv
+        self.coordinates_pd.to_csv(os.path.join(current_path, 'coordinates.csv'), index=False, header=True)
         self.navigationController.enable_joystick_button_action = True
 
     def move_z_for_stack(self):
@@ -3957,9 +3961,7 @@ class ScanCoordinates:
             self.clear_regions()
 
     def set_manual_coordinates(self, manual_shapes, overlap_percent):
-        self.region_fov_coordinates.clear()
-        self.region_centers.clear()
-
+        self.clear_regions()
         if manual_shapes is not None:
             # Handle manual ROIs
             for i, shape_coords in enumerate(manual_shapes):

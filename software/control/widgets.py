@@ -2024,6 +2024,7 @@ class FlexibleMultiPointWidget(QFrame):
         self.setFrameStyle(QFrame.Panel | QFrame.Raised)
         self.is_current_acquisition_widget = False
         self.acquisition_in_place = False
+        self.parent = self.multipointController.parent
 
     def add_components(self):
 
@@ -2589,6 +2590,8 @@ class FlexibleMultiPointWidget(QFrame):
             self.eta_timer.stop()
 
     def update_fov_positions(self):
+        if self.parent.recordTabWidget.currentWidget() != self:
+            return
         if self.scanCoordinates.has_regions():
             self.scanCoordinates.clear_regions()
 
@@ -3531,14 +3534,14 @@ class WellplateMultiPointWidget(QFrame):
             self.update_coordinates()
 
     def update_manual_shape(self, shapes_data_mm):
-        if hasattr(self.parent, 'recordTabWidget') and self.parent.recordTabWidget.currentWidget() != self:
+        if self.parent.recordTabWidget.currentWidget() != self:
             return
 
         if shapes_data_mm and len(shapes_data_mm) > 0:
-            self.manual_shapes = shapes_data_mm
-            print(f"Manual ROIs updated with {len(self.manual_shapes)} shapes")
+            self.shapes_mm = shapes_data_mm
+            print(f"Manual ROIs updated with {len(self.shapes_mm)} shapes")
         else:
-            self.manual_shapes = None
+            self.shapes_mm = None
             print("No valid shapes found, cleared manual ROIs")
         self.update_coordinates()
 
@@ -3614,12 +3617,14 @@ class WellplateMultiPointWidget(QFrame):
         self.entry_maxZ.blockSignals(False)
 
     def update_coordinates(self):
+        if hasattr(self.parent, 'recordTabWidget') and self.parent.recordTabWidget.currentWidget() != self:
+            return
         scan_size_mm = self.entry_scan_size.value()
         overlap_percent = self.entry_overlap.value()
         shape = self.combobox_shape.currentText()
 
         if shape == 'Manual':
-            self.scanCoordinates.set_manual_coordinates()
+            self.scanCoordinates.set_manual_coordinates(self.shapes_mm, overlap_percent)
 
         elif 'glass slide' in self.navigationViewer.sample:
             x = self.navigationController.x_pos_mm
@@ -3631,6 +3636,8 @@ class WellplateMultiPointWidget(QFrame):
             self.scanCoordinates.set_well_coordinates(scan_size_mm, overlap_percent, shape)
 
     def update_well_coordinates(self, selected):
+        if self.parent.recordTabWidget.currentWidget() != self:
+            return
         if selected:
             scan_size_mm = self.entry_scan_size.value()
             overlap_percent = self.entry_overlap.value()
@@ -3673,7 +3680,7 @@ class WellplateMultiPointWidget(QFrame):
                 x = self.navigationController.x_pos_mm
                 y = self.navigationController.y_pos_mm
                 z = self.navigationController.z_pos_mm
-                self.scanCoordinates.add_region('current', x, y, z, scan_size_mm, overlap_percent, shape)
+                self.scanCoordinates.add_region('current', x, y, scan_size_mm, overlap_percent, shape)
 
             # Calculate total number of positions for signal emission # not needed ever
             total_positions = sum(len(coords) for coords in self.scanCoordinates.region_fov_coordinates.values())
