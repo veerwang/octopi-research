@@ -288,82 +288,22 @@ class HighContentScreeningGui(QMainWindow):
             self.emission_filter_wheel.start_homing()
         if USE_OPTOSPIN_EMISSION_FILTER_WHEEL:
             self.emission_filter_wheel.set_speed(OPTOSPIN_EMISSION_FILTER_WHEEL_SPEED_HZ)
+
         if not self.microcontroller:
             raise ValueError("Microcontroller must be none-None for hardware setup.")
-
-        self.microcontroller.reset()
-        time.sleep(0.5)
-        if USE_SQUID_FILTERWHEEL:
-            self.microcontroller.init_filter_wheel()
-            time.sleep(0.5)
-        self.microcontroller.initialize_drivers()
-        time.sleep(0.5)
-
-        self.microcontroller.configure_actuators()
-        if USE_SQUID_FILTERWHEEL:
-            self.microcontroller.configure_squidfilter()
-        time.sleep(0.5)
-
-        if HAS_ENCODER_X:
-            self.navigationController.set_axis_PID_arguments(0, PID_P_X, PID_I_X, PID_D_X)
-            self.navigationController.configure_encoder(0, (SCREW_PITCH_X_MM * 1000) / ENCODER_RESOLUTION_UM_X, ENCODER_FLIP_DIR_X)
-            self.navigationController.set_pid_control_enable(0, ENABLE_PID_X)
-        if HAS_ENCODER_Y:
-            self.navigationController.set_axis_PID_arguments(1, PID_P_Y, PID_I_Y, PID_D_Y)
-            self.navigationController.configure_encoder(1, (SCREW_PITCH_Y_MM * 1000) / ENCODER_RESOLUTION_UM_Y, ENCODER_FLIP_DIR_Y)
-            self.navigationController.set_pid_control_enable(1, ENABLE_PID_Y)
-        if HAS_ENCODER_Z:
-            self.navigationController.set_axis_PID_arguments(2, PID_P_Z, PID_I_Z, PID_D_Z)
-            self.navigationController.configure_encoder(2, (SCREW_PITCH_Z_MM * 1000) / ENCODER_RESOLUTION_UM_Z, ENCODER_FLIP_DIR_Z)
-            self.navigationController.set_pid_control_enable(2, ENABLE_PID_Z)
-        if USE_SQUID_FILTERWHEEL:
-            if HAS_ENCODER_W:
-                self.navigationController.set_axis_PID_arguments(3, PID_P_W, PID_I_W, PID_D_W)
-                self.navigationController.configure_encoder(3, 4000, ENCODER_FLIP_DIR_W)
-                self.navigationController.set_pid_control_enable(3, ENABLE_PID_W)
-        time.sleep(0.5)
-
-        self.navigationController.set_x_limit_pos_mm(SOFTWARE_POS_LIMIT.X_POSITIVE)
-        self.navigationController.set_x_limit_neg_mm(SOFTWARE_POS_LIMIT.X_NEGATIVE)
-        self.navigationController.set_y_limit_pos_mm(SOFTWARE_POS_LIMIT.Y_POSITIVE)
-        self.navigationController.set_y_limit_neg_mm(SOFTWARE_POS_LIMIT.Y_NEGATIVE)
-        self.navigationController.set_z_limit_pos_mm(SOFTWARE_POS_LIMIT.Z_POSITIVE)
-        self.navigationController.set_z_limit_neg_mm(SOFTWARE_POS_LIMIT.Z_NEGATIVE)
-
-        if HOMING_ENABLED_Z:
-            self.navigationController.home_z()
-            self.waitForMicrocontroller(10, 'z homing timeout')
-        if HOMING_ENABLED_X and HOMING_ENABLED_Y:
-            self.navigationController.move_x(20)
-            self.waitForMicrocontroller()
-            self.navigationController.home_y()
-            self.waitForMicrocontroller(10, 'y homing timeout')
-            self.navigationController.zero_y()
-            self.navigationController.home_x()
-            self.waitForMicrocontroller(10, 'x homing timeout')
-            self.navigationController.zero_x()
-            self.slidePositionController.homing_done = True
-        if USE_ZABER_EMISSION_FILTER_WHEEL:
-            self.emission_filter_wheel.wait_for_homing_complete()
-        if HOMING_ENABLED_X and HOMING_ENABLED_Y:
-            self.navigationController.move_x(20)
-            self.waitForMicrocontroller()
-            self.navigationController.move_y(20)
-            self.waitForMicrocontroller()
-        
-        if ENABLE_OBJECTIVE_PIEZO:
-            OUTPUT_GAINS.CHANNEL7_GAIN = (OBJECTIVE_PIEZO_CONTROL_VOLTAGE_RANGE == 5)
-        div = 1 if OUTPUT_GAINS.REFDIV else 0
-        gains = sum(getattr(OUTPUT_GAINS, f'CHANNEL{i}_GAIN') << i for i in range(8))
-        self.microcontroller.configure_dac80508_refdiv_and_gain(div, gains)
-        self.microcontroller.set_dac80508_scaling_factor_for_illumination(ILLUMINATION_INTENSITY_FACTOR)
 
         try:
             self.microcontroller.reset()
             time.sleep(0.5)
             self.microcontroller.initialize_drivers()
             time.sleep(0.5)
+            if USE_SQUID_FILTERWHEEL:
+                self.microcontroller.init_filter_wheel()
+                time.sleep(0.5)
+
             self.microcontroller.configure_actuators()
+            if USE_SQUID_FILTERWHEEL:
+                self.microcontroller.configure_squidfilter()
 
             if HAS_ENCODER_X:
                 self.navigationController.set_axis_PID_arguments(0, PID_P_X, PID_I_X, PID_D_X)
@@ -377,6 +317,11 @@ class HighContentScreeningGui(QMainWindow):
                 self.navigationController.set_axis_PID_arguments(2, PID_P_Z, PID_I_Z, PID_D_Z)
                 self.navigationController.configure_encoder(2, (SCREW_PITCH_Z_MM * 1000) / ENCODER_RESOLUTION_UM_Z, ENCODER_FLIP_DIR_Z)
                 self.navigationController.set_pid_control_enable(2, ENABLE_PID_Z)
+            if USE_SQUID_FILTERWHEEL:
+                if HAS_ENCODER_W:
+                    self.navigationController.set_axis_PID_arguments(3, PID_P_W, PID_I_W, PID_D_W)
+                    self.navigationController.configure_encoder(3, 4000, ENCODER_FLIP_DIR_W)
+                    self.navigationController.set_pid_control_enable(3, ENABLE_PID_W)
             time.sleep(0.5)
 
             self.navigationController.set_x_limit_pos_mm(SOFTWARE_POS_LIMIT.X_POSITIVE)
