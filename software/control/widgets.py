@@ -553,9 +553,9 @@ class FocusMapWidget(QWidget):
         self.init_ui()
 
     def init_ui(self):
-        self.btn_add_to_focusmap = QPushButton("Add to af map")
-        self.btn_enable_focusmap = QPushButton("Enable af map")
-        self.btn_clear_focusmap = QPushButton("Clear af map")
+        self.btn_add_to_focusmap = QPushButton("Add to focus map")
+        self.btn_enable_focusmap = QPushButton("Enable focus map")
+        self.btn_clear_focusmap = QPushButton("Clear focus map")
         self.fmap_coord_1 = QLabel("Focus Map Point 1: (xxx,yyy,zzz)")
         self.fmap_coord_2 = QLabel("Focus Map Point 2: (xxx,yyy,zzz)")
         self.fmap_coord_3 = QLabel("Focus Map Point 3: (xxx,yyy,zzz)")
@@ -590,7 +590,7 @@ class FocusMapWidget(QWidget):
 
     def clear_focusmap(self):
         self.disable_all_buttons()
-        self.autofocusController.clear_focusmap()
+        self.autofocusController.clear_focus_map()
         self.update_focusmap_display()
         self.btn_enable_focusmap.setText("Enable Focus Map")
         self.enable_all_buttons()
@@ -600,28 +600,28 @@ class FocusMapWidget(QWidget):
         self.fmap_coord_2.setText("Focus Map Point 2: (xxx,yyy,zzz)")
         self.fmap_coord_3.setText("Focus Map Point 3: (xxx,yyy,zzz)")
         try:
-            x,y,z = self.autofocusController.focusmap_coords[0]
+            x,y,z = self.autofocusController.focus_map_coords[0]
             self.fmap_coord_1.setText(f"Focus Map Point 1: ({x:.3f},{y:.3f},{z:.3f})")
         except IndexError:
             pass
         try:
-            x,y,z = self.autofocusController.focusmap_coords[1]
+            x,y,z = self.autofocusController.focus_map_coords[1]
             self.fmap_coord_2.setText(f"Focus Map Point 2: ({x:.3f},{y:.3f},{z:.3f})")
         except IndexError:
             pass
         try:
-            x,y,z = self.autofocusController.focusmap_coords[2]
+            x,y,z = self.autofocusController.focus_map_coords[2]
             self.fmap_coord_3.setText(f"Focus Map Point 3: ({x:.3f},{y:.3f},{z:.3f})")
         except IndexError:
             pass
 
     def enable_focusmap(self):
         self.disable_all_buttons()
-        if self.autofocusController.use_focusmap == False:
-            self.autofocusController.set_focusmap_use(True)
+        if self.autofocusController.use_focus_map == False:
+            self.autofocusController.set_focus_map_use(True)
         else:
-            self.autofocusController.set_focusmap_use(False)
-        if self.autofocusController.use_focusmap:
+            self.autofocusController.set_focus_map_use(False)
+        if self.autofocusController.use_focus_map:
             self.btn_enable_focusmap.setText("Disable Focus Map")
         else:
             self.btn_enable_focusmap.setText("Enable Focus Map")
@@ -630,7 +630,7 @@ class FocusMapWidget(QWidget):
     def add_to_focusmap(self):
         self.disable_all_buttons()
         try:
-            self.autofocusController.add_current_coords_to_focusmap()
+            self.autofocusController.add_current_coords_to_focus_map()
         except ValueError:
             pass
         self.update_focusmap_display()
