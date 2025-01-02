@@ -22,6 +22,7 @@ import squid.stage.prior
 import squid.stage.cephla
 import squid.stage.utils
 import control.microscope
+from control.microscope import LightSourceType, IntensityControlMode, ShutterControlMode
 
 log = squid.logging.get_logger(__name__)
 
@@ -175,6 +176,7 @@ class HighContentScreeningGui(QMainWindow):
             settings_menu.addAction(led_matrix_action)
 
     def loadObjects(self, is_simulation):
+        self.illuminationController = None
         if is_simulation:
             self.loadSimulationObjects()
         else:
@@ -189,9 +191,10 @@ class HighContentScreeningGui(QMainWindow):
         self.configurationManager = core.ConfigurationManager(filename='./channel_configurations.xml')
         self.contrastManager = core.ContrastManager()
         self.streamHandler = core.StreamHandler(display_resolution_scaling=DEFAULT_DISPLAY_CROP/100)
-        self.liveController = core.LiveController(self.camera, self.microcontroller, self.configurationManager, parent=self)
-
+        self.liveController = core.LiveController(self.camera, self.microcontroller, self.configurationManager, self.illuminationController, parent=self)
         self.stage: squid.abc.AbstractStage = squid.stage.cephla.CephlaStage(microcontroller = self.microcontroller, stage_config = squid.config.get_stage_config())
+        self.slidePositionController = core.SlidePositionController(self.stage, self.liveController, is_for_wellplate=True)
+        self.autofocusController = core.AutoFocusController(self.camera, self.stage, self.liveController, self.microcontroller)
         self.slidePositionController = core.SlidePositionController(self.stage, self.liveController, is_for_wellplate=True)
         self.autofocusController = core.AutoFocusController(self.camera, self.stage, self.liveController, self.microcontroller)
         self.imageSaver = core.ImageSaver()
@@ -219,6 +222,7 @@ class HighContentScreeningGui(QMainWindow):
 
     def loadSimulationObjects(self):
         self.log.debug("Loading simulated hardware objects...")
+        self.microcontroller = microcontroller.Microcontroller(existing_serial=microcontroller.SimSerial())
         # Initialize simulation objects
         if ENABLE_SPINNING_DISK_CONFOCAL:
             self.xlight = serial_peripherals.XLight_Simulation()
@@ -231,19 +235,24 @@ class HighContentScreeningGui(QMainWindow):
             self.camera_focus = camera_fc.Camera_Simulation()
         if USE_LDI_SERIAL_CONTROL:
             self.ldi = serial_peripherals.LDI_Simulation()
+            self.illuminationController = control.microscope.IlluminationController(self.microcontroller, self.ldi.intensity_mode, self.ldi.shutter_mode, LightSourceType.LDI, self.ldi)
         self.camera = camera.Camera_Simulation(rotate_image_angle=ROTATE_IMAGE_ANGLE, flip_image=FLIP_IMAGE)
         self.camera.set_pixel_format(DEFAULT_PIXEL_FORMAT)
         if USE_ZABER_EMISSION_FILTER_WHEEL:
             self.emission_filter_wheel = serial_peripherals.FilterController_Simulation(115200, 8, serial.PARITY_NONE, serial.STOPBITS_ONE)
         if USE_OPTOSPIN_EMISSION_FILTER_WHEEL:
-            self.emission_filter_wheel = serial_peripherals.Optospin_Simulation(SN=None)
-
-        self.microcontroller = microcontroller.Microcontroller(existing_serial=microcontroller.SimSerial())
+            self.emission_filter_wheel = serial_peripherals.Optospin_Simulation(SN=None)        
         if USE_SQUID_FILTERWHEEL:
             self.squid_filter_wheel = filterwheel.SquidFilterWheelWrapper_Simulation(None)
 
     def loadHardwareObjects(self):
         # Initialize hardware objects
+        try:
+            self.microcontroller = microcontroller.Microcontroller(version=CONTROLLER_VERSION, sn=CONTROLLER_SN)
+        except Exception:
+            self.log.error(f"Error initializing Microcontroller")
+            raise
+
         if ENABLE_SPINNING_DISK_CONFOCAL:
             try:
                 self.xlight = serial_peripherals.XLight(XLIGHT_SERIAL_NUMBER, XLIGHT_SLEEP_TIME_FOR_WHEEL)
@@ -272,11 +281,18 @@ class HighContentScreeningGui(QMainWindow):
         if USE_LDI_SERIAL_CONTROL:
             try:
                 self.ldi = serial_peripherals.LDI()
-                self.ldi.run()
-                self.ldi.set_intensity_mode(LDI_INTENSITY_MODE)
-                self.ldi.set_shutter_mode(LDI_SHUTTER_MODE)
+                self.illuminationController = control.microscope.IlluminationController(self.microcontroller, self.ldi.intensity_mode, self.ldi.shutter_mode, LightSourceType.LDI, self.ldi)
             except Exception:
                 self.log.error("Error initializing LDI")
+                raise
+
+        if USE_CELESTA_ETHENET_CONTROL:
+            try:
+                import control.celesta
+                self.celesta = control.celesta.CELESTA()
+                self.illuminationController = control.microscope.IlluminationController(self.microcontroller, IntensityControlMode.Software, ShutterControlMode.TTL, LightSourceType.CELESTA, self.celesta)
+            except Exception:
+                self.log.error("Error initializing CELESTA")
                 raise
 
         if SUPPORT_LASER_AUTOFOCUS:
@@ -318,12 +334,6 @@ class HighContentScreeningGui(QMainWindow):
             except Exception:
                 self.log.error("Error initializing Prior Stage")
                 raise
-
-        try:
-            self.microcontroller = microcontroller.Microcontroller(version=CONTROLLER_VERSION, sn=CONTROLLER_SN)
-        except Exception:
-            self.log.error(f"Error initializing Microcontroller")
-            raise
 
     def setupHardware(self):
         # Setup hardware components
