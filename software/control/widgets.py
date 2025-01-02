@@ -545,7 +545,7 @@ class ObjectivesWidget(QWidget):
         self.signal_objective_changed.emit()
 
 
-class AutoFocusMapWidget(QWidget):
+class FocusMapWidget(QWidget):
 
     def __init__(self, autofocusController, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -553,9 +553,9 @@ class AutoFocusMapWidget(QWidget):
         self.init_ui()
 
     def init_ui(self):
-        self.btn_add_to_af_map = QPushButton("Add to af map")
-        self.btn_enable_af_map = QPushButton("Enable af map")
-        self.btn_clear_af_map = QPushButton("Clear af map")
+        self.btn_add_to_focusmap = QPushButton("Add to af map")
+        self.btn_enable_focusmap = QPushButton("Enable af map")
+        self.btn_clear_focusmap = QPushButton("Clear af map")
         self.fmap_coord_1 = QLabel("Focus Map Point 1: (xxx,yyy,zzz)")
         self.fmap_coord_2 = QLabel("Focus Map Point 2: (xxx,yyy,zzz)")
         self.fmap_coord_3 = QLabel("Focus Map Point 3: (xxx,yyy,zzz)")
@@ -565,75 +565,75 @@ class AutoFocusMapWidget(QWidget):
         layout.addWidget(self.fmap_coord_3)
 
         button_layout = QHBoxLayout()
-        button_layout.addWidget(self.btn_add_to_af_map)
-        button_layout.addWidget(self.btn_clear_af_map)
+        button_layout.addWidget(self.btn_add_to_focusmap)
+        button_layout.addWidget(self.btn_clear_focusmap)
 
         layout.addLayout(button_layout)
 
-        layout.addWidget(self.btn_enable_af_map)
+        layout.addWidget(self.btn_enable_focusmap)
 
         self.setLayout(layout)
 
-        self.btn_add_to_af_map.clicked.connect(self.add_to_af_map)
-        self.btn_enable_af_map.clicked.connect(self.enable_af_map)
-        self.btn_clear_af_map.clicked.connect(self.clear_af_map)
+        self.btn_add_to_focusmap.clicked.connect(self.add_to_focusmap)
+        self.btn_enable_focusmap.clicked.connect(self.enable_focusmap)
+        self.btn_clear_focusmap.clicked.connect(self.clear_focusmap)
 
     def disable_all_buttons(self):
-        self.btn_add_to_af_map.setEnabled(False)
-        self.btn_enable_af_map.setEnabled(False)
-        self.btn_clear_af_map.setEnabled(False)
+        self.btn_add_to_focusmap.setEnabled(False)
+        self.btn_enable_focusmap.setEnabled(False)
+        self.btn_clear_focusmap.setEnabled(False)
 
     def enable_all_buttons(self):
-        self.btn_add_to_af_map.setEnabled(True)
-        self.btn_enable_af_map.setEnabled(True)
-        self.btn_clear_af_map.setEnabled(True)
+        self.btn_add_to_focusmap.setEnabled(True)
+        self.btn_enable_focusmap.setEnabled(True)
+        self.btn_clear_focusmap.setEnabled(True)
 
-    def clear_af_map(self):
+    def clear_focusmap(self):
         self.disable_all_buttons()
-        self.autofocusController.clear_af_map()
-        self.update_af_map_display()
-        self.btn_enable_af_map.setText("Enable AF Map")
+        self.autofocusController.clear_focusmap()
+        self.update_focusmap_display()
+        self.btn_enable_focusmap.setText("Enable Focus Map")
         self.enable_all_buttons()
 
-    def update_af_map_display(self):
-        self.fmap_coord_1.setText("AF Map Point 1: (xxx,yyy,zzz)")
-        self.fmap_coord_2.setText("AF Map Point 2: (xxx,yyy,zzz)")
-        self.fmap_coord_3.setText("AF Map Point 3: (xxx,yyy,zzz)")
+    def update_focusmap_display(self):
+        self.fmap_coord_1.setText("Focus Map Point 1: (xxx,yyy,zzz)")
+        self.fmap_coord_2.setText("Focus Map Point 2: (xxx,yyy,zzz)")
+        self.fmap_coord_3.setText("Focus Map Point 3: (xxx,yyy,zzz)")
         try:
-            x,y,z = self.autofocusController.af_map_coords[0]
-            self.fmap_coord_1.setText(f"AF Map Point 1: ({x:.3f},{y:.3f},{z:.3f})")
+            x,y,z = self.autofocusController.focusmap_coords[0]
+            self.fmap_coord_1.setText(f"Focus Map Point 1: ({x:.3f},{y:.3f},{z:.3f})")
         except IndexError:
             pass
         try:
-            x,y,z = self.autofocusController.af_map_coords[1]
-            self.fmap_coord_2.setText(f"AF Map Point 2: ({x:.3f},{y:.3f},{z:.3f})")
+            x,y,z = self.autofocusController.focusmap_coords[1]
+            self.fmap_coord_2.setText(f"Focus Map Point 2: ({x:.3f},{y:.3f},{z:.3f})")
         except IndexError:
             pass
         try:
-            x,y,z = self.autofocusController.af_map_coords[2]
-            self.fmap_coord_3.setText(f"AF Map Point 3: ({x:.3f},{y:.3f},{z:.3f})")
+            x,y,z = self.autofocusController.focusmap_coords[2]
+            self.fmap_coord_3.setText(f"Focus Map Point 3: ({x:.3f},{y:.3f},{z:.3f})")
         except IndexError:
             pass
 
-    def enable_af_map(self):
+    def enable_focusmap(self):
         self.disable_all_buttons()
-        if self.autofocusController.use_af_map == False:
-            self.autofocusController.set_af_map_use(True)
+        if self.autofocusController.use_focusmap == False:
+            self.autofocusController.set_focusmap_use(True)
         else:
-            self.autofocusController.set_af_map_use(False)
-        if self.autofocusController.use_af_map:
-            self.btn_enable_af_map.setText("Disable AF Map")
+            self.autofocusController.set_focusmap_use(False)
+        if self.autofocusController.use_focusmap:
+            self.btn_enable_focusmap.setText("Disable Focus Map")
         else:
-            self.btn_enable_af_map.setText("Enable AF Map")
+            self.btn_enable_focusmap.setText("Enable Focus Map")
         self.enable_all_buttons()
 
-    def add_to_af_map(self):
+    def add_to_focusmap(self):
         self.disable_all_buttons()
         try:
-            self.autofocusController.add_current_coords_to_af_map()
+            self.autofocusController.add_current_coords_to_focusmap()
         except ValueError:
             pass
-        self.update_af_map_display()
+        self.update_focusmap_display()
         self.enable_all_buttons()
 
 
@@ -2050,11 +2050,11 @@ class FlexibleMultiPointWidget(QFrame):
         self.checkbox_withReflectionAutofocus.setChecked(MULTIPOINT_REFLECTION_AUTOFOCUS_ENABLE_BY_DEFAULT)
         self.multipointController.set_reflection_af_flag(MULTIPOINT_REFLECTION_AUTOFOCUS_ENABLE_BY_DEFAULT)
 
-        self.checkbox_genAFMap = QCheckBox('AF Map')
+        self.checkbox_genAFMap = QCheckBox('Generate Focus Map')
         self.checkbox_genAFMap.setChecked(False)
 
-        self.checkbox_genFocusMap = QCheckBox('Focus Map')
-        self.checkbox_genFocusMap.setChecked(False)
+        self.checkbox_useFocusMap = QCheckBox('Use Focus Map')
+        self.checkbox_useFocusMap.setChecked(False)
 
         self.checkbox_usePiezo = QCheckBox('Piezo Z-Stack')
         self.checkbox_usePiezo.setChecked(MULTIPOINT_USE_PIEZO_FOR_ZSTACKS)
@@ -2210,7 +2210,7 @@ class FlexibleMultiPointWidget(QFrame):
         if SUPPORT_LASER_AUTOFOCUS:
             grid_af.addWidget(self.checkbox_withReflectionAutofocus)
         grid_af.addWidget(self.checkbox_genAFMap)
-        grid_af.addWidget(self.checkbox_genFocusMap)
+        grid_af.addWidget(self.checkbox_useFocusMap)
         if ENABLE_OBJECTIVE_PIEZO:
             grid_af.addWidget(self.checkbox_usePiezo)
         grid_af.addWidget(self.checkbox_set_z_range)
@@ -2282,8 +2282,8 @@ class FlexibleMultiPointWidget(QFrame):
         self.entry_NZ.valueChanged.connect(self.multipointController.set_NZ)
         self.entry_NZ.valueChanged.connect(self.signal_stitcher_z_levels.emit)
         self.entry_Nt.valueChanged.connect(self.multipointController.set_Nt)
-        self.checkbox_genAFMap.toggled.connect(self.multipointController.set_gen_af_map_flag)
-        self.checkbox_genFocusMap.toggled.connect(self.focusMapWidget.setEnabled)
+        self.checkbox_genAFMap.toggled.connect(self.multipointController.set_gen_focus_map_flag)
+        self.checkbox_useFocusMap.toggled.connect(self.focusMapWidget.setEnabled)
         self.checkbox_withAutofocus.toggled.connect(self.multipointController.set_af_flag)
         self.checkbox_withReflectionAutofocus.toggled.connect(self.multipointController.set_reflection_af_flag)
         self.checkbox_usePiezo.toggled.connect(self.multipointController.set_use_piezo)
@@ -2545,7 +2545,7 @@ class FlexibleMultiPointWidget(QFrame):
                 Nz = self.entry_NZ.value()
                 self.multipointController.set_z_range(z, z + dz * (Nz - 1))
 
-            if self.checkbox_genFocusMap.isChecked():
+            if self.checkbox_useFocusMap.isChecked():
                 self.focusMapWidget.fit_surface()
                 self.multipointController.set_focus_map(self.focusMapWidget.focusMap)
             else:
@@ -2939,7 +2939,7 @@ class FlexibleMultiPointWidget(QFrame):
             self.entry_overlap.setEnabled(enabled)
         self.list_configurations.setEnabled(enabled)
         self.checkbox_genAFMap.setEnabled(enabled)
-        self.checkbox_genFocusMap.setEnabled(enabled)
+        self.checkbox_useFocusMap.setEnabled(enabled)
         self.checkbox_withAutofocus.setEnabled(enabled)
         self.checkbox_withReflectionAutofocus.setEnabled(enabled)
         self.checkbox_stitchOutput.setEnabled(enabled)
@@ -3094,12 +3094,11 @@ class WellplateMultiPointWidget(QFrame):
         self.combobox_shape.setFixedWidth(btn_width)
         #self.combobox_shape.currentTextChanged.connect(self.on_shape_changed)
 
-        self.checkbox_genAFMap = QCheckBox('AF Map')
-        #self.checkbox_genAFMap = QCheckBox('AF Map')
+        self.checkbox_genAFMap = QCheckBox('Generate Focus Map')
         self.checkbox_genAFMap.setChecked(False)
 
-        self.checkbox_genFocusMap = QCheckBox('Focus Map')
-        self.checkbox_genFocusMap.setChecked(False)
+        self.checkbox_useFocusMap = QCheckBox('Use Focus Map')
+        self.checkbox_useFocusMap.setChecked(False)
 
         self.checkbox_withAutofocus = QCheckBox('Contrast AF')
         self.checkbox_withAutofocus.setChecked(MULTIPOINT_CONTRAST_AUTOFOCUS_ENABLE_BY_DEFAULT)
@@ -3212,7 +3211,7 @@ class WellplateMultiPointWidget(QFrame):
         if SUPPORT_LASER_AUTOFOCUS:
             options_layout.addWidget(self.checkbox_withReflectionAutofocus)
         options_layout.addWidget(self.checkbox_genAFMap)
-        options_layout.addWidget(self.checkbox_genFocusMap)
+        options_layout.addWidget(self.checkbox_useFocusMap)
         if ENABLE_OBJECTIVE_PIEZO:
             options_layout.addWidget(self.checkbox_usePiezo)
         options_layout.addWidget(self.checkbox_set_z_range)
@@ -3257,8 +3256,8 @@ class WellplateMultiPointWidget(QFrame):
         self.combobox_shape.currentTextChanged.connect(self.reset_coordinates)
         self.checkbox_withAutofocus.toggled.connect(self.multipointController.set_af_flag)
         self.checkbox_withReflectionAutofocus.toggled.connect(self.multipointController.set_reflection_af_flag)
-        self.checkbox_genAFMap.toggled.connect(self.multipointController.set_gen_af_map_flag)
-        self.checkbox_genFocusMap.toggled.connect(self.focusMapWidget.setEnabled)
+        self.checkbox_genAFMap.toggled.connect(self.multipointController.set_gen_focus_map_flag)
+        self.checkbox_useFocusMap.toggled.connect(self.focusMapWidget.setEnabled)
         self.checkbox_usePiezo.toggled.connect(self.multipointController.set_use_piezo)
         self.checkbox_stitchOutput.toggled.connect(self.display_stitcher_widget)
         self.list_configurations.itemSelectionChanged.connect(self.emit_selected_channels)
@@ -3594,14 +3593,14 @@ class WellplateMultiPointWidget(QFrame):
                 Nz = self.entry_NZ.value()
                 self.multipointController.set_z_range(z, z + dz * (Nz - 1))
 
-            if self.checkbox_genFocusMap.isChecked():
+            if self.checkbox_useFocusMap.isChecked():
                 # Try to fit the surface
                 if self.focusMapWidget.fit_surface():
                     # If fit successful, set the surface fitter in controller
                     self.multipointController.set_focus_map(self.focusMapWidget.focusMap)
                 else:
                     # If fit failed, uncheck the box and show warning
-                    self.checkbox_genFocusMap.setChecked(False)
+                    self.checkbox_useFocusMap.setChecked(False)
                     QMessageBox.warning(self, "Warning", "Failed to fit focus surface - need at least 4 focus points")
                     self.btn_startAcquisition.setChecked(False)
                     return

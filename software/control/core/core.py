@@ -1049,8 +1049,8 @@ class AutoFocusController(QObject):
         self.crop_width = AF.CROP_WIDTH
         self.crop_height = AF.CROP_HEIGHT
         self.autofocus_in_progress = False
-        self.af_map_coords = []
-        self.use_af_map = False
+        self.focus_map_coords = []
+        self.use_focus_map = False
 
     def set_N(self,N):
         self.N = N
@@ -1062,16 +1062,16 @@ class AutoFocusController(QObject):
         self.crop_width = crop_width
         self.crop_height = crop_height
 
-    def autofocus(self, af_map_override=False):
+    def autofocus(self, focus_map_override=False):
         # TODO(imo): We used to have the joystick button wired up to autofocus, but took it out in a refactor.  It needs to be restored.
-        if self.use_af_map and (not af_map_override):
+        if self.use_focus_map and (not focus_map_override):
             self.autofocus_in_progress = True
 
             self.stage.wait_for_idle(1.0)
             pos = self.stage.get_pos()
 
             # z here is in mm because that's how the navigation controller stores it
-            target_z = utils.interpolate_plane(*self.af_map_coords[:3], (pos.x_mm, pos.y_mm))
+            target_z = utils.interpolate_plane(*self.focus_map_coords[:3], (pos.x_mm, pos.y_mm))
             print(f"Interpolated target z as {target_z} mm from focus map, moving there.")
             self.stage.move_z_to(target_z)
             self.autofocus_in_progress = False
@@ -1143,34 +1143,34 @@ class AutoFocusController(QObject):
             time.sleep(0.005)
         print('autofocus wait has completed, exit wait')
 
-    def set_af_map_use(self, enable):
+    def set_focus_map_use(self, enable):
         if not enable:
             print("Disabling focus map.")
-            self.use_af_map = False
+            self.use_focus_map = False
             return
-        if len(self.af_map_coords) < 3:
+        if len(self.focus_map_coords) < 3:
             print("Not enough coordinates (less than 3) for focus map generation, disabling focus map.")
-            self.use_af_map = False
+            self.use_focus_map = False
             return
-        x1,y1,_ = self.af_map_coords[0]
-        x2,y2,_ = self.af_map_coords[1]
-        x3,y3,_ = self.af_map_coords[2]
+        x1,y1,_ = self.focus_map_coords[0]
+        x2,y2,_ = self.focus_map_coords[1]
+        x3,y3,_ = self.focus_map_coords[2]
 
         detT = (y2 - y3) * (x1 - x3) + (x3 - x2) * (y1 - y3)
         if detT == 0:
             print("Your 3 x-y coordinates are linear, cannot use to interpolate, disabling focus map.")
-            self.use_af_map = False
+            self.use_focus_map = False
             return
 
         if enable:
             print("Enabling focus map.")
-            self.use_af_map = True
+            self.use_focus_map = True
 
-    def clear_af_map(self):
-        self.af_map_coords = []
-        self.set_af_map_use(False)
+    def clear_focus_map(self):
+        self.focus_map_coords = []
+        self.set_focus_map_use(False)
 
-    def gen_af_map(self, coord1,coord2,coord3):
+    def gen_focus_map(self, coord1,coord2,coord3):
         """
         Navigate to 3 coordinates and get your focus-map coordinates
         by autofocusing there and saving the z-values.
@@ -1184,7 +1184,7 @@ class AutoFocusController(QObject):
         if detT == 0:
             raise ValueError("Your 3 x-y coordinates are linear")
 
-        self.af_map_coords = []
+        self.focus_map_coords = []
 
         for coord in [coord1,coord2,coord3]:
             print(f"Navigating to coordinates ({coord[0]},{coord[1]}) to sample for focus map")
@@ -1197,12 +1197,12 @@ class AutoFocusController(QObject):
             pos = self.stage.get_pos()
 
             print(f"Adding coordinates ({pos.x_mm},{pos.y_mm},{pos.z_mm}) to focus map")
-            self.af_map_coords.append((pos.x_mm, pos.y_mm, pos.z_mm))
+            self.focus_map_coords.append((pos.x_mm, pos.y_mm, pos.z_mm))
 
         print("Generated focus map.")
 
-    def add_current_coords_to_af_map(self):
-        if len(self.af_map_coords) >= 3:
+    def add_current_coords_to_focus_map(self):
+        if len(self.focus_map_coords) >= 3:
             print("Replacing last coordinate on focus map.")
         self.stage.wait_for_idle(timeout_s=0.5)
         print("Autofocusing")
@@ -1212,18 +1212,18 @@ class AutoFocusController(QObject):
         x = pos.x_mm
         y = pos.y_mm
         z = pos.z_mm
-        if len(self.af_map_coords) >= 2:
-            x1,y1,_ = self.af_map_coords[0]
-            x2,y2,_ = self.af_map_coords[1]
+        if len(self.focus_map_coords) >= 2:
+            x1,y1,_ = self.focus_map_coords[0]
+            x2,y2,_ = self.focus_map_coords[1]
             x3 = x
             y3 = y
 
             detT = (y2-y3) * (x1-x3) + (x3-x2) * (y1-y3)
             if detT == 0:
                 raise ValueError("Your 3 x-y coordinates are linear. Navigate to a different coordinate or clear and try again.")
-        if len(self.af_map_coords) >= 3:
-            self.af_map_coords.pop()
-        self.af_map_coords.append((x,y,z))
+        if len(self.focus_map_coords) >= 3:
+            self.focus_map_coords.pop()
+        self.focus_map_coords.append((x,y,z))
         print(f"Added triple ({x},{y},{z}) to focus map")
 
 
@@ -1597,7 +1597,7 @@ class MultiPointWorker(QObject):
                 configuration_name_AF = MULTIPOINT_AUTOFOCUS_CHANNEL
                 config_AF = next((config for config in self.configurationManager.configurations if config.name == configuration_name_AF))
                 self.signal_current_configuration.emit(config_AF)
-                if (self.af_fov_count % Acquisition.NUMBER_OF_FOVS_PER_AF == 0) or self.autofocusController.use_af_map:
+                if (self.af_fov_count % Acquisition.NUMBER_OF_FOVS_PER_AF == 0) or self.autofocusController.use_focus_map:
                     self.autofocusController.autofocus()
                     self.autofocusController.wait_till_autofocus_has_completed()
         else:
@@ -1963,8 +1963,8 @@ class MultiPointController(QObject):
         self.deltat = 0
         self.do_autofocus = False
         self.do_reflection_af = False
-        self.gen_af_map = False
-        self.af_map_storage = []
+        self.gen_focus_map = False
+        self.focus_map_storage = []
         self.already_using_fmap = False
         self.do_segmentation = False
         self.do_fluorescence_rtp = DO_FLUORESCENCE_RTP
@@ -2038,10 +2038,10 @@ class MultiPointController(QObject):
     def set_reflection_af_flag(self,flag):
         self.do_reflection_af = flag
 
-    def set_gen_af_map_flag(self, flag):
-        self.gen_af_map = flag
+    def set_gen_focus_map_flag(self, flag):
+        self.gen_focus_map = flag
         if not flag:
-            self.autofocusController.set_af_map_use(False)
+            self.autofocusController.set_focus_map_use(False)
 
     def set_stitch_tiles_flag(self, flag):
         self.do_stitch_tiles = flag
@@ -2180,7 +2180,7 @@ class MultiPointController(QObject):
                     region_fov_coords[i] = (x, y, z)
                     self.scanCoordinates.update_fov_z_level(region_id, i, z)
 
-        elif self.gen_af_map and not self.do_reflection_af:
+        elif self.gen_focus_map and not self.do_reflection_af:
             print("Generating autofocus plane for multipoint grid")
             bounds = self.scanCoordinates.get_scan_bounds()
             if not bounds:
@@ -2215,10 +2215,10 @@ class MultiPointController(QObject):
             # TODO(sm): af map should be a grid mapped to a surface, instead of just corners mapped to a plane
             try:
                 # Store existing AF map if any
-                self.af_map_storage = []
-                self.already_using_fmap = self.autofocusController.use_af_map
-                for x, y, z in self.autofocusController.af_map_coords:
-                    self.af_map_storage.append((x, y, z))
+                self.focus_map_storage = []
+                self.already_using_fmap = self.autofocusController.use_focus_map
+                for x, y, z in self.autofocusController.focus_map_coords:
+                    self.focus_map_storage.append((x, y, z))
 
                 # Define grid corners for AF map
                 coord1 = (starting_x_mm, starting_y_mm)  # Starting corner
@@ -2230,8 +2230,8 @@ class MultiPointController(QObject):
                 print(f"Center:  x=({x_center:.3f}mm, y={y_center:.3f}mm)")
 
                 # Generate and enable the AF map
-                self.autofocusController.gen_af_map(coord1, coord2, coord3)
-                self.autofocusController.set_af_map_use(True)
+                self.autofocusController.gen_focus_map(coord1, coord2, coord3)
+                self.autofocusController.set_focus_map_use(True)
 
                 # Return to center position
                 self.stage.move_x_to(x_center)
@@ -2280,11 +2280,11 @@ class MultiPointController(QObject):
 
     def _on_acquisition_completed(self):
         # restore the previous selected mode
-        if self.gen_af_map:
-            self.autofocusController.clear_af_map()
-            for x,y,z in self.af_map_storage:
-                self.autofocusController.af_map_coords.append((x,y,z))
-            self.autofocusController.use_af_map = self.already_using_fmap
+        if self.gen_focus_map:
+            self.autofocusController.clear_focus_map()
+            for x,y,z in self.focus_map_storage:
+                self.autofocusController.focus_map_coords.append((x,y,z))
+            self.autofocusController.use_focus_map = self.already_using_fmap
         self.signal_current_configuration.emit(self.configuration_before_running_multipoint)
 
         # re-enable callback
