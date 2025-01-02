@@ -1049,8 +1049,8 @@ class AutoFocusController(QObject):
         self.crop_width = AF.CROP_WIDTH
         self.crop_height = AF.CROP_HEIGHT
         self.autofocus_in_progress = False
-        self.focus_map_coords = []
-        self.use_focus_map = False
+        self.af_map_coords = []
+        self.use_af_map = False
 
     def set_N(self,N):
         self.N = N
@@ -1062,16 +1062,16 @@ class AutoFocusController(QObject):
         self.crop_width = crop_width
         self.crop_height = crop_height
 
-    def autofocus(self, focus_map_override=False):
+    def autofocus(self, af_map_override=False):
         # TODO(imo): We used to have the joystick button wired up to autofocus, but took it out in a refactor.  It needs to be restored.
-        if self.use_focus_map and (not focus_map_override):
+        if self.use_af_map and (not af_map_override):
             self.autofocus_in_progress = True
 
             self.stage.wait_for_idle(1.0)
             pos = self.stage.get_pos()
 
             # z here is in mm because that's how the navigation controller stores it
-            target_z = utils.interpolate_plane(*self.focus_map_coords[:3], (pos.x_mm, pos.y_mm))
+            target_z = utils.interpolate_plane(*self.af_map_coords[:3], (pos.x_mm, pos.y_mm))
             print(f"Interpolated target z as {target_z} mm from focus map, moving there.")
             self.stage.move_z_to(target_z)
             self.autofocus_in_progress = False
@@ -1143,34 +1143,34 @@ class AutoFocusController(QObject):
             time.sleep(0.005)
         print('autofocus wait has completed, exit wait')
 
-    def set_focus_map_use(self, enable):
+    def set_af_map_use(self, enable):
         if not enable:
             print("Disabling focus map.")
-            self.use_focus_map = False
+            self.use_af_map = False
             return
-        if len(self.focus_map_coords) < 3:
+        if len(self.af_map_coords) < 3:
             print("Not enough coordinates (less than 3) for focus map generation, disabling focus map.")
-            self.use_focus_map = False
+            self.use_af_map = False
             return
-        x1,y1,_ = self.focus_map_coords[0]
-        x2,y2,_ = self.focus_map_coords[1]
-        x3,y3,_ = self.focus_map_coords[2]
+        x1,y1,_ = self.af_map_coords[0]
+        x2,y2,_ = self.af_map_coords[1]
+        x3,y3,_ = self.af_map_coords[2]
 
         detT = (y2 - y3) * (x1 - x3) + (x3 - x2) * (y1 - y3)
         if detT == 0:
             print("Your 3 x-y coordinates are linear, cannot use to interpolate, disabling focus map.")
-            self.use_focus_map = False
+            self.use_af_map = False
             return
 
         if enable:
             print("Enabling focus map.")
-            self.use_focus_map = True
+            self.use_af_map = True
 
-    def clear_focus_map(self):
-        self.focus_map_coords = []
-        self.set_focus_map_use(False)
+    def clear_af_map(self):
+        self.af_map_coords = []
+        self.set_af_map_use(False)
 
-    def gen_focus_map(self, coord1,coord2,coord3):
+    def gen_af_map(self, coord1,coord2,coord3):
         """
         Navigate to 3 coordinates and get your focus-map coordinates
         by autofocusing there and saving the z-values.
@@ -1184,7 +1184,7 @@ class AutoFocusController(QObject):
         if detT == 0:
             raise ValueError("Your 3 x-y coordinates are linear")
 
-        self.focus_map_coords = []
+        self.af_map_coords = []
 
         for coord in [coord1,coord2,coord3]:
             print(f"Navigating to coordinates ({coord[0]},{coord[1]}) to sample for focus map")
@@ -1197,12 +1197,12 @@ class AutoFocusController(QObject):
             pos = self.stage.get_pos()
 
             print(f"Adding coordinates ({pos.x_mm},{pos.y_mm},{pos.z_mm}) to focus map")
-            self.focus_map_coords.append((pos.x_mm, pos.y_mm, pos.z_mm))
+            self.af_map_coords.append((pos.x_mm, pos.y_mm, pos.z_mm))
 
         print("Generated focus map.")
 
-    def add_current_coords_to_focus_map(self):
-        if len(self.focus_map_coords) >= 3:
+    def add_current_coords_to_af_map(self):
+        if len(self.af_map_coords) >= 3:
             print("Replacing last coordinate on focus map.")
         self.stage.wait_for_idle(timeout_s=0.5)
         print("Autofocusing")
@@ -1212,18 +1212,18 @@ class AutoFocusController(QObject):
         x = pos.x_mm
         y = pos.y_mm
         z = pos.z_mm
-        if len(self.focus_map_coords) >= 2:
-            x1,y1,_ = self.focus_map_coords[0]
-            x2,y2,_ = self.focus_map_coords[1]
+        if len(self.af_map_coords) >= 2:
+            x1,y1,_ = self.af_map_coords[0]
+            x2,y2,_ = self.af_map_coords[1]
             x3 = x
             y3 = y
 
             detT = (y2-y3) * (x1-x3) + (x3-x2) * (y1-y3)
             if detT == 0:
                 raise ValueError("Your 3 x-y coordinates are linear. Navigate to a different coordinate or clear and try again.")
-        if len(self.focus_map_coords) >= 3:
-            self.focus_map_coords.pop()
-        self.focus_map_coords.append((x,y,z))
+        if len(self.af_map_coords) >= 3:
+            self.af_map_coords.pop()
+        self.af_map_coords.append((x,y,z))
         print(f"Added triple ({x},{y},{z}) to focus map")
 
 
@@ -1597,7 +1597,7 @@ class MultiPointWorker(QObject):
                 configuration_name_AF = MULTIPOINT_AUTOFOCUS_CHANNEL
                 config_AF = next((config for config in self.configurationManager.configurations if config.name == configuration_name_AF))
                 self.signal_current_configuration.emit(config_AF)
-                if (self.af_fov_count % Acquisition.NUMBER_OF_FOVS_PER_AF == 0) or self.autofocusController.use_focus_map:
+                if (self.af_fov_count % Acquisition.NUMBER_OF_FOVS_PER_AF == 0) or self.autofocusController.use_af_map:
                     self.autofocusController.autofocus()
                     self.autofocusController.wait_till_autofocus_has_completed()
         else:
@@ -1923,6 +1923,7 @@ class MultiPointWorker(QObject):
             self.stage.move_z(rel_z_to_start - distance_to_clear_backlash)
             self.stage.move_z(distance_to_clear_backlash)
 
+
 class MultiPointController(QObject):
 
     acquisitionFinished = Signal()
@@ -1962,8 +1963,8 @@ class MultiPointController(QObject):
         self.deltat = 0
         self.do_autofocus = False
         self.do_reflection_af = False
-        self.gen_focus_map = False
-        self.focus_map_storage = []
+        self.gen_af_map = False
+        self.af_map_storage = []
         self.already_using_fmap = False
         self.do_segmentation = False
         self.do_fluorescence_rtp = DO_FLUORESCENCE_RTP
@@ -2037,10 +2038,10 @@ class MultiPointController(QObject):
     def set_reflection_af_flag(self,flag):
         self.do_reflection_af = flag
 
-    def set_gen_focus_map_flag(self, flag):
-        self.gen_focus_map = flag
+    def set_gen_af_map_flag(self, flag):
+        self.gen_af_map = flag
         if not flag:
-            self.autofocusController.set_focus_map_use(False)
+            self.autofocusController.set_af_map_use(False)
 
     def set_stitch_tiles_flag(self, flag):
         self.do_stitch_tiles = flag
@@ -2050,6 +2051,9 @@ class MultiPointController(QObject):
 
     def set_fluorescence_rtp_flag(self, flag):
         self.do_fluorescence_rtp = flag
+
+    def set_focus_map(self, focusMap):
+        self.focus_map = focusMap # None if dont use focusMap
 
     def set_crop(self,crop_width, crop_height):
         self.crop_width = crop_width
@@ -2164,39 +2168,80 @@ class MultiPointController(QObject):
         # run the acquisition
         self.timestamp_acquisition_started = time.time()
 
-        # create a QThread object
-        if self.gen_focus_map and not self.do_reflection_af:
-            print("Generating focus map for multipoint grid")
-            starting_x_mm = self.stage.get_pos().x_mm
-            starting_y_mm = self.stage.get_pos().y_mm
-            fmap_Nx = max(2,self.NX-1)
-            fmap_Ny = max(2,self.NY-1)
-            fmap_dx = self.deltaX
-            fmap_dy = self.deltaY
-            if abs(fmap_dx) < 0.1 and fmap_dx != 0.0:
-                fmap_dx = 0.1*fmap_dx/(abs(fmap_dx))
-            elif fmap_dx == 0.0:
-                fmap_dx = 0.1
-            if abs(fmap_dy) < 0.1 and fmap_dy != 0.0:
-                 fmap_dy = 0.1*fmap_dy/(abs(fmap_dy))
-            elif fmap_dy == 0.0:
-                fmap_dy = 0.1
+        if self.focus_map:
+            print("Using focus surface for Z interpolation")
+            for region_id in self.scan_region_names:
+                region_fov_coords = self.scan_region_fov_coords_mm[region_id]
+                # Convert each tuple to list for modification
+                for i, coords in enumerate(region_fov_coords):
+                    x, y = coords[:2]  # This handles both (x,y) and (x,y,z) formats
+                    z = self.focus_map.interpolate(x, y)
+                    # Modify the list directly
+                    region_fov_coords[i] = (x, y, z)
+                    self.scanCoordinates.update_fov_z_level(region_id, i, z)
+
+        elif self.gen_af_map and not self.do_reflection_af:
+            print("Generating autofocus plane for multipoint grid")
+            bounds = self.scanCoordinates.get_scan_bounds()
+            if not bounds:
+                return
+            x_min, x_max = bounds['x']
+            y_min, y_max = bounds['y']
+
+            # Calculate scan dimensions and center
+            x_span = abs(x_max - x_min)
+            y_span = abs(y_max - y_min)
+            x_center = (x_max + x_min) / 2
+            y_center = (y_max + y_min) / 2
+
+            # Determine grid size based on scan dimensions
+            if x_span < self.deltaX:
+                fmap_Nx = 2
+                fmap_dx = self.deltaX  # Force deltaX spacing for small scans
+            else:
+                fmap_Nx = min(4, max(2, int(x_span / self.deltaX) + 1))
+                fmap_dx = max(self.deltaX, x_span / (fmap_Nx - 1))
+
+            if y_span < self.deltaY:
+                fmap_Ny = 2
+                fmap_dy = self.deltaY  # Force deltaY spacing for small scans
+            else:
+                fmap_Ny = min(4, max(2, int(y_span / self.deltaY) + 1))
+                fmap_dy = max(self.deltaY, y_span / (fmap_Ny - 1))
+
+            # Calculate starting corner position (top-left of the AF map grid)
+            starting_x_mm = x_center - (fmap_Nx - 1) * fmap_dx / 2
+            starting_y_mm = y_center - (fmap_Ny - 1) * fmap_dy / 2
+            # TODO(sm): af map should be a grid mapped to a surface, instead of just corners mapped to a plane
             try:
-                self.focus_map_storage = []
-                self.already_using_fmap = self.autofocusController.use_focus_map
-                for x,y,z in self.autofocusController.focus_map_coords:
-                    self.focus_map_storage.append((x,y,z))
-                coord1 = (starting_x_mm, starting_y_mm)
-                coord2 = (starting_x_mm+fmap_Nx*fmap_dx,starting_y_mm)
-                coord3 = (starting_x_mm,starting_y_mm+fmap_Ny*fmap_dy)
-                self.autofocusController.gen_focus_map(coord1, coord2, coord3)
-                self.autofocusController.set_focus_map_use(True)
-                self.stage.move_x_to(starting_x_mm)
-                self.stage.move_y_to(starting_y_mm)
+                # Store existing AF map if any
+                self.af_map_storage = []
+                self.already_using_fmap = self.autofocusController.use_af_map
+                for x, y, z in self.autofocusController.af_map_coords:
+                    self.af_map_storage.append((x, y, z))
+
+                # Define grid corners for AF map
+                coord1 = (starting_x_mm, starting_y_mm)  # Starting corner
+                coord2 = (starting_x_mm + (fmap_Nx - 1) * fmap_dx, starting_y_mm)  # X-axis corner
+                coord3 = (starting_x_mm, starting_y_mm + (fmap_Ny - 1) * fmap_dy)  # Y-axis corner
+
+                print(f"Generating AF Map: Nx={fmap_Nx}, Ny={fmap_Ny}")
+                print(f"Spacing: dx={fmap_dx:.3f}mm, dy={fmap_dy:.3f}mm")
+                print(f"Center:  x=({x_center:.3f}mm, y={y_center:.3f}mm)")
+
+                # Generate and enable the AF map
+                self.autofocusController.gen_af_map(coord1, coord2, coord3)
+                self.autofocusController.set_af_map_use(True)
+
+                # Return to center position
+                self.stage.move_x_to(x_center)
+                self.stage.move_y_to(y_center)
+
             except ValueError:
-                print("Invalid coordinates for focus map, aborting.")
+                print("Invalid coordinates for autofocus plane, aborting.")
                 return
 
+        # create a QThread object
         self.thread = QThread()
         # create a worker object
         if DO_FLUORESCENCE_RTP:
@@ -2235,11 +2280,11 @@ class MultiPointController(QObject):
 
     def _on_acquisition_completed(self):
         # restore the previous selected mode
-        if self.gen_focus_map:
-            self.autofocusController.clear_focus_map()
-            for x,y,z in self.focus_map_storage:
-                self.autofocusController.focus_map_coords.append((x,y,z))
-            self.autofocusController.use_focus_map = self.already_using_fmap
+        if self.gen_af_map:
+            self.autofocusController.clear_af_map()
+            for x,y,z in self.af_map_storage:
+                self.autofocusController.af_map_coords.append((x,y,z))
+            self.autofocusController.use_af_map = self.already_using_fmap
         self.signal_current_configuration.emit(self.configuration_before_running_multipoint)
 
         # re-enable callback
@@ -2936,16 +2981,20 @@ class NavigationViewer(QFrame):
     def create_layers(self):
         self.scan_overlay = np.zeros((self.image_height, self.image_width, 4), dtype=np.uint8)
         self.fov_overlay = np.zeros((self.image_height, self.image_width, 4), dtype=np.uint8)
+        self.focus_point_overlay = np.zeros((self.image_height, self.image_width, 4), dtype=np.uint8)
 
         self.scan_overlay_item = pg.ImageItem()
         self.fov_overlay_item = pg.ImageItem()
+        self.focus_point_overlay_item = pg.ImageItem()
 
         self.view.addItem(self.scan_overlay_item)
         self.view.addItem(self.fov_overlay_item)
+        self.view.addItem(self.focus_point_overlay_item)
 
         self.background_item.setZValue(-1)  # Background layer at the bottom
         self.scan_overlay_item.setZValue(0)  # Scan overlay in the middle
-        self.fov_overlay_item.setZValue(1)  # FOV overlay on top
+        self.fov_overlay_item.setZValue(1)  # FOV overlay next
+        self.focus_point_overlay_item.setZValue(2) # # Focus points on top
 
     def update_display_properties(self, sample):
         if sample == 'glass slide':
@@ -3070,6 +3119,23 @@ class NavigationViewer(QFrame):
         cv2.rectangle(self.scan_overlay, current_FOV_top_left, current_FOV_bottom_right, (0, 0, 0, 0), self.box_line_thickness)
         self.scan_overlay_item.setImage(self.scan_overlay)
 
+    def register_focus_point(self, x_mm, y_mm):
+        """Draw focus point marker as filled circle centered on the FOV"""
+        color = (0, 255, 0, 255)  # Green RGBA
+        # Get FOV corner coordinates, then calculate FOV center pixel coordinates
+        current_FOV_top_left, current_FOV_bottom_right = self.get_FOV_pixel_coordinates(x_mm, y_mm)
+        center_x = (current_FOV_top_left[0] + current_FOV_bottom_right[0]) // 2
+        center_y = (current_FOV_top_left[1] + current_FOV_bottom_right[1]) // 2
+        # Draw a filled circle at the center
+        radius = 5  # Radius of circle in pixels
+        cv2.circle(self.focus_point_overlay, (center_x, center_y), radius, color, -1)  # -1 thickness means filled
+        self.focus_point_overlay_item.setImage(self.focus_point_overlay)
+
+    def clear_focus_points(self):
+        """Clear just the focus point overlay"""
+        self.focus_point_overlay = np.zeros((self.image_height, self.image_width, 4), dtype=np.uint8)
+        self.focus_point_overlay_item.setImage(self.focus_point_overlay)
+
     def clear_slide(self):
         self.background_image = self.background_image_copy.copy()
         self.background_item.setImage(self.background_image)
@@ -3078,6 +3144,8 @@ class NavigationViewer(QFrame):
     def clear_overlay(self):
         self.scan_overlay.fill(0)
         self.scan_overlay_item.setImage(self.scan_overlay)
+        self.focus_point_overlay.fill(0)
+        self.focus_point_overlay_item.setImage(self.focus_point_overlay)
 
     def handle_mouse_click(self, evt):
         if not evt.double():
@@ -3286,8 +3354,12 @@ class ContrastManager:
         self.acquisition_dtype = target_dtype
 
 
-class ScanCoordinates:
+class ScanCoordinates(QObject):
+
+    signal_scan_coordinates_updated = Signal()
+
     def __init__(self, objectiveStore, navigationViewer, stage: AbstractStage):
+        QObject.__init__(self)
         # Wellplate settings
         self.objectiveStore = objectiveStore
         self.navigationViewer = navigationViewer
@@ -3339,11 +3411,11 @@ class ScanCoordinates:
             return None
 
         selected_wells = np.array(self.well_selector.get_selected_cells())
-        region_centers = {}
+        well_centers = {}
 
         # if no well selected
         if len(selected_wells) == 0:
-            return region_centers
+            return well_centers
         # populate the coordinates
         rows = np.unique(selected_wells[:,0])
         _increasing = True
@@ -3357,9 +3429,9 @@ class ScanCoordinates:
                 x_mm = self.a1_x_mm + (column * self.well_spacing_mm) + self.wellplate_offset_x_mm
                 y_mm = self.a1_y_mm + (row * self.well_spacing_mm) + self.wellplate_offset_y_mm
                 well_id = self._index_to_row(row) + str(column+1)
-                region_centers[well_id] = (x_mm,y_mm)
+                well_centers[well_id] = (x_mm,y_mm)
             _increasing = not _increasing
-        return region_centers
+        return well_centers
 
     def set_live_scan_coordinates(self, x_mm, y_mm, scan_size_mm, overlap_percent, shape):
         if shape != 'Manual' and self.format == 'glass slide':
@@ -3384,16 +3456,14 @@ class ScanCoordinates:
             for well_id, (x, y) in new_region_centers.items():
                 if well_id not in self.region_centers:
                     self.add_region(well_id, x, y, scan_size_mm, overlap_percent, shape)
-            print(f"Updated region coordinates: {len(self.region_centers)} wells")
-
         else:
-            print("Clear well coordinates")
             self.clear_regions()
 
     def set_manual_coordinates(self, manual_shapes, overlap_percent):
         self.clear_regions()
         if manual_shapes is not None:
             # Handle manual ROIs
+            manual_region_added = False
             for i, shape_coords in enumerate(manual_shapes):
                 scan_coordinates = self.add_manual_region(shape_coords, overlap_percent)
                 if scan_coordinates:
@@ -3404,6 +3474,10 @@ class ScanCoordinates:
                     center = np.mean(shape_coords, axis=0)
                     self.region_centers[region_name] = [center[0], center[1]]
                     self.region_fov_coordinates[region_name] = scan_coordinates
+                    manual_region_added = True
+                    print(f"Added Manual Region: {region_name}")
+            if manual_region_added:
+                self.signal_scan_coordinates_updated.emit()
         else:
             print("No Manual ROI found")
 
@@ -3457,6 +3531,8 @@ class ScanCoordinates:
 
         self.region_centers[well_id] = [float(center_x), float(center_y), float(self.stage.get_pos().z_mm)]
         self.region_fov_coordinates[well_id] =  scan_coordinates
+        self.signal_scan_coordinates_updated.emit()
+        print(f"Added Region: {well_id}")
 
     def remove_region(self, well_id):
         if well_id in self.region_centers:
@@ -3468,11 +3544,13 @@ class ScanCoordinates:
                     self.navigationViewer.deregister_fov_to_image(coord[0], coord[1])
 
             print(f"Removed Region: {well_id}")
+            self.signal_scan_coordinates_updated.emit()
 
     def clear_regions(self):
         self.region_centers.clear()
         self.region_fov_coordinates.clear()
         self.navigationViewer.clear_overlay()
+        self.signal_scan_coordinates_updated.emit()
         print("Cleared All Regions")
 
     def add_flexible_region(self, region_id, center_x, center_y, center_z, Nx, Ny, overlap_percent=10):
@@ -3503,6 +3581,7 @@ class ScanCoordinates:
             print(f"Added Flexible Region: {region_id}")
             self.region_centers[region_id] = [center_x, center_y, center_z]
             self.region_fov_coordinates[region_id] = scan_coordinates
+            self.signal_scan_coordinates_updated.emit()
         else:
             print(f"Region Out of Bounds: {region_id}")
 
@@ -3528,8 +3607,10 @@ class ScanCoordinates:
             scan_coordinates.extend(row)
 
         if scan_coordinates:  # Only add region if there are valid coordinates
+            print(f"Added Flexible Region: {region_id}")
             self.region_centers[region_id] = [center_x, center_y, center_z]
             self.region_fov_coordinates[region_id] = scan_coordinates
+            self.signal_scan_coordinates_updated.emit()
         else:
             print(f"Region Out of Bounds: {region_id}")
 
@@ -3677,6 +3758,38 @@ class ScanCoordinates:
             'max_y': np.max(fovs[:,1])
         }
 
+    def get_scan_bounds(self):
+        """Get bounds of all scan regions with margin"""
+        if not self.has_regions():
+            return None
+
+        min_x = float('inf')
+        max_x = float('-inf')
+        min_y = float('inf')
+        max_y = float('-inf')
+
+        # Find global bounds across all regions
+        for region_id in self.region_fov_coordinates.keys():
+            bounds = self.get_region_bounds(region_id)
+            if bounds:
+                min_x = min(min_x, bounds['min_x'])
+                max_x = max(max_x, bounds['max_x'])
+                min_y = min(min_y, bounds['min_y'])
+                max_y = max(max_y, bounds['max_y'])
+
+        if min_x == float('inf'):
+            return None
+
+        # Add margin around bounds (5% of larger dimension)
+        width = max_x - min_x
+        height = max_y - min_y
+        margin = max(width, height) * 0.00 # 0.05
+
+        return {
+            'x': (min_x - margin, max_x + margin),
+            'y': (min_y - margin, max_y + margin)
+        }
+
     def update_fov_z_level(self, region_id, fov, new_z):
         """Update z-level for a specific FOV and its region center"""
         if not self.validate_region(region_id):
@@ -3698,6 +3811,131 @@ class ScanCoordinates:
                 self.region_centers[region_id].append(new_z)
 
         print(f"Updated z-level to {new_z} for region:{region_id}, fov:{fov}")
+
+
+from scipy.interpolate import SmoothBivariateSpline, RBFInterpolator
+class FocusMap:
+    """Handles fitting and interpolation of slide surfaces through measured focus points"""
+
+    def __init__(self, smoothing_factor=0.1):
+        self.smoothing_factor = smoothing_factor
+        self.surface_fit = None
+        self.method = 'spline'  # can be 'spline' or 'rbf'
+        self.is_fitted = False
+        self.points = None
+
+    def set_method(self, method):
+        """Set interpolation method
+
+        Args:
+            method (str): Either 'spline' or 'rbf' (Radial Basis Function)
+        """
+        if method not in ['spline', 'rbf']:
+            raise ValueError("Method must be either 'spline' or 'rbf'")
+        self.method = method
+        self.is_fitted = False
+
+    def fit(self, points):
+        """Fit surface through provided focus points
+
+        Args:
+            points (list): List of (x,y,z) tuples
+
+        Returns:
+            tuple: (mean_error, std_error) in mm
+        """
+        if len(points) < 4:
+            raise ValueError("Need at least 4 points to fit surface")
+
+        self.points = np.array(points)
+        x = self.points[:,0]
+        y = self.points[:,1]
+        z = self.points[:,2]
+
+        if self.method == 'spline':
+            try:
+                self.surface_fit = SmoothBivariateSpline(
+                    x, y, z,
+                    kx=3,  # cubic spline in x
+                    ky=3,  # cubic spline in y
+                    s=self.smoothing_factor
+                )
+            except Exception as e:
+                print(f"Spline fitting failed: {str(e)}, falling back to RBF")
+                self.method = 'rbf'
+                self._fit_rbf(x, y, z)
+        else:
+            self._fit_rbf(x, y, z)
+
+        self.is_fitted = True
+        errors = self._calculate_fitting_errors()
+        return np.mean(errors), np.std(errors)
+
+    def _fit_rbf(self, x, y, z):
+        """Fit using Radial Basis Function interpolation"""
+        xy = np.column_stack((x, y))
+        self.surface_fit = RBFInterpolator(
+            xy, z,
+            kernel='thin_plate_spline',
+            epsilon=self.smoothing_factor
+        )
+
+    def interpolate(self, x, y):
+        """Get interpolated Z value at given (x,y) coordinates
+
+        Args:
+            x (float or array): X coordinate(s)
+            y (float or array): Y coordinate(s)
+
+        Returns:
+            float or array: Interpolated Z value(s)
+        """
+        if not self.is_fitted:
+            raise RuntimeError("Must fit surface before interpolating")
+
+        if np.isscalar(x) and np.isscalar(y):
+            if self.method == 'spline':
+                return float(self.surface_fit.ev(x, y))
+            else:
+                return float(self.surface_fit([[x, y]]))
+        else:
+            x = np.asarray(x)
+            y = np.asarray(y)
+            if self.method == 'spline':
+                return self.surface_fit.ev(x, y)
+            else:
+                xy = np.column_stack((x.ravel(), y.ravel()))
+                z = self.surface_fit(xy)
+                return z.reshape(x.shape)
+
+    def _calculate_fitting_errors(self):
+        """Calculate absolute errors at measured points"""
+        errors = []
+        for x, y, z_measured in self.points:
+            z_fit = self.interpolate(x, y)
+            errors.append(abs(z_fit - z_measured))
+        return np.array(errors)
+
+    def get_surface_grid(self, x_range, y_range, num_points=50):
+        """Generate grid of interpolated Z values for visualization
+
+        Args:
+            x_range (tuple): (min_x, max_x)
+            y_range (tuple): (min_y, max_y)
+            num_points (int): Number of points per dimension
+
+        Returns:
+            tuple: (X grid, Y grid, Z grid)
+        """
+        if not self.is_fitted:
+            raise RuntimeError("Must fit surface before generating grid")
+
+        x = np.linspace(x_range[0], x_range[1], num_points)
+        y = np.linspace(y_range[0], y_range[1], num_points)
+        X, Y = np.meshgrid(x, y)
+        Z = self.interpolate(X, Y)
+
+        return X, Y, Z
 
 
 class LaserAutofocusController(QObject):

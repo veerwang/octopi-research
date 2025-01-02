@@ -545,7 +545,7 @@ class ObjectivesWidget(QWidget):
         self.signal_objective_changed.emit()
 
 
-class FocusMapWidget(QWidget):
+class AutoFocusMapWidget(QWidget):
 
     def __init__(self, autofocusController, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -553,9 +553,9 @@ class FocusMapWidget(QWidget):
         self.init_ui()
 
     def init_ui(self):
-        self.btn_add_to_focusmap = QPushButton("Add to focus map")
-        self.btn_enable_focusmap = QPushButton("Enable focus map")
-        self.btn_clear_focusmap = QPushButton("Clear focus map")
+        self.btn_add_to_af_map = QPushButton("Add to af map")
+        self.btn_enable_af_map = QPushButton("Enable af map")
+        self.btn_clear_af_map = QPushButton("Clear af map")
         self.fmap_coord_1 = QLabel("Focus Map Point 1: (xxx,yyy,zzz)")
         self.fmap_coord_2 = QLabel("Focus Map Point 2: (xxx,yyy,zzz)")
         self.fmap_coord_3 = QLabel("Focus Map Point 3: (xxx,yyy,zzz)")
@@ -565,75 +565,75 @@ class FocusMapWidget(QWidget):
         layout.addWidget(self.fmap_coord_3)
 
         button_layout = QHBoxLayout()
-        button_layout.addWidget(self.btn_add_to_focusmap)
-        button_layout.addWidget(self.btn_clear_focusmap)
+        button_layout.addWidget(self.btn_add_to_af_map)
+        button_layout.addWidget(self.btn_clear_af_map)
 
         layout.addLayout(button_layout)
 
-        layout.addWidget(self.btn_enable_focusmap)
+        layout.addWidget(self.btn_enable_af_map)
 
         self.setLayout(layout)
 
-        self.btn_add_to_focusmap.clicked.connect(self.add_to_focusmap)
-        self.btn_enable_focusmap.clicked.connect(self.enable_focusmap)
-        self.btn_clear_focusmap.clicked.connect(self.clear_focusmap)
+        self.btn_add_to_af_map.clicked.connect(self.add_to_af_map)
+        self.btn_enable_af_map.clicked.connect(self.enable_af_map)
+        self.btn_clear_af_map.clicked.connect(self.clear_af_map)
 
     def disable_all_buttons(self):
-        self.btn_add_to_focusmap.setEnabled(False)
-        self.btn_enable_focusmap.setEnabled(False)
-        self.btn_clear_focusmap.setEnabled(False)
+        self.btn_add_to_af_map.setEnabled(False)
+        self.btn_enable_af_map.setEnabled(False)
+        self.btn_clear_af_map.setEnabled(False)
 
     def enable_all_buttons(self):
-        self.btn_add_to_focusmap.setEnabled(True)
-        self.btn_enable_focusmap.setEnabled(True)
-        self.btn_clear_focusmap.setEnabled(True)
+        self.btn_add_to_af_map.setEnabled(True)
+        self.btn_enable_af_map.setEnabled(True)
+        self.btn_clear_af_map.setEnabled(True)
 
-    def clear_focusmap(self):
+    def clear_af_map(self):
         self.disable_all_buttons()
-        self.autofocusController.clear_focus_map()
-        self.update_focusmap_display()
-        self.btn_enable_focusmap.setText("Enable focus map")
+        self.autofocusController.clear_af_map()
+        self.update_af_map_display()
+        self.btn_enable_af_map.setText("Enable AF Map")
         self.enable_all_buttons()
 
-    def update_focusmap_display(self):
-        self.fmap_coord_1.setText("Focus Map Point 1: (xxx,yyy,zzz)")
-        self.fmap_coord_2.setText("Focus Map Point 2: (xxx,yyy,zzz)")
-        self.fmap_coord_3.setText("Focus Map Point 3: (xxx,yyy,zzz)")
+    def update_af_map_display(self):
+        self.fmap_coord_1.setText("AF Map Point 1: (xxx,yyy,zzz)")
+        self.fmap_coord_2.setText("AF Map Point 2: (xxx,yyy,zzz)")
+        self.fmap_coord_3.setText("AF Map Point 3: (xxx,yyy,zzz)")
         try:
-            x,y,z = self.autofocusController.focus_map_coords[0]
-            self.fmap_coord_1.setText(f"Focus Map Point 1: ({x:.3f},{y:.3f},{z:.3f})")
+            x,y,z = self.autofocusController.af_map_coords[0]
+            self.fmap_coord_1.setText(f"AF Map Point 1: ({x:.3f},{y:.3f},{z:.3f})")
         except IndexError:
             pass
         try:
-            x,y,z = self.autofocusController.focus_map_coords[1]
-            self.fmap_coord_2.setText(f"Focus Map Point 2: ({x:.3f},{y:.3f},{z:.3f})")
+            x,y,z = self.autofocusController.af_map_coords[1]
+            self.fmap_coord_2.setText(f"AF Map Point 2: ({x:.3f},{y:.3f},{z:.3f})")
         except IndexError:
             pass
         try:
-            x,y,z = self.autofocusController.focus_map_coords[2]
-            self.fmap_coord_3.setText(f"Focus Map Point 3: ({x:.3f},{y:.3f},{z:.3f})")
+            x,y,z = self.autofocusController.af_map_coords[2]
+            self.fmap_coord_3.setText(f"AF Map Point 3: ({x:.3f},{y:.3f},{z:.3f})")
         except IndexError:
             pass
 
-    def enable_focusmap(self):
+    def enable_af_map(self):
         self.disable_all_buttons()
-        if self.autofocusController.use_focus_map == False:
-            self.autofocusController.set_focus_map_use(True)
+        if self.autofocusController.use_af_map == False:
+            self.autofocusController.set_af_map_use(True)
         else:
-            self.autofocusController.set_focus_map_use(False)
-        if self.autofocusController.use_focus_map:
-            self.btn_enable_focusmap.setText("Disable focus map")
+            self.autofocusController.set_af_map_use(False)
+        if self.autofocusController.use_af_map:
+            self.btn_enable_af_map.setText("Disable AF Map")
         else:
-            self.btn_enable_focusmap.setText("Enable focus map")
+            self.btn_enable_af_map.setText("Enable AF Map")
         self.enable_all_buttons()
 
-    def add_to_focusmap(self):
+    def add_to_af_map(self):
         self.disable_all_buttons()
         try:
-            self.autofocusController.add_current_coords_to_focus_map()
+            self.autofocusController.add_current_coords_to_af_map()
         except ValueError:
             pass
-        self.update_focusmap_display()
+        self.update_af_map_display()
         self.enable_all_buttons()
 
 
@@ -1881,17 +1881,18 @@ class FlexibleMultiPointWidget(QFrame):
     signal_stitcher_z_levels = Signal(int) # live Nz
     signal_stitcher_widget = Signal(bool) # signal start stitcher
 
-    def __init__(self, stage: AbstractStage, navigationViewer, multipointController, objectiveStore, configurationManager = None, scanCoordinates=None, *args, **kwargs):
+    def __init__(self, stage: AbstractStage, navigationViewer, multipointController, objectiveStore, configurationManager, scanCoordinates, focusMapWidget, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self._log = squid.logging.get_logger(self.__class__.__name__)
         self.last_used_locations = None
         self.last_used_location_ids = None
+        self.stage = stage
+        self.navigationViewer = navigationViewer
         self.multipointController = multipointController
         self.objectiveStore = objectiveStore
         self.configurationManager = configurationManager
-        self.stage = stage
-        self.navigationViewer = navigationViewer
         self.scanCoordinates = scanCoordinates
+        self.focusMapWidget = focusMapWidget
         self.base_path_is_set = False
         self.location_list = np.empty((0, 3), dtype=float)
         self.location_ids = np.empty((0,), dtype='<U20')
@@ -1903,7 +1904,6 @@ class FlexibleMultiPointWidget(QFrame):
         self.parent = self.multipointController.parent
 
     def add_components(self):
-
         self.btn_setSavingDir = QPushButton('Browse')
         self.btn_setSavingDir.setDefault(False)
         self.btn_setSavingDir.setIcon(QIcon('icon/folder.png'))
@@ -2049,6 +2049,9 @@ class FlexibleMultiPointWidget(QFrame):
         self.checkbox_withReflectionAutofocus = QCheckBox('Reflection AF')
         self.checkbox_withReflectionAutofocus.setChecked(MULTIPOINT_REFLECTION_AUTOFOCUS_ENABLE_BY_DEFAULT)
         self.multipointController.set_reflection_af_flag(MULTIPOINT_REFLECTION_AUTOFOCUS_ENABLE_BY_DEFAULT)
+
+        self.checkbox_genAFMap = QCheckBox('AF Map')
+        self.checkbox_genAFMap.setChecked(False)
 
         self.checkbox_genFocusMap = QCheckBox('Focus Map')
         self.checkbox_genFocusMap.setChecked(False)
@@ -2206,6 +2209,7 @@ class FlexibleMultiPointWidget(QFrame):
         grid_af.addWidget(self.checkbox_withAutofocus)
         if SUPPORT_LASER_AUTOFOCUS:
             grid_af.addWidget(self.checkbox_withReflectionAutofocus)
+        grid_af.addWidget(self.checkbox_genAFMap)
         grid_af.addWidget(self.checkbox_genFocusMap)
         if ENABLE_OBJECTIVE_PIEZO:
             grid_af.addWidget(self.checkbox_usePiezo)
@@ -2278,7 +2282,8 @@ class FlexibleMultiPointWidget(QFrame):
         self.entry_NZ.valueChanged.connect(self.multipointController.set_NZ)
         self.entry_NZ.valueChanged.connect(self.signal_stitcher_z_levels.emit)
         self.entry_Nt.valueChanged.connect(self.multipointController.set_Nt)
-        self.checkbox_genFocusMap.toggled.connect(self.multipointController.set_gen_focus_map_flag)
+        self.checkbox_genAFMap.toggled.connect(self.multipointController.set_gen_af_map_flag)
+        self.checkbox_genFocusMap.toggled.connect(self.focusMapWidget.setEnabled)
         self.checkbox_withAutofocus.toggled.connect(self.multipointController.set_af_flag)
         self.checkbox_withReflectionAutofocus.toggled.connect(self.multipointController.set_reflection_af_flag)
         self.checkbox_usePiezo.toggled.connect(self.multipointController.set_use_piezo)
@@ -2539,6 +2544,12 @@ class FlexibleMultiPointWidget(QFrame):
                 dz = self.entry_deltaZ.value()
                 Nz = self.entry_NZ.value()
                 self.multipointController.set_z_range(z, z + dz * (Nz - 1))
+
+            if self.checkbox_genFocusMap.isChecked():
+                self.focusMapWidget.fit_surface()
+                self.multipointController.set_focus_map(self.focusMapWidget.focusMap)
+            else:
+                self.multipointController.set_focus_map(None)
 
             self.setEnabled_all(False)
             # Set acquisition parameters
@@ -2927,6 +2938,7 @@ class FlexibleMultiPointWidget(QFrame):
         else:
             self.entry_overlap.setEnabled(enabled)
         self.list_configurations.setEnabled(enabled)
+        self.checkbox_genAFMap.setEnabled(enabled)
         self.checkbox_genFocusMap.setEnabled(enabled)
         self.checkbox_withAutofocus.setEnabled(enabled)
         self.checkbox_withReflectionAutofocus.setEnabled(enabled)
@@ -2952,14 +2964,15 @@ class WellplateMultiPointWidget(QFrame):
     signal_stitcher_widget = Signal(bool) # start stitching
     signal_manual_shape_mode = Signal(bool) # enable manual shape layer on mosaic display
 
-    def __init__(self, stage: AbstractStage, navigationViewer, multipointController, objectiveStore, configurationManager, scanCoordinates, napariMosaicWidget=None, *args, **kwargs):
+    def __init__(self, stage: AbstractStage, navigationViewer, multipointController, objectiveStore, configurationManager, scanCoordinates, focusMapWidget, napariMosaicWidget=None, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.objectiveStore = objectiveStore
-        self.multipointController = multipointController
         self.stage = stage
         self.navigationViewer = navigationViewer
-        self.scanCoordinates = scanCoordinates
+        self.multipointController = multipointController
+        self.objectiveStore = objectiveStore
         self.configurationManager = configurationManager
+        self.scanCoordinates = scanCoordinates
+        self.focusMapWidget = focusMapWidget
         if napariMosaicWidget is None:
             self.performance_mode = True
         else:
@@ -2978,7 +2991,6 @@ class WellplateMultiPointWidget(QFrame):
         self.set_default_scan_size()
 
     def add_components(self):
-
         self.entry_well_coverage = QDoubleSpinBox()
         self.entry_well_coverage.setRange(1, 999.99)
         self.entry_well_coverage.setValue(100)
@@ -3082,8 +3094,11 @@ class WellplateMultiPointWidget(QFrame):
         self.combobox_shape.setFixedWidth(btn_width)
         #self.combobox_shape.currentTextChanged.connect(self.on_shape_changed)
 
+        self.checkbox_genAFMap = QCheckBox('AF Map')
+        #self.checkbox_genAFMap = QCheckBox('AF Map')
+        self.checkbox_genAFMap.setChecked(False)
+
         self.checkbox_genFocusMap = QCheckBox('Focus Map')
-        #self.checkbox_genFocusMap = QCheckBox('AF Map')
         self.checkbox_genFocusMap.setChecked(False)
 
         self.checkbox_withAutofocus = QCheckBox('Contrast AF')
@@ -3196,6 +3211,7 @@ class WellplateMultiPointWidget(QFrame):
         options_layout.addWidget(self.checkbox_withAutofocus)
         if SUPPORT_LASER_AUTOFOCUS:
             options_layout.addWidget(self.checkbox_withReflectionAutofocus)
+        options_layout.addWidget(self.checkbox_genAFMap)
         options_layout.addWidget(self.checkbox_genFocusMap)
         if ENABLE_OBJECTIVE_PIEZO:
             options_layout.addWidget(self.checkbox_usePiezo)
@@ -3241,7 +3257,8 @@ class WellplateMultiPointWidget(QFrame):
         self.combobox_shape.currentTextChanged.connect(self.reset_coordinates)
         self.checkbox_withAutofocus.toggled.connect(self.multipointController.set_af_flag)
         self.checkbox_withReflectionAutofocus.toggled.connect(self.multipointController.set_reflection_af_flag)
-        self.checkbox_genFocusMap.toggled.connect(self.multipointController.set_gen_focus_map_flag)
+        self.checkbox_genAFMap.toggled.connect(self.multipointController.set_gen_af_map_flag)
+        self.checkbox_genFocusMap.toggled.connect(self.focusMapWidget.setEnabled)
         self.checkbox_usePiezo.toggled.connect(self.multipointController.set_use_piezo)
         self.checkbox_stitchOutput.toggled.connect(self.display_stitcher_widget)
         self.list_configurations.itemSelectionChanged.connect(self.emit_selected_channels)
@@ -3302,7 +3319,6 @@ class WellplateMultiPointWidget(QFrame):
         # Set the progress label text, ensuring it's not empty
         progress_text = "  ".join(progress_parts)
         self.progress_label.setText(progress_text if progress_text else "Progress")
-
         self.progress_bar.setValue(0)
 
     def update_eta_display(self):
@@ -3553,7 +3569,6 @@ class WellplateMultiPointWidget(QFrame):
             shape = self.combobox_shape.currentText()
 
             self.scanCoordinates.sort_coordinates()
-
             if len(self.scanCoordinates.region_centers) == 0:
                 # Use current location if no regions added #TODO FIX
                 pos = self.stage.get_pos()
@@ -3578,6 +3593,21 @@ class WellplateMultiPointWidget(QFrame):
                 dz = self.entry_deltaZ.value()
                 Nz = self.entry_NZ.value()
                 self.multipointController.set_z_range(z, z + dz * (Nz - 1))
+
+            if self.checkbox_genFocusMap.isChecked():
+                # Try to fit the surface
+                if self.focusMapWidget.fit_surface():
+                    # If fit successful, set the surface fitter in controller
+                    self.multipointController.set_focus_map(self.focusMapWidget.focusMap)
+                else:
+                    # If fit failed, uncheck the box and show warning
+                    self.checkbox_genFocusMap.setChecked(False)
+                    QMessageBox.warning(self, "Warning", "Failed to fit focus surface - need at least 4 focus points")
+                    self.btn_startAcquisition.setChecked(False)
+                    return
+            else:
+                # If checkbox not checked, set surface fitter to None
+                self.multipointController.set_focus_map(None)
 
             self.multipointController.set_deltaZ(self.entry_deltaZ.value())
             self.multipointController.set_NZ(self.entry_NZ.value())
@@ -3649,6 +3679,295 @@ class WellplateMultiPointWidget(QFrame):
         self.signal_stitcher_widget.emit(checked)
 
 
+class FocusMapWidget(QFrame):
+    """Widget for managing focus map points and surface fitting"""
+
+    def __init__(self, stage: AbstractStage, navigationViewer, scanCoordinates, focusMap):
+        super().__init__()
+        self.setFrameStyle(QFrame.Panel | QFrame.Raised)
+
+        # Store controllers
+        self.stage = stage
+        self.navigationViewer = navigationViewer
+        self.scanCoordinates = scanCoordinates
+        self.focusMap = focusMap
+
+        # Store focus points in widget
+        self.focus_points = []  # list of (x,y,z) tuples
+        self.enabled = False # toggled when focus map enabled for next acquisition
+
+        self.setup_ui()
+        self.make_connections()
+        self.setEnabled(False)
+        self.add_margin = False # margin for focus grid makes it smaller, but will avoid points at the borders
+
+    def setup_ui(self):
+        """Create and arrange UI components"""
+        self.layout = QVBoxLayout(self)
+
+        # Point combo and Z control
+        controls_layout = QHBoxLayout()
+        controls_layout.addWidget(QLabel("Focus Point:"))
+        self.point_combo = QComboBox()
+        controls_layout.addWidget(self.point_combo, stretch=1)
+        self.update_z_btn = QPushButton("Update Z")
+        controls_layout.addWidget(self.update_z_btn)
+        self.layout.addLayout(controls_layout)
+
+        # Point control buttons
+        point_controls = QHBoxLayout()
+        self.add_point_btn = QPushButton("Add")
+        self.remove_point_btn = QPushButton("Remove")
+        self.next_point_btn = QPushButton("Next")
+        self.edit_point_btn = QPushButton("Edit")
+        point_controls.addWidget(self.add_point_btn)
+        point_controls.addWidget(self.remove_point_btn)
+        point_controls.addWidget(self.next_point_btn)
+        point_controls.addWidget(self.edit_point_btn)
+        self.layout.addLayout(point_controls)
+
+        # Surface fitting controls
+        settings_layout = QHBoxLayout()
+        settings_layout.addWidget(QLabel('Focus Grid:'))
+        self.rows_spin = QSpinBox()
+        self.rows_spin.setRange(2, 10)
+        self.rows_spin.setValue(4)
+        settings_layout.addWidget(self.rows_spin)
+        settings_layout.addWidget(QLabel('×'))
+        self.cols_spin = QSpinBox()
+        self.cols_spin.setRange(2, 10)
+        self.cols_spin.setValue(4)
+        settings_layout.addWidget(self.cols_spin)
+        settings_layout.addStretch()
+        settings_layout.addWidget(QLabel('Fit Method:'))
+        self.fit_method_combo = QComboBox()
+        self.fit_method_combo.addItems(['spline', 'rbf'])
+        settings_layout.addWidget(self.fit_method_combo)
+        settings_layout.addWidget(QLabel('Smoothing:'))
+        self.smoothing_spin = QDoubleSpinBox()
+        self.smoothing_spin.setRange(0.01, 1.0)
+        self.smoothing_spin.setValue(0.1)
+        self.smoothing_spin.setSingleStep(0.05)
+        settings_layout.addWidget(self.smoothing_spin)
+        self.layout.addLayout(settings_layout)
+
+        # Status label (hidden by default)
+        self.status_label = QLabel()
+        self.status_label.hide()
+        self.layout.addWidget(self.status_label)
+
+    def make_connections(self):
+        # Auto-navigate when point selection changes
+        self.point_combo.currentIndexChanged.connect(self.goto_selected_point)
+
+        # Update Z for current point
+        self.update_z_btn.clicked.connect(self.update_current_z)
+
+        # Connect grid size changes
+        self.rows_spin.valueChanged.connect(self.regenerate_grid)
+        self.cols_spin.valueChanged.connect(self.regenerate_grid)
+
+        # Connect point control buttons
+        self.add_point_btn.clicked.connect(self.add_current_point)
+        self.remove_point_btn.clicked.connect(self.remove_current_point)
+        self.next_point_btn.clicked.connect(self.goto_next_point)
+        self.edit_point_btn.clicked.connect(self.edit_current_point)
+
+        # Connect to scan coordinates changes
+        self.scanCoordinates.signal_scan_coordinates_updated.connect(self.on_regions_updated)
+
+    def update_point_list(self):
+        """Update point selection combo showing grid coordinates for points"""
+        # self.point_combo.blockSignals(True)
+        curr_focus_point = self.point_combo.currentIndex()
+        self.point_combo.clear()
+        rows = self.rows_spin.value()
+        cols = self.cols_spin.value()
+        for idx, (x, y, z) in enumerate(self.focus_points):
+            point_text = f'x:' + str(round(x,3)) + 'mm  y:' + str(round(y,3)) + 'mm  z:' + str(round(1000*z,2)) + 'μm'
+            self.point_combo.addItem(point_text)
+        self.point_combo.setCurrentIndex(max(0,min(curr_focus_point, len(self.focus_points) - 1)))
+        # self.point_combo.blockSignals(False)
+
+    def edit_current_point(self):
+        """Edit coordinates of current point in a popup dialog"""
+        index = self.point_combo.currentIndex()
+        if 0 <= index < len(self.focus_points):
+            x, y, z = self.focus_points[index]
+
+            # Create dialog
+            dialog = QDialog(self)
+            dialog.setWindowTitle("Edit Focus Point")
+            layout = QFormLayout()
+
+            # Add coordinate spinboxes with good precision
+            x_spin = QDoubleSpinBox()
+            x_spin.setRange(SOFTWARE_POS_LIMIT.X_NEGATIVE, SOFTWARE_POS_LIMIT.X_POSITIVE)
+            x_spin.setDecimals(3)
+            x_spin.setValue(x)
+            x_spin.setSuffix(" mm")
+
+            y_spin = QDoubleSpinBox()
+            y_spin.setRange(SOFTWARE_POS_LIMIT.Y_NEGATIVE, SOFTWARE_POS_LIMIT.Y_POSITIVE)
+            y_spin.setDecimals(3)
+            y_spin.setValue(y)
+            y_spin.setSuffix(" mm")
+
+            z_spin = QDoubleSpinBox()
+            z_spin.setRange(SOFTWARE_POS_LIMIT.Z_NEGATIVE * 1000, SOFTWARE_POS_LIMIT.Z_POSITIVE * 1000)  # Convert mm limits to μm
+            z_spin.setDecimals(2)
+            z_spin.setValue(z * 1000)  # Convert mm to μm
+            z_spin.setSuffix(" μm")
+
+            layout.addRow("X:", x_spin)
+            layout.addRow("Y:", y_spin)
+            layout.addRow("Z:", z_spin)
+
+            # Add OK/Cancel buttons
+            buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+            buttons.accepted.connect(dialog.accept)
+            buttons.rejected.connect(dialog.reject)
+            layout.addRow(buttons)
+            dialog.setLayout(layout)
+
+            # Show dialog and handle result
+            if dialog.exec_() == QDialog.Accepted:
+                new_x = x_spin.value()
+                new_y = y_spin.value()
+                new_z = z_spin.value() / 1000  # Convert μm back to mm for storage
+                self.focus_points[index] = (new_x, new_y, new_z)
+                self.update_point_list()
+                self.update_focus_point_display()
+
+    def update_focus_point_display(self):
+        """Update all focus points on navigation viewer"""
+        self.navigationViewer.clear_focus_points()
+        for x, y, _ in self.focus_points:
+            self.navigationViewer.register_focus_point(x, y)
+
+    def generate_grid(self, rows=4, cols=4):
+        """Generate focus point grid that spans scan bounds"""
+        if self.enabled:
+
+            self.point_combo.blockSignals(True)
+            self.focus_points.clear()
+            self.navigationViewer.clear_focus_points()
+            self.status_label.hide()
+            current_z = self.stage.get_pos().z_mm
+            bounds = self.scanCoordinates.get_scan_bounds()
+            if not bounds:
+                return
+
+            x_min, x_max = bounds['x']
+            y_min, y_max = bounds['y']
+            if self.add_margin:
+                x_step = (x_max - x_min) / (cols) if cols > 1 else 0
+                y_step = (y_max - y_min) / (rows) if rows > 1 else 0
+            else:
+                x_step = (x_max - x_min) / (cols - 1) if cols > 1 else 0
+                y_step = (y_max - y_min) / (rows - 1) if rows > 1 else 0
+
+            for i in range(rows):
+                for j in range(cols):
+                    if self.add_margin:
+                        x = x_min + x_step / 2 + j * x_step
+                        y = y_min + y_step / 2 + i * y_step
+                    else:
+                        x = x_min + j * x_step
+                        y = y_min + i * y_step
+
+                    if self.scanCoordinates.validate_coordinates(x, y):
+                        self.focus_points.append((x, y, current_z))
+                        self.navigationViewer.register_focus_point(x, y)
+
+            self.update_point_list()
+            self.point_combo.blockSignals(False)
+
+    def regenerate_grid(self):
+        """Generate focus point grid given updated dims"""
+        self.generate_grid(self.rows_spin.value(), self.cols_spin.value())
+
+    def add_current_point(self):
+        pos = self.stage.get_pos()
+        self.focus_points.append((pos.x_mm, pos.y_mm, pos.z_mm))
+        self.update_point_list()
+        self.navigationViewer.register_focus_point(pos.x_mm, pos.y_mm)
+
+    def remove_current_point(self):
+        index = self.point_combo.currentIndex()
+        if 0 <= index < len(self.focus_points):
+            self.focus_points.pop(index)
+            self.update_point_list()
+            self.update_focus_point_display()
+
+    def goto_next_point(self):
+        if not self.focus_points:
+            return
+        current = self.point_combo.currentIndex()
+        next_index = (current + 1) % len(self.focus_points)
+        self.point_combo.setCurrentIndex(next_index)
+        self.goto_selected_point()
+
+    def goto_selected_point(self):
+        if self.enabled:
+            index = self.point_combo.currentIndex()
+            if 0 <= index < len(self.focus_points):
+                x, y, z = self.focus_points[index]
+                self.stage.move_x_to(x)
+                self.stage.move_y_to(y)
+                self.stage.move_z_to(z)
+
+    def update_current_z(self):
+        index = self.point_combo.currentIndex()
+        if 0 <= index < len(self.focus_points):
+            new_z = self.stage.get_pos().z_mm
+            x, y, _ = self.focus_points[index]
+            self.focus_points[index] = (x, y, new_z)
+            self.update_point_list()
+
+    def get_points_array(self):
+        return np.array(self.focus_points)
+
+    def update_z_display(self, z_pos_mm):
+        self.z_label.setText(f"Z: {z_pos_mm:.3f} mm")
+
+    def fit_surface(self):
+        if len(self.focus_points) < 4:
+            self.status_label.setText("Need at least 4 points to fit surface")
+            self.status_label.show()
+            return False
+
+        try:
+            self.focusMap.set_method(self.fit_method_combo.currentText())
+            self.focusMap.smoothing_factor = self.smoothing_spin.value()
+
+            mean_error, std_error = self.focusMap.fit(self.get_points_array())
+
+            self.status_label.setText(f"Surface fit: {mean_error:.3f} mm mean error")
+            self.status_label.show()
+            return True
+
+        except Exception as e:
+            self.status_label.setText(f"Fitting failed: {str(e)}")
+            self.status_label.show()
+            return False
+
+    def on_regions_updated(self):
+        if self.scanCoordinates.has_regions():
+            self.generate_grid()
+
+    def setEnabled(self, enabled):
+        self.enabled = enabled
+        super().setEnabled(enabled)
+        self.navigationViewer.focus_point_overlay_item.setVisible(enabled)
+        self.on_regions_updated()
+
+    def resizeEvent(self, event):
+        """Handle resize events to maintain button sizing"""
+        super().resizeEvent(event)
+        self.update_z_btn.setFixedWidth(self.edit_point_btn.width())
+
+
 class StitcherWidget(QFrame):
 
     def __init__(self, configurationManager, contrastManager, *args, **kwargs):
@@ -3665,7 +3984,7 @@ class StitcherWidget(QFrame):
         self.rowLayout1 = QHBoxLayout()
         self.rowLayout2 = QHBoxLayout()
 
-                # Use registration checkbox
+        # Use registration checkbox
         self.useRegistrationCheck = QCheckBox("Registration")
         self.useRegistrationCheck.toggled.connect(self.onRegistrationCheck)
         self.rowLayout1.addWidget(self.useRegistrationCheck)
@@ -3694,7 +4013,7 @@ class StitcherWidget(QFrame):
         self.registrationChannelCombo.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         self.rowLayout2.addWidget(self.registrationChannelCombo)
 
-         # Select registration cz-level
+        # Select registration cz-level
         self.registrationZLabel = QLabel(" Z-Level", self)
         self.registrationZLabel.setVisible(False)
         self.rowLayout2.addWidget(self.registrationZLabel)
@@ -7061,8 +7380,8 @@ class SampleSettingsWidget(QFrame):
 
         with open('cache/objective_and_sample_format.txt', 'w') as f:
             json.dump(data, f)
-        
-        
+
+
 class SquidFilterWidget(QFrame):
     def __init__(self, parent, *args, **kwargs):
         super().__init__(*args, **kwargs)
