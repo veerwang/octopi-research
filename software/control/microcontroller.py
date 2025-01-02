@@ -219,9 +219,15 @@ class Microcontroller:
             self.log.debug("Resetting and initializing microcontroller.")
             self.reset()
             time.sleep(0.5)
+            if USE_SQUID_FILTERWHEEL:
+                self.init_filter_wheel()
+                time.sleep(0.5)
             self.initialize_drivers()
             time.sleep(0.5)
             self.configure_actuators()
+            if USE_SQUID_FILTERWHEEL:
+                self.configure_squidfilter()
+            time.sleep(0.5)
         
     def close(self):
         self.terminate_reading_received_packet_thread = True
