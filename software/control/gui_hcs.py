@@ -118,7 +118,6 @@ class MovementUpdater(QObject):
             # In here, send all the signals that must be sent once per stop of movement.  AKA once per arriving at a
             # new position for a while.
             self.sent_after_stopped = True
-
             self.position_after_move.emit(pos.x_mm, pos.y_mm)
         else:
             self.sent_after_stopped = False
@@ -427,6 +426,7 @@ class HighContentScreeningGui(QMainWindow):
         else:
             self.wellSelectionWidget = widgets.Well1536SelectionWidget()
         self.scanCoordinates.add_well_selector(self.wellSelectionWidget)
+        self.focusMapWidget = widgets.FocusMapWidget(self.stage, self.navigationViewer, self.scanCoordinates, core.FocusMap())
 
         if SUPPORT_LASER_AUTOFOCUS:
             if FOCUS_CAMERA_TYPE == "Toupcam":
@@ -455,8 +455,8 @@ class HighContentScreeningGui(QMainWindow):
         else:
             self.setupImageDisplayTabs()
 
-        self.flexibleMultiPointWidget = widgets.FlexibleMultiPointWidget(self.stage, self.navigationViewer, self.multipointController, self.objectiveStore, self.configurationManager, self.scanCoordinates)
-        self.wellplateMultiPointWidget = widgets.WellplateMultiPointWidget(self.stage, self.navigationViewer, self.multipointController, self.objectiveStore, self.configurationManager, self.scanCoordinates, self.napariMosaicDisplayWidget)
+        self.flexibleMultiPointWidget = widgets.FlexibleMultiPointWidget(self.stage, self.navigationViewer, self.multipointController, self.objectiveStore, self.configurationManager, self.scanCoordinates, self.focusMapWidget)
+        self.wellplateMultiPointWidget = widgets.WellplateMultiPointWidget(self.stage, self.navigationViewer, self.multipointController, self.objectiveStore, self.configurationManager, self.scanCoordinates, self.focusMapWidget, self.napariMosaicDisplayWidget)
         self.sampleSettingsWidget = widgets.SampleSettingsWidget(self.objectivesWidget, self.wellplateFormatWidget)
 
         if ENABLE_TRACKING:
@@ -550,11 +550,12 @@ class HighContentScreeningGui(QMainWindow):
         if USE_ZABER_EMISSION_FILTER_WHEEL or USE_OPTOSPIN_EMISSION_FILTER_WHEEL:
             self.cameraTabWidget.addTab(self.filterControllerWidget, "Emission Filter")
         if USE_SQUID_FILTERWHEEL:
-            self.cameraTabWidget.addTab(self.squidFilterWidget,"SquidFilter")
+            self.cameraTabWidget.addTab(self.squidFilterWidget,"Squid Filter")
         self.cameraTabWidget.addTab(self.cameraSettingWidget, 'Camera')
         self.cameraTabWidget.addTab(self.autofocusWidget, "Contrast AF")
         if SUPPORT_LASER_AUTOFOCUS:
             self.cameraTabWidget.addTab(self.laserAutofocusControlWidget, "Laser AF")
+        self.cameraTabWidget.addTab(self.focusMapWidget, "Focus Map")
         self.cameraTabWidget.currentChanged.connect(lambda: self.resizeCurrentTab(self.cameraTabWidget))
         self.resizeCurrentTab(self.cameraTabWidget)
 
@@ -712,7 +713,8 @@ class HighContentScreeningGui(QMainWindow):
         self.wellplateFormatWidget.signalWellplateSettings.connect(self.wellSelectionWidget.onWellplateChanged)
         self.wellplateFormatWidget.signalWellplateSettings.connect(lambda format_, *args: self.onWellplateChanged(format_))
 
-        self.wellSelectionWidget.signal_wellSelectedPos.connect(lambda well_x, well_y: self.stage.move_x_to(well_x) and self.stage.move_y_to(well_y))
+        #self.wellSelectionWidget.signal_wellSelectedPos.connect(lambda well_x, well_y: self.stage.move_x_to(well_x) and self.stage.move_y_to(well_y))
+        self.wellSelectionWidget.signal_wellSelectedPos.connect(self.move_to_mm)
         if ENABLE_WELLPLATE_MULTIPOINT:
             self.wellSelectionWidget.signal_wellSelected.connect(self.wellplateMultiPointWidget.update_well_coordinates)
             self.objectivesWidget.signal_objective_changed.connect(self.wellplateMultiPointWidget.update_coordinates)
@@ -976,7 +978,7 @@ class HighContentScreeningGui(QMainWindow):
             self.dock_wellSelection.addWidget(self.wellSelectionWidget)
 
     def connectWellSelectionWidget(self):
-        self.wellSelectionWidget.signal_wellSelectedPos.connect(self.navigationController.move_to)
+        self.wellSelectionWidget.signal_wellSelectedPos.connect(self.move_to_mm)
         self.wellplateFormatWidget.signalWellplateSettings.connect(self.wellSelectionWidget.onWellplateChanged)
         if ENABLE_WELLPLATE_MULTIPOINT:
             self.wellSelectionWidget.signal_wellSelected.connect(self.wellplateMultiPointWidget.update_well_coordinates)
@@ -1082,10 +1084,13 @@ class HighContentScreeningGui(QMainWindow):
     def move_from_click_mm(self, x_mm, y_mm):
         if self.navigationWidget.get_click_to_move_enabled():
             self.log.debug(f"Click to move enabled, moving to {x_mm=}, {y_mm=}")
-            self.stage.move_x_to(x_mm)
-            self.stage.move_y_to(y_mm)
+            self.move_to_mm(x_mm, y_mm)
         else:
             self.log.debug(f"Click to move disabled, ignoring click request for {x_mm=}, {y_mm=}")
+
+    def move_to_mm(self, x_mm, y_mm):
+        self.stage.move_x_to(x_mm)
+        self.stage.move_y_to(y_mm)
 
     def closeEvent(self, event):
         try:
