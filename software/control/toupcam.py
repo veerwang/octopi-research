@@ -1,4 +1,4 @@
-"""Version: 57.26813.20241028
+"""Version: 57.27348.20241224
 We use ctypes to call into the toupcam.dll/libtoupcam.so/libtoupcam.dylib API,
 the python class Toupcam is a thin wrapper class to the native api of toupcam.dll/libtoupcam.so/libtoupcam.dylib.
 So the manual en.html(English) and hans.html(Simplified Chinese) are also applicable for programming with toupcam.py.
@@ -6,6 +6,13 @@ See them in the 'doc' directory:
    (1) en.html, English
    (2) hans.html, Simplified Chinese
 """
+
+"""
+Please distinguish between camera ID (camId) and camera SN:
+    (a) SN is unique and persistent, fixed inside the camera and remains unchanged, and does not change with connection or system restart.
+    (b) Camera ID (camId) may change due to connection or system restart. Enumerate the cameras to get the camera ID, and then call the Open function to pass in the camId parameter to open the camera.
+"""
+
 import sys, ctypes, os.path
 
 TOUPCAM_MAX = 128
@@ -263,7 +270,7 @@ TOUPCAM_OPTION_AUTOEXPOSURE_PERCENT   = 0x4a       # auto exposure percent to av
                                                    #     1~99: peak percent average
                                                    #     0 or 100: full roi average, means "disabled"
                                                    #
-TOUPCAM_OPTION_ANTI_SHUTTER_EFFECT    = 0x4b       # anti shutter effect: 1 => disable, 0 => disable; default: 0
+TOUPCAM_OPTION_ANTI_SHUTTER_EFFECT    = 0x4b       # anti shutter effect: 1 => enable, 0 => disable; default: 0
 TOUPCAM_OPTION_CHAMBER_HT             = 0x4c       # get chamber humidity & temperature:
                                                    #     high 16 bits: humidity, in 0.1%, such as: 325 means humidity is 32.5%
                                                    #     low 16 bits: temperature, in 0.1 degrees Celsius, such as: 32 means 3.2 degrees Celsius
@@ -373,6 +380,12 @@ TOUPCAM_OPTION_GVCP_RETRY             = 0x72       # GVCP Retry: range = [2, 8],
                                                    #   Unless in very special circumstances, generally no modification is required, just use the default value
 TOUPCAM_OPTION_GVSP_WAIT_PERCENT      = 0x73       # GVSP wait percent: range = [0, 100], default = (trigger mode: 100, realtime: 0, other: 1)
 TOUPCAM_OPTION_RESET_SEQ_TIMESTAMP    = 0x74       # Reset to 0: 1 => seq; 2 => timestamp; 3 => both
+TOUPCAM_OPTION_TRIGGER_CANCEL_MODE    = 0x75       # Trigger cancel mode: 0 => no frame, 1 => output frame; default: 0
+TOUPCAM_OPTION_MECHANICALSHUTTER      = 0x76       # Mechanical shutter: 0 => open, 1 => close; default: 0
+TOUPCAM_OPTION_LINE_TIME              = 0x77       # Line-time of sensor in nanosecond
+TOUPCAM_OPTION_ZERO_PADDING           = 0x78       # Zero padding: 0 => high, 1 => low; default: 0
+TOUPCAM_OPTION_UPTIME                 = 0x79       # device uptime in millisecond
+TOUPCAM_OPTION_BITRANGE               = 0x7a       # Bit range: [0, 8]
 
 TOUPCAM_PIXELFORMAT_RAW8              = 0x00
 TOUPCAM_PIXELFORMAT_RAW10             = 0x01
@@ -394,16 +407,17 @@ TOUPCAM_PIXELFORMAT_HDR11HL           = 0x10   # HDR, Bitdepth: 11, Conversion G
 TOUPCAM_PIXELFORMAT_HDR12HL           = 0x11   # HDR, Bitdepth: 12, Conversion Gain: High + Low
 TOUPCAM_PIXELFORMAT_HDR14HL           = 0x12   # HDR, Bitdepth: 14, Conversion Gain: High + Low
 
-TOUPCAM_FRAMEINFO_FLAG_SEQ            = 0x00000001   # frame sequence number
-TOUPCAM_FRAMEINFO_FLAG_TIMESTAMP      = 0x00000002   # timestamp
-TOUPCAM_FRAMEINFO_FLAG_EXPOTIME       = 0x00000004   # exposure time
-TOUPCAM_FRAMEINFO_FLAG_EXPOGAIN       = 0x00000008   # exposure gain
-TOUPCAM_FRAMEINFO_FLAG_BLACKLEVEL     = 0x00000010   # black level
-TOUPCAM_FRAMEINFO_FLAG_SHUTTERSEQ     = 0x00000020   # sequence shutter counter
-TOUPCAM_FRAMEINFO_FLAG_GPS            = 0x00000040   # GPS
-TOUPCAM_FRAMEINFO_FLAG_AUTOFOCUS      = 0x00000080   # auto focus: uLum & uFV
-TOUPCAM_FRAMEINFO_FLAG_COUNT          = 0x00000100   # timecount, framecount, tricount
-TOUPCAM_FRAMEINFO_FLAG_STILL          = 0x00008000   # still image
+TOUPCAM_FRAMEINFO_FLAG_SEQ                = 0x00000001   # frame sequence number
+TOUPCAM_FRAMEINFO_FLAG_TIMESTAMP          = 0x00000002   # timestamp
+TOUPCAM_FRAMEINFO_FLAG_EXPOTIME           = 0x00000004   # exposure time
+TOUPCAM_FRAMEINFO_FLAG_EXPOGAIN           = 0x00000008   # exposure gain
+TOUPCAM_FRAMEINFO_FLAG_BLACKLEVEL         = 0x00000010   # black level
+TOUPCAM_FRAMEINFO_FLAG_SHUTTERSEQ         = 0x00000020   # sequence shutter counter
+TOUPCAM_FRAMEINFO_FLAG_GPS                = 0x00000040   # GPS
+TOUPCAM_FRAMEINFO_FLAG_AUTOFOCUS          = 0x00000080   # auto focus: uLum & uFV
+TOUPCAM_FRAMEINFO_FLAG_COUNT              = 0x00000100   # timecount, framecount, tricount
+TOUPCAM_FRAMEINFO_FLAG_MECHANICALSHUTTER  = 0x00000200   # Mechanical shutter: closed
+TOUPCAM_FRAMEINFO_FLAG_STILL              = 0x00008000   # still image
 
 TOUPCAM_IOCONTROLTYPE_GET_SUPPORTEDMODE            = 0x01  # 0x01 => Input, 0x02 => Output, (0x01 | 0x02) => support both Input and Output
 TOUPCAM_IOCONTROLTYPE_GET_GPIODIR                  = 0x03  # 0x01 => Input, 0x02 => Output
@@ -437,11 +451,11 @@ TOUPCAM_IOCONTROLTYPE_SET_COUNTERSOURCE            = 0x14
 TOUPCAM_IOCONTROLTYPE_GET_COUNTERVALUE             = 0x15  # Counter Value, range: [1 ~ 65535]
 TOUPCAM_IOCONTROLTYPE_SET_COUNTERVALUE             = 0x16
 TOUPCAM_IOCONTROLTYPE_SET_RESETCOUNTER             = 0x18
-TOUPCAM_IOCONTROLTYPE_GET_PWM_FREQ                 = 0x19
+TOUPCAM_IOCONTROLTYPE_GET_PWM_FREQ                 = 0x19  # PWM Frequency
 TOUPCAM_IOCONTROLTYPE_SET_PWM_FREQ                 = 0x1a
-TOUPCAM_IOCONTROLTYPE_GET_PWM_DUTYRATIO            = 0x1b
+TOUPCAM_IOCONTROLTYPE_GET_PWM_DUTYRATIO            = 0x1b  # PWM Duty Ratio
 TOUPCAM_IOCONTROLTYPE_SET_PWM_DUTYRATIO            = 0x1c
-TOUPCAM_IOCONTROLTYPE_GET_PWMSOURCE                = 0x1d  # 0x00 => Opto-isolated input, 0x01 => GPIO0, 0x02 => GPIO1
+TOUPCAM_IOCONTROLTYPE_GET_PWMSOURCE                = 0x1d  # PWM Source: 0x00 => Opto-isolated input, 0x01 => GPIO0, 0x02 => GPIO1
 TOUPCAM_IOCONTROLTYPE_SET_PWMSOURCE                = 0x1e
 TOUPCAM_IOCONTROLTYPE_GET_OUTPUTMODE               = 0x1f  # 0x00 => Frame Trigger Wait
                                                            # 0x01 => Exposure Active
@@ -887,7 +901,7 @@ class Toupcam:
 
     @classmethod
     def Version(cls):
-        """get the version of this dll, which is: 57.26813.20241028"""
+        """get the version of this dll, which is: 57.27348.20241224"""
         cls.__initlib()
         return cls.__lib.Toupcam_Version()
 
@@ -1858,6 +1872,8 @@ class Toupcam:
 
     def put_RoiN(self, xOffset, yOffset, xWidth, yHeight):
         '''multiple Roi'''
+        if len(xOffset) != len(yOffset) or len(xOffset) != len(xWidth) or len(xOffset) != len(yHeight):
+            raise HRESULTException(0x80070057)
         Num = len(xOffset)
         pxOffset = (ctypes.c_uint * Num)(*xOffset)
         pyOffset = (ctypes.c_uint * Num)(*yOffset)
@@ -1907,8 +1923,9 @@ class Toupcam:
 
     def get_FrameRate(self):
         """
-        get the frame rate: framerate (fps) = Frame * 1000.0 / nTime
+        get the actual frame rate of the camera at the most recent time (about a few seconds):
         return (Frame, Time, TotalFrame)
+        framerate (fps) = Frame * 1000.0 / Time
         """
         x = ctypes.c_uint(0)
         y = ctypes.c_uint(0)
@@ -2113,7 +2130,6 @@ class Toupcam:
     def __initlib(cls):
         if cls.__lib is None:
             try: # Firstly try to load the library in the directory where this file is located
-                # dir = os.path.dirname(os.path.realpath(__file__))
                 dir_ = os.path.abspath(os.path.join(os.path.dirname(__file__),'..','drivers and libraries','toupcam'))
                 if sys.platform == 'win32':
                     cls.__lib = ctypes.windll.LoadLibrary(os.path.join(dir_,'win','x64','toupcam.dll'))
