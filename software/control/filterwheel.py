@@ -15,6 +15,11 @@ class SquidFilterWheelWrapper:
 
         self.microcontroller = microcontroller
 
+        if HAS_ENCODER_W:
+            self.microcontroller.set_pid_arguments(SQUID_FILTERWHEEL_MOTORSLOTINDEX, PID_P_W, PID_I_W, PID_D_W)
+            self.microcontroller.configure_stage_pid(SQUID_FILTERWHEEL_MOTORSLOTINDEX, SQUID_FILTERWHEEL_TRANSITIONS_PER_REVOLUTION, ENCODER_FLIP_DIR_W)
+            self.microcontroller.turn_on_stage_pid(SQUID_FILTERWHEEL_MOTORSLOTINDEX, ENABLE_PID_W)
+
     def move_w(self,delta):
         self.microcontroller.move_w_usteps(int(delta/(SCREW_PITCH_W_MM/(MICROSTEPPING_DEFAULT_W * FULLSTEPS_PER_REV_W))))
 
