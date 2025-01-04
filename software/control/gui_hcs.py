@@ -1268,7 +1268,7 @@ class HighContentScreeningGui(QMainWindow):
                 self.is_live_scan_grid_on = False
         else:
             self.log.info("FINISHED ACQUISITION")
-            if not self.is_live_scan_grid_on:  # reconnect live scan grid if was on before acqusition
+            if not self.is_live_scan_grid_on and "glass slide" in self.wellplateFormatWidget.wellplate_format:
                 self.movement_updater.position_after_move.connect(
                     self.wellplateMultiPointWidget.update_live_coordinates
                 )
