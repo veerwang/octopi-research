@@ -3619,7 +3619,7 @@ class WellplateMultiPointWidget(QFrame):
 
         elif "glass slide" in self.navigationViewer.sample:
             pos = self.stage.get_pos()
-            self.scanCoordinates.set_live_scan_coordinates(pos.x_mm, pos.y_mm)
+            self.scanCoordinates.set_live_scan_coordinates(pos.x_mm, pos.y_mm, scan_size_mm, overlap_percent, shape)
         else:
             if self.scanCoordinates.has_regions():
                 self.scanCoordinates.clear_regions()

@@ -853,7 +853,10 @@ class HighContentScreeningGui(QMainWindow):
         self.movement_updater.position_after_move.connect(self.navigationViewer.draw_fov_current_location)
         if WELLPLATE_FORMAT == "glass slide":
             # TODO(imo): This well place logic is duplicated below in onWellPlateChanged.  We should change it to only exist in 1 location.
-            self.movement_updater.sent_after_stopped.connect(self.wellplateMultiPointWidget.set_live_scan_coordinates)
+            # self.movement_updater.sent_after_stopped.connect(self.wellplateMultiPointWidget.set_live_scan_coordinates)
+            self.movement_updater.position_after_move.connect(
+                    self.wellplateMultiPointWidget.update_live_coordinates
+                )
             self.is_live_scan_grid_on = True
         self.multipointController.signal_register_current_fov.connect(self.navigationViewer.register_fov)
         self.multipointController.signal_current_configuration.connect(self.liveControlWidget.set_microscope_mode)
