@@ -1163,10 +1163,9 @@ class HighContentScreeningGui(QMainWindow):
         if isinstance(format_, QVariant):
             format_ = format_.value()
 
-        # TODO(imo): Not sure why glass slide is so special here?  It seems like it's just a "1 well plate".  Also why is the objective forced to inverted for all non-glass slide, and not inverted for glass slide?
+        # TODO(imo): Not sure why glass slide is so special here?  It seems like it's just a "1 well plate".
         if format_ == "glass slide":
             self.toggleWellSelector(False)
-            self.multipointController.inverted_objective = False
             if not self.is_live_scan_grid_on:  # connect live scan grid for glass slide
                 self.movement_updater.position_after_move.connect(
                     self.wellplateMultiPointWidget.update_live_coordinates
@@ -1176,7 +1175,6 @@ class HighContentScreeningGui(QMainWindow):
             self.setupSlidePositionController(is_for_wellplate=False)
         else:
             self.toggleWellSelector(True)
-            self.multipointController.inverted_objective = True
             if self.is_live_scan_grid_on:  # disconnect live scan grid for wellplate
                 self.movement_updater.position_after_move.disconnect(
                     self.wellplateMultiPointWidget.update_live_coordinates
