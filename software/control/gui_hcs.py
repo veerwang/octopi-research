@@ -853,7 +853,10 @@ class HighContentScreeningGui(QMainWindow):
         self.movement_updater.position_after_move.connect(self.navigationViewer.draw_fov_current_location)
         if WELLPLATE_FORMAT == "glass slide":
             # TODO(imo): This well place logic is duplicated below in onWellPlateChanged.  We should change it to only exist in 1 location.
-            self.movement_updater.sent_after_stopped.connect(self.wellplateMultiPointWidget.set_live_scan_coordinates)
+            # self.movement_updater.sent_after_stopped.connect(self.wellplateMultiPointWidget.set_live_scan_coordinates)
+            self.movement_updater.position_after_move.connect(
+                    self.wellplateMultiPointWidget.update_live_coordinates
+                )
             self.is_live_scan_grid_on = True
         self.multipointController.signal_register_current_fov.connect(self.navigationViewer.register_fov)
         self.multipointController.signal_current_configuration.connect(self.liveControlWidget.set_microscope_mode)
@@ -1163,10 +1166,9 @@ class HighContentScreeningGui(QMainWindow):
         if isinstance(format_, QVariant):
             format_ = format_.value()
 
-        # TODO(imo): Not sure why glass slide is so special here?  It seems like it's just a "1 well plate".  Also why is the objective forced to inverted for all non-glass slide, and not inverted for glass slide?
+        # TODO(imo): Not sure why glass slide is so special here?  It seems like it's just a "1 well plate".
         if format_ == "glass slide":
             self.toggleWellSelector(False)
-            self.multipointController.inverted_objective = False
             if not self.is_live_scan_grid_on:  # connect live scan grid for glass slide
                 self.movement_updater.position_after_move.connect(
                     self.wellplateMultiPointWidget.update_live_coordinates
@@ -1176,7 +1178,6 @@ class HighContentScreeningGui(QMainWindow):
             self.setupSlidePositionController(is_for_wellplate=False)
         else:
             self.toggleWellSelector(True)
-            self.multipointController.inverted_objective = True
             if self.is_live_scan_grid_on:  # disconnect live scan grid for wellplate
                 self.movement_updater.position_after_move.disconnect(
                     self.wellplateMultiPointWidget.update_live_coordinates
@@ -1267,7 +1268,7 @@ class HighContentScreeningGui(QMainWindow):
                 self.is_live_scan_grid_on = False
         else:
             self.log.info("FINISHED ACQUISITION")
-            if not self.is_live_scan_grid_on:  # reconnect live scan grid if was on before acqusition
+            if not self.is_live_scan_grid_on and "glass slide" in self.wellplateFormatWidget.wellplate_format:
                 self.movement_updater.position_after_move.connect(
                     self.wellplateMultiPointWidget.update_live_coordinates
                 )
