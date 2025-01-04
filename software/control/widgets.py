@@ -3074,6 +3074,12 @@ class WellplateMultiPointWidget(QFrame):
         self.eta_seconds = 0
         self.is_current_acquisition_widget = False
         self.parent = self.multipointController.parent
+
+        # TODO (hl): these along with update_live_coordinates need to move out of this class
+        self._last_update_time = 0
+        self._last_x_mm = None
+        self._last_y_mm = None
+
         self.add_components()
         self.setFrameStyle(QFrame.Panel | QFrame.Raised)
         self.set_default_scan_size()
@@ -3637,14 +3643,21 @@ class WellplateMultiPointWidget(QFrame):
             self.scanCoordinates.clear_regions()
 
     def update_live_coordinates(self, pos: squid.abc.Pos):
+        if hasattr(self.parent, "recordTabWidget") and self.parent.recordTabWidget.currentWidget() != self:
+            return
         x_mm = pos.x_mm
         y_mm = pos.y_mm
-        if hasattr(self.parent, "recordTabWidget") and self.parent.recordTabWidget.currentWidget() != self:
+        # Check if x_mm or y_mm has changed
+        position_changed = (x_mm != self._last_x_mm) or (y_mm != self._last_y_mm)
+        if not position_changed or time.time() - self._last_update_time < 0.5:
             return
         scan_size_mm = self.entry_scan_size.value()
         overlap_percent = self.entry_overlap.value()
         shape = self.combobox_shape.currentText()
         self.scanCoordinates.set_live_scan_coordinates(x_mm, y_mm, scan_size_mm, overlap_percent, shape)
+        self._last_update_time = time.time()
+        self._last_x_mm = x_mm
+        self._last_y_mm = y_mm
 
     def toggle_acquisition(self, pressed):
         if not self.base_path_is_set:
