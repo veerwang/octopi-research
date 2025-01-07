@@ -1,4 +1,8 @@
 from typing import Optional
+import serial
+import threading
+import time
+import re
 
 from squid.abc import AbstractStage, Pos, StageStage
 from squid.config import StageConfig
@@ -13,7 +17,7 @@ class PriorStage(AbstractStage):
         super().__init__(stage_config)
 
         port = [p.device for p in serial.tools.list_ports.comports() if sn == p.serial_number]
-        self.serial = serial.Serial(port[0], baudrate=baudrate, timeout=timeout)
+        self.serial = serial.Serial(port[0], baudrate=baudrate, timeout=0.1)
         self.current_baudrate = baudrate
 
         # Position information
@@ -37,8 +41,8 @@ class PriorStage(AbstractStage):
         self.resolution = 0.1
         self.x_direction = 1  # 1 or -1
         self.y_direction = 1  # 1 or -1
-        self.speed = 200  # Default value
-        self.acceleration = 500  # Default value
+        self.speed = 100
+        self.acceleration = 100
 
         self.serial_lock = threading.Lock()
 
@@ -84,11 +88,13 @@ class PriorStage(AbstractStage):
     def _initialize(self):
         self._send_command("COMP 0")  # Set to standard mode
         self._send_command("BLSH 1")  # Enable backlash correction
+        self._send_command('XD -1')   # Set direction of X axis move
+        self._send_command('YD -1')   # Set direction of Y axis move
         self._send_command("RES,S," + str(self.resolution))  # Set resolution
         response = self._send_command("H 0")  # Joystick enabled
         self.joystick_enabled = True
         self.user_unit = self.stage_microsteps_per_mm * self.resolution
-        self.get_stage_info()
+        # self.get_stage_info()
         self.set_acceleration(self.acceleration)
         self.set_max_speed(self.speed)
 
@@ -105,14 +111,60 @@ class PriorStage(AbstractStage):
         self.stage_model = re.search(r"STAGE\s*=\s*(\S+)", stage_info).group(1)
         print("Stage model: ", self.stage_model)
 
-    def mm_to_steps(self, mm: float):
+    def set_max_speed(self, speed=1000):
+        """Set the maximum speed of the stage. Range is 1 to 1000."""
+        if 1 <= speed <= 1000:
+            response = self._send_command(f"SMS {speed}")
+            print(f"Maximum speed set to {speed}. Response: {response}")
+        else:
+            raise ValueError("Speed must be between 1 and 1000")
+
+    def get_max_speed(self):
+        """Get the current maximum speed setting."""
+        response = self._send_command("SMS")
+        print(f"Current maximum speed: {response}")
+        return int(response)
+
+    def set_acceleration(self, acceleration=1000):
+        """Set the acceleration of the stage. Range is 1 to 1000."""
+        if 1 <= acceleration <= 1000:
+            response = self._send_command(f"SAS {acceleration}")
+            self.acceleration = acceleration
+            print(f"Acceleration set to {acceleration}. Response: {response}")
+        else:
+            raise ValueError("Acceleration must be between 1 and 1000")
+
+    def enable_joystick(self):
+        self._send_command("J")
+        self.joystick_enabled = True
+
+    def disable_joystick(self):
+        self._send_command("H")
+        self.joystick_enabled = False
+
+    def get_acceleration(self):
+        """Get the current acceleration setting."""
+        response = self.send_command("SAS")
+        print(f"Current acceleration: {response}")
+        return int(response)
+
+    def _mm_to_steps(self, mm: float):
         return int(mm * self.user_unit)
 
-    def steps_to_mm(self, steps: int):
+    def _steps_to_mm(self, steps: int):
         return steps / self.user_unit
 
+    def x_mm_to_usteps(self, mm: float):
+        return self._mm_to_steps(mm)
+
+    def y_mm_to_usteps(self, mm: float):
+        return self._mm_to_steps(mm)
+
+    def z_mm_to_usteps(self, mm: float):
+        return 0
+
     def move_x(self, rel_mm: float, blocking: bool = True):
-        steps = self.mm_to_steps(rel_mm)
+        steps = self._mm_to_steps(rel_mm)
         steps = steps * self.x_direction
         self._send_command(f"GR {steps},0")
         if blocking:
@@ -121,7 +173,7 @@ class PriorStage(AbstractStage):
             threading.Thread(target=self.wait_for_stop, daemon=True).start()
 
     def move_y(self, rel_mm: float, blocking: bool = True):
-        steps = self.mm_to_steps(rel_mm)
+        steps = self._mm_to_steps(rel_mm)
         steps = steps * self.y_direction
         self._send_command(f"GR 0,{steps}")
         if blocking:
@@ -133,7 +185,7 @@ class PriorStage(AbstractStage):
         pass
 
     def move_x_to(self, abs_mm: float, blocking: bool = True):
-        steps = self.mm_to_steps(abs_mm)
+        steps = self._mm_to_steps(abs_mm)
         steps = steps * self.x_direction
         self._send_command(f"GX {steps}")
         if blocking:
@@ -142,7 +194,7 @@ class PriorStage(AbstractStage):
             threading.Thread(target=self.wait_for_stop, daemon=True).start()
 
     def move_y_to(self, abs_mm: float, blocking: bool = True):
-        steps = self.mm_to_steps(abs_mm)
+        steps = self._mm_to_steps(abs_mm)
         steps = steps * self.y_direction
         self._send_command(f"GY {steps}")
         if blocking:
@@ -158,8 +210,8 @@ class PriorStage(AbstractStage):
         x, y, z = map(int, response.split(","))
         self.x_pos = x
         self.y_pos = y
-        x_mm = self.steps_to_mm(x)
-        y_mm = self.steps_to_mm(y)
+        x_mm = self._steps_to_mm(x)
+        y_mm = self._steps_to_mm(y)
         return Pos(x_mm=x_mm, y_mm=y_mm, z_mm=0, theta_rad=0)
 
     def get_state(self) -> StageStage:
@@ -169,17 +221,7 @@ class PriorStage(AbstractStage):
             return StageStage(busy=True)
 
     def home(self, x: bool, y: bool, z: bool, theta: bool, blocking: bool = True):
-        if x and y:
-            self._send_command("M")  # 'M' command moves stage to (0,0,0)
-            self.wait_for_stop()
-            self.x_pos = 0
-            self.y_pos = 0
-        elif x:
-            self.move_x(-self.steps_to_mm(self.x_pos))
-            self.x_pos = 0
-        elif y:
-            self.move_y(-self.steps_to_mm(self.y_pos))
-            self.y_pos = 0
+        self._send_command('SIS')
         if blocking:
             self.wait_for_stop()
 
@@ -197,14 +239,16 @@ class PriorStage(AbstractStage):
         '''
 
     def zero(self, x: bool, y: bool, z: bool, theta: bool, blocking: bool = True):
-        self._not_impl()
+        self.send_command("Z")
+        self.x_pos = 0
+        self.y_pos = 0
 
     def wait_for_stop(self):
         while True:
             status = int(self._send_command("$,S"))
             if status == 0:
                 self.get_pos()
-                print("xy position: ", self.x_pos, self.y_pos)
+                # print("xy position: ", self.x_pos, self.y_pos)
                 break
             time.sleep(0.05)
 

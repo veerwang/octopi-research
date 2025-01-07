@@ -38,6 +38,15 @@ class CephlaStage(AbstractStage):
                 )
                 self._microcontroller.turn_on_stage_pid(microcontroller_axis_number)
 
+    def x_mm_to_usteps(self, mm: float):
+        return self._config.X_AXIS.convert_real_units_to_ustep(mm)
+
+    def y_mm_to_usteps(self, mm: float):
+        return self._config.Y_AXIS.convert_real_units_to_ustep(mm)
+
+    def z_mm_to_usteps(self, mm: float):
+        return self._config.Z_AXIS.convert_real_units_to_ustep(mm)
+
     def move_x(self, rel_mm: float, blocking: bool = True):
         self._microcontroller.move_x_usteps(self._config.X_AXIS.convert_real_units_to_ustep(rel_mm))
         if blocking:
