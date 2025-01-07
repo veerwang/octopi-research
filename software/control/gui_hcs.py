@@ -19,8 +19,6 @@ import pyqtgraph.dockarea as dock
 import squid.abc
 import squid.logging
 import squid.config
-import squid.stage.prior
-import squid.stage.cephla
 import squid.stage.utils
 import control.microscope
 from control.microscope import LightSourceType, IntensityControlMode, ShutterControlMode
@@ -29,6 +27,10 @@ log = squid.logging.get_logger(__name__)
 
 import control.filterwheel as filterwheel
 
+if USE_PRIOR_STAGE:
+    import squid.stage.prior
+else:
+    import squid.stage.cephla
 
 if CAMERA_TYPE == "Toupcam":
     try:
@@ -77,9 +79,6 @@ elif FOCUS_CAMERA_TYPE == "FLIR":
         import control.camera as camera_fc
 else:
     import control.camera as camera_fc
-
-if USE_PRIOR_STAGE:
-    from control.stage_prior import PriorStage
 
 import control.core.core as core
 import control.microcontroller as microcontroller
@@ -199,9 +198,17 @@ class HighContentScreeningGui(QMainWindow):
         self.liveController = core.LiveController(
             self.camera, self.microcontroller, self.configurationManager, self.illuminationController, parent=self
         )
-        self.stage: squid.abc.AbstractStage = squid.stage.cephla.CephlaStage(
-            microcontroller=self.microcontroller, stage_config=squid.config.get_stage_config()
-        )
+
+        if USE_PRIOR_STAGE:
+            self.stage: squid.abc.AbstractStage = squid.stage.prior.PriorStage(
+                sn=PRIOR_STAGE_SN
+            )
+
+        else:
+            self.stage: squid.abc.AbstractStage = squid.stage.cephla.CephlaStage(
+                microcontroller=self.microcontroller, stage_config=squid.config.get_stage_config()
+            )
+
         self.slidePositionController = core.SlidePositionController(
             self.stage, self.liveController, is_for_wellplate=True
         )
@@ -407,13 +414,6 @@ class HighContentScreeningGui(QMainWindow):
                 self.emission_filter_wheel = serial_peripherals.Optospin(SN=FILTER_CONTROLLER_SERIAL_NUMBER)
             except Exception:
                 self.log.error("Error initializing Optospin Emission Filter Wheel")
-                raise
-
-        if USE_PRIOR_STAGE:
-            try:
-                self.priorstage = PriorStage(PRIOR_STAGE_SN, parent=self)
-            except Exception:
-                self.log.error("Error initializing Prior Stage")
                 raise
 
     def setupHardware(self):

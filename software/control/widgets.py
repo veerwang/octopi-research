@@ -1541,17 +1541,17 @@ class NavigationWidget(QFrame):
         self.stage.move_z(-self.entry_dZ.value() / 1000)
 
     def set_deltaX(self, value):
-        mm_per_ustep = 1.0 / self.stage.get_config().X_AXIS.convert_real_units_to_ustep(1.0)
+        mm_per_ustep = 1.0 / self.stage.x_mm_to_usteps(1.0)
         deltaX = round(value / mm_per_ustep) * mm_per_ustep
         self.entry_dX.setValue(deltaX)
 
     def set_deltaY(self, value):
-        mm_per_ustep = 1.0 / self.stage.get_config().Y_AXIS.convert_real_units_to_ustep(1.0)
+        mm_per_ustep = 1.0 / self.stage.y_mm_to_usteps(1.0)
         deltaY = round(value / mm_per_ustep) * mm_per_ustep
         self.entry_dY.setValue(deltaY)
 
     def set_deltaZ(self, value):
-        mm_per_ustep = 1.0 / self.stage.get_config().Z_AXIS.convert_real_units_to_ustep(1.0)
+        mm_per_ustep = 1.0 / self.stage.z_mm_to_usteps(1.0)
         deltaZ = round(value / 1000 / mm_per_ustep) * mm_per_ustep * 1000
         self.entry_dZ.setValue(deltaZ)
 
