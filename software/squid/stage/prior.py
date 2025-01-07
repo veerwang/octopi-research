@@ -8,41 +8,205 @@ from squid.config import StageConfig
 # implemented the cephla stage.  As soon as we roll the interface out and get past the point of major refactors
 # to use it (we want to get past that point as fast as possible!), we'll come back to implement this.
 class PriorStage(AbstractStage):
-    def __init__(self, stage_config: StageConfig):
-        self._not_impl()
+    def __init__(self, sn: str, baudrate: int = 115200, stage_config: StageConfig = None):
+        # We are not using StageConfig for Prior stage now. Waiting for further update/clarification of this part
+        super().__init__(stage_config)
 
-    def _not_impl(self):
-        raise NotImplementedError("The Prior Stage is not yet implemented!")
+        port = [p.device for p in serial.tools.list_ports.comports() if sn == p.serial_number]
+        self.serial = serial.Serial(port[0], baudrate=baudrate, timeout=timeout)
+        self.current_baudrate = baudrate
+
+        # Position information
+        self.x_pos = 0
+        self.y_pos = 0
+        self.z_pos = 0  # Always 0 for Prior stage
+        self.theta_pos = 0  # Always 0 for Prior stage
+
+        # Button and switch state
+        self.button_and_switch_state = 0
+        self.joystick_button_pressed = 0
+        self.signal_joystick_button_pressed_event = False
+        self.switch_state = 0
+        self.joystick_enabled = False
+
+        # Prior-specific properties
+        self.stage_microsteps_per_mm = 100000  # Stage property
+        self.user_unit = None
+        self.stage_model = None
+        self.stage_limits = None
+        self.resolution = 0.1
+        self.x_direction = 1  # 1 or -1
+        self.y_direction = 1  # 1 or -1
+        self.speed = 200  # Default value
+        self.acceleration = 500  # Default value
+
+        self.serial_lock = threading.Lock()
+
+        self.set_baudrate(baudrate)
+
+        self._initialize()
+
+    def set_baudrate(self, baud: int):
+        allowed_baudrates = {9600: "96", 19200: "19", 38400: "38", 115200: "115"}
+        if baud not in allowed_baudrates:
+            print("Baudrate not allowed. Setting baudrate to 9600")
+            baud_command = "BAUD 96"
+        else:
+            baud_command = "BAUD " + allowed_baudrates[baud]
+        print(baud_command)
+
+        for bd in allowed_baudrates:
+            self.serial.baudrate = bd
+            self.serial.write(b"\r")
+            time.sleep(0.1)
+            self.serial.flushInput()
+
+            self._send_command(baud_command)
+
+            self.serial.baudrate = baud
+
+            try:
+                test_response = self._send_command("$")  # Send a simple query command
+                if not test_response:
+                    raise Exception("No response received after changing baud rate")
+                else:
+                    self.current_baudrate = baud
+                    print(f"Baud rate successfully changed to {baud}")
+                    return
+            except Exception as e:
+                # If verification fails, try to revert to the original baud rate
+                self.serial.baudrate = self.current_baudrate
+                print(f"Serial baudrate: {bd}")
+                print(f"Failed to verify communication at new baud rate: {e}")
+
+        raise Exception("Failed to set baudrate.")
+
+    def _initialize(self):
+        self._send_command("COMP 0")  # Set to standard mode
+        self._send_command("BLSH 1")  # Enable backlash correction
+        self._send_command("RES,S," + str(self.resolution))  # Set resolution
+        response = self._send_command("H 0")  # Joystick enabled
+        self.joystick_enabled = True
+        self.user_unit = self.stage_microsteps_per_mm * self.resolution
+        self.get_stage_info()
+        self.set_acceleration(self.acceleration)
+        self.set_max_speed(self.speed)
+
+    def _send_command(self, command: str) -> str:
+        with self.serial_lock:
+            self.serial.write(f"{command}\r".encode())
+            response = self.serial.readline().decode().strip()
+            if response.startswith("E"):
+                raise Exception(f"Error from controller: {response}")
+            return response
+
+    def get_stage_info(self):
+        stage_info = self._send_command("STAGE")
+        self.stage_model = re.search(r"STAGE\s*=\s*(\S+)", stage_info).group(1)
+        print("Stage model: ", self.stage_model)
+
+    def mm_to_steps(self, mm: float):
+        return int(mm * self.user_unit)
+
+    def steps_to_mm(self, steps: int):
+        return steps / self.user_unit
 
     def move_x(self, rel_mm: float, blocking: bool = True):
-        self._not_impl()
+        steps = self.mm_to_steps(rel_mm)
+        steps = steps * self.x_direction
+        self._send_command(f"GR {steps},0")
+        if blocking:
+            self.wait_for_stop()
+        else:
+            threading.Thread(target=self.wait_for_stop, daemon=True).start()
 
     def move_y(self, rel_mm: float, blocking: bool = True):
-        self._not_impl()
-
+        steps = self.mm_to_steps(rel_mm)
+        steps = steps * self.y_direction
+        self._send_command(f"GR 0,{steps}")
+        if blocking:
+            self.wait_for_stop()
+        else:
+            threading.Thread(target=self.wait_for_stop, daemon=True).start()
+        
     def move_z(self, rel_mm: float, blocking: bool = True):
-        self._not_impl()
+        pass
 
     def move_x_to(self, abs_mm: float, blocking: bool = True):
-        self._not_impl()
+        steps = self.mm_to_steps(abs_mm)
+        steps = steps * self.x_direction
+        self._send_command(f"GX {steps}")
+        if blocking:
+            self.wait_for_stop()
+        else:
+            threading.Thread(target=self.wait_for_stop, daemon=True).start()
 
     def move_y_to(self, abs_mm: float, blocking: bool = True):
-        self._not_impl()
+        steps = self.mm_to_steps(abs_mm)
+        steps = steps * self.y_direction
+        self._send_command(f"GY {steps}")
+        if blocking:
+            self.wait_for_stop()
+        else:
+            threading.Thread(target=self.wait_for_stop, daemon=True).start()
 
     def move_z_to(self, abs_mm: float, blocking: bool = True):
-        self._not_impl()
+        pass
 
     def get_pos(self) -> Pos:
-        self._not_impl()
+        response = self._send_command("P")
+        x, y, z = map(int, response.split(","))
+        self.x_pos = x
+        self.y_pos = y
+        x_mm = self.steps_to_mm(x)
+        y_mm = self.steps_to_mm(y)
+        return Pos(x_mm=x_mm, y_mm=y_mm, z_mm=0, theta_rad=0)
 
     def get_state(self) -> StageStage:
-        self._not_impl()
+        if int(self._send_command("$,S")) == 0:
+            return StageStage(busy=False)
+        else:
+            return StageStage(busy=True)
 
     def home(self, x: bool, y: bool, z: bool, theta: bool, blocking: bool = True):
-        self._not_impl()
+        if x and y:
+            self._send_command("M")  # 'M' command moves stage to (0,0,0)
+            self.wait_for_stop()
+            self.x_pos = 0
+            self.y_pos = 0
+        elif x:
+            self.move_x(-self.steps_to_mm(self.x_pos))
+            self.x_pos = 0
+        elif y:
+            self.move_y(-self.steps_to_mm(self.y_pos))
+            self.y_pos = 0
+        if blocking:
+            self.wait_for_stop()
+
+        # We are not using the following for Prior stage yet
+        '''
+        if z:
+            self._microcontroller.home_z()
+        if blocking:
+            self._microcontroller.wait_till_operation_is_completed(z_timeout)
+
+        if theta:
+            self._microcontroller.home_theta()
+        if blocking:
+            self._microcontroller.wait_till_operation_is_completed(theta_timeout)
+        '''
 
     def zero(self, x: bool, y: bool, z: bool, theta: bool, blocking: bool = True):
         self._not_impl()
+
+    def wait_for_stop(self):
+        while True:
+            status = int(self._send_command("$,S"))
+            if status == 0:
+                self.get_pos()
+                print("xy position: ", self.x_pos, self.y_pos)
+                break
+            time.sleep(0.05)
 
     def set_limits(
         self,
@@ -55,7 +219,7 @@ class PriorStage(AbstractStage):
         theta_pos_rad: Optional[float] = None,
         theta_neg_rad: Optional[float] = None,
     ):
-        self._not_impl()
+        pass
 
     def get_config(self) -> StageConfig:
         return super().get_config()

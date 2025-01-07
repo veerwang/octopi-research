@@ -78,9 +78,6 @@ elif FOCUS_CAMERA_TYPE == "FLIR":
 else:
     import control.camera as camera_fc
 
-if USE_PRIOR_STAGE:
-    from control.stage_prior import PriorStage
-
 import control.core.core as core
 import control.microcontroller as microcontroller
 import control.serial_peripherals as serial_peripherals
@@ -199,9 +196,17 @@ class HighContentScreeningGui(QMainWindow):
         self.liveController = core.LiveController(
             self.camera, self.microcontroller, self.configurationManager, self.illuminationController, parent=self
         )
-        self.stage: squid.abc.AbstractStage = squid.stage.cephla.CephlaStage(
-            microcontroller=self.microcontroller, stage_config=squid.config.get_stage_config()
-        )
+
+        if USE_PRIOR_STAGE:
+            self.stage: squid.abc.AbstractStage = squid.stage.prior.PriorStage(
+                sn=PRIOR_STAGE_SN
+            )
+
+        else:
+            self.stage: squid.abc.AbstractStage = squid.stage.cephla.CephlaStage(
+                microcontroller=self.microcontroller, stage_config=squid.config.get_stage_config()
+            )
+
         self.slidePositionController = core.SlidePositionController(
             self.stage, self.liveController, is_for_wellplate=True
         )
