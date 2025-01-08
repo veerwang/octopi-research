@@ -89,15 +89,17 @@ class PriorStage(AbstractStage):
     def _initialize(self):
         self._send_command("COMP 0")  # Set to standard mode
         self._send_command("BLSH 1")  # Enable backlash correction
+        self._send_command("RES,S," + str(self.resolution))  # Set resolution
         self._send_command('XD -1')   # Set direction of X axis move
         self._send_command('YD -1')   # Set direction of Y axis move
-        self._send_command("RES,S," + str(self.resolution))  # Set resolution
         response = self._send_command("H 0")  # Joystick enabled
         self.joystick_enabled = True
         self.user_unit = self.stage_microsteps_per_mm * self.resolution
-        # self.get_stage_info()
+        self.get_stage_info()
         self.set_acceleration(self.acceleration)
         self.set_max_speed(self.speed)
+        self.get_pos()
+        print(self.x_pos, self.y_pos)
 
     def _send_command(self, command: str) -> str:
         with self.serial_lock:
