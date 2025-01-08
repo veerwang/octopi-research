@@ -45,6 +45,7 @@ class PriorStage(AbstractStage):
         self.acceleration = 100
 
         self.serial_lock = threading.Lock()
+        self.is_busy = False
 
         self.set_baudrate(baudrate)
 
@@ -144,7 +145,7 @@ class PriorStage(AbstractStage):
 
     def get_acceleration(self):
         """Get the current acceleration setting."""
-        response = self.send_command("SAS")
+        response = self._send_command("SAS")
         print(f"Current acceleration: {response}")
         return int(response)
 
@@ -215,15 +216,14 @@ class PriorStage(AbstractStage):
         return Pos(x_mm=x_mm, y_mm=y_mm, z_mm=0, theta_rad=0)
 
     def get_state(self) -> StageStage:
-        if int(self._send_command("$,S")) == 0:
-            return StageStage(busy=False)
-        else:
-            return StageStage(busy=True)
+        return StageStage(busy=self.is_busy)
 
     def home(self, x: bool, y: bool, z: bool, theta: bool, blocking: bool = True):
         self._send_command('SIS')
         if blocking:
             self.wait_for_stop()
+        else:
+            threading.Thread(target=self.wait_for_stop, daemon=True).start()
 
         # We are not using the following for Prior stage yet
         '''
@@ -239,16 +239,21 @@ class PriorStage(AbstractStage):
         '''
 
     def zero(self, x: bool, y: bool, z: bool, theta: bool, blocking: bool = True):
-        self.send_command("Z")
-        self.x_pos = 0
-        self.y_pos = 0
+        if x:
+            self._send_command(f'PX 0')
+            self.x_pos = 0
+        if y:
+            self._send_command(f'PY 0')
+            self.y_pos = 0
 
     def wait_for_stop(self):
+        self.is_busy = True
         while True:
             status = int(self._send_command("$,S"))
             if status == 0:
                 self.get_pos()
-                # print("xy position: ", self.x_pos, self.y_pos)
+                print("xy position: ", self.x_pos, self.y_pos)
+                self.is_busy = False
                 break
             time.sleep(0.05)
 
