@@ -65,7 +65,7 @@ class AxisConfig(pydantic.BaseModel):
     def convert_real_units_to_ustep(self, real_unit: float):
         return round(
             real_unit
-            / (self.SCREW_PITCH / (self.MICROSTEPS_PER_STEP * self.FULL_STEPS_PER_REV))
+            / (self.MOVEMENT_SIGN.value * self.SCREW_PITCH / (self.MICROSTEPS_PER_STEP * self.FULL_STEPS_PER_REV))
         )
 
 

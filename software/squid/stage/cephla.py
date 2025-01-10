@@ -60,21 +60,21 @@ class CephlaStage(AbstractStage):
             )
 
     def move_x_to(self, abs_mm: float, blocking: bool = True):
-        self._microcontroller.move_x_to_usteps(self._config.X_AXIS.MOVEMENT_SIGN * self._config.X_AXIS.convert_real_units_to_ustep(abs_mm))
+        self._microcontroller.move_x_to_usteps(self._config.X_AXIS.convert_real_units_to_ustep(abs_mm))
         if blocking:
             self._microcontroller.wait_till_operation_is_completed(
                 self._calc_move_timeout(abs_mm - self.get_pos().x_mm, self.get_config().X_AXIS.MAX_SPEED)
             )
 
     def move_y_to(self, abs_mm: float, blocking: bool = True):
-        self._microcontroller.move_y_to_usteps(self._config.Y_AXIS.MOVEMENT_SIGN * self._config.Y_AXIS.convert_real_units_to_ustep(abs_mm))
+        self._microcontroller.move_y_to_usteps(self._config.Y_AXIS.convert_real_units_to_ustep(abs_mm))
         if blocking:
             self._microcontroller.wait_till_operation_is_completed(
                 self._calc_move_timeout(abs_mm - self.get_pos().y_mm, self.get_config().Y_AXIS.MAX_SPEED)
             )
 
     def move_z_to(self, abs_mm: float, blocking: bool = True):
-        self._microcontroller.move_z_to_usteps(self._config.Z_AXIS.MOVEMENT_SIGN * self._config.Z_AXIS.convert_real_units_to_ustep(abs_mm))
+        self._microcontroller.move_z_to_usteps(self._config.Z_AXIS.convert_real_units_to_ustep(abs_mm))
         if blocking:
             self._microcontroller.wait_till_operation_is_completed(
                 self._calc_move_timeout(abs_mm - self.get_pos().z_mm, self.get_config().Z_AXIS.MAX_SPEED)
