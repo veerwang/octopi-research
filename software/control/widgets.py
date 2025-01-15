@@ -3645,6 +3645,10 @@ class WellplateMultiPointWidget(QFrame):
     def update_live_coordinates(self, pos: squid.abc.Pos):
         if hasattr(self.parent, "recordTabWidget") and self.parent.recordTabWidget.currentWidget() != self:
             return
+        # Don't update scan coordinates if we're navigating focus points. A temporary fix for focus map with glass slide. 
+        # This disables updating scanning grid when focus map is checked
+        if hasattr(self.parent, 'focusMapWidget') and self.parent.focusMapWidget.enabled:
+            return
         x_mm = pos.x_mm
         y_mm = pos.y_mm
         # Check if x_mm or y_mm has changed
@@ -3813,7 +3817,7 @@ class FocusMapWidget(QFrame):
         self.setup_ui()
         self.make_connections()
         self.setEnabled(False)
-        self.add_margin = False  # margin for focus grid makes it smaller, but will avoid points at the borders
+        self.add_margin = True  # margin for focus grid makes it smaller, but will avoid points at the borders
 
     def setup_ui(self):
         """Create and arrange UI components"""
