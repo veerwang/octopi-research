@@ -6424,7 +6424,7 @@ class WellplateFormatWidget(QWidget):
         return settings
 
     def add_custom_format(self, name, settings):
-        self.WELLPLATE_FORMAT_SETTINGS[name] = settings
+        WELLPLATE_FORMAT_SETTINGS[name] = settings
         self.populate_combo_box()
         index = self.comboBox.findData(name)
         if index >= 0:
