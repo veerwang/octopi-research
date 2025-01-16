@@ -3048,7 +3048,7 @@ class WellplateMultiPointWidget(QFrame):
         objectiveStore,
         configurationManager,
         scanCoordinates,
-        focusMapWidget,
+        focusMapWidget=None,
         napariMosaicWidget=None,
         *args,
         **kwargs,
@@ -3647,7 +3647,7 @@ class WellplateMultiPointWidget(QFrame):
             return
         # Don't update scan coordinates if we're navigating focus points. A temporary fix for focus map with glass slide. 
         # This disables updating scanning grid when focus map is checked
-        if hasattr(self.parent, 'focusMapWidget') and self.parent.focusMapWidget.enabled:
+        if not self.focusMapWidget and self.focusMapWidget.enabled:
             return
         x_mm = pos.x_mm
         y_mm = pos.y_mm

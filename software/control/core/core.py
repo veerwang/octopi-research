@@ -33,6 +33,7 @@ try:
 except:
     pass
 
+from typing import List, Tuple
 from queue import Queue
 from threading import Thread, Lock
 from pathlib import Path
@@ -3810,6 +3811,7 @@ class ScanCoordinates(QObject):
                         region_name = f"manual{i}"
                     center = np.mean(shape_coords, axis=0)
                     self.region_centers[region_name] = [center[0], center[1]]
+                    self.region_shapes[region_name] = "Manual"
                     self.region_fov_coordinates[region_name] = scan_coordinates
                     manual_region_added = True
                     print(f"Added Manual Region: {region_name}")
@@ -3880,6 +3882,9 @@ class ScanCoordinates(QObject):
         if well_id in self.region_centers:
             del self.region_centers[well_id]
 
+            if well_id in self.region_shapes:
+                del self.region_shapes[well_id]
+
             if well_id in self.region_fov_coordinates:
                 region_scan_coordinates = self.region_fov_coordinates.pop(well_id)
                 for coord in region_scan_coordinates:
@@ -3890,6 +3895,7 @@ class ScanCoordinates(QObject):
 
     def clear_regions(self):
         self.region_centers.clear()
+        self.region_shapes.clear()
         self.region_fov_coordinates.clear()
         self.navigationViewer.clear_overlay()
         self.signal_scan_coordinates_updated.emit()
@@ -4016,6 +4022,28 @@ class ScanCoordinates(QObject):
             self.navigationViewer.register_fov_to_image(x, y)
 
         return sorted_points.tolist()
+
+    def region_contains_coordinate(self, region_id: str, x: float, y: float) -> bool:
+        # TODO: check for manual region
+        if not self.validate_region(region_id):
+            return False
+
+        bounds = self.get_region_bounds(region_id)
+        shape = self.get_region_shape(region_id)
+
+        # For square regions
+        if not (bounds["min_x"] <= x <= bounds["max_x"] and bounds["min_y"] <= y <= bounds["max_y"]):
+            return False
+
+        # For circle regions
+        if shape == "Circle":
+            center_x = (bounds["max_x"] + bounds["min_x"]) / 2
+            center_y = (bounds["max_y"] + bounds["min_y"]) / 2
+            radius = (bounds["max_x"] - bounds["min_x"]) / 2
+            if (x - center_x)**2 + (y - center_y)**2 > radius**2:
+                return False
+
+        return True
 
     def _is_in_polygon(self, x, y, poly):
         n = len(poly)
@@ -4170,7 +4198,7 @@ class FocusMap:
         self.is_fitted = False
         self.points_xyz = None
 
-    def generate_grid_coordinates(self, scanCoordinates, rows=4, cols=4, add_margin=False):
+    def generate_grid_coordinates(self, scanCoordinates: ScanCoordinates, rows: int = 4, cols: int = 4, add_margin: bool = False) -> List[Tuple[float, float]]:
         """
         Generate focus point grid coordinates for each scan region
         
@@ -4183,19 +4211,24 @@ class FocusMap:
         Returns:
             list of (x,y) coordinate tuples for focus points
         """
+        if rows <= 0 or cols <= 0:
+            raise ValueError("Number of rows and columns must be greater than 0")
+
         focus_points = []
-        
+
         # Generate focus points for each region
         for region_id, region_coords in scanCoordinates.region_fov_coordinates.items():
             # Get region bounds
             bounds = scanCoordinates.get_region_bounds(region_id)
-            shape = scanCoordinates.get_region_shape(region_id)
             if not bounds:
                 continue
-                
+
             x_min, x_max = bounds["min_x"], bounds["max_x"]
             y_min, y_max = bounds["min_y"], bounds["max_y"]
 
+            # For add_margin we are using one more row and col, taking the middle points on the grid so that the
+            # focus points are not located at the edges of the scaning grid.
+            # TODO: set a value for margin from user input
             if add_margin:
                 x_step = (x_max - x_min) / cols if cols > 1 else 0 
                 y_step = (y_max - y_min) / rows if rows > 1 else 0
@@ -4214,18 +4247,8 @@ class FocusMap:
                         y = y_min + i*y_step
                         
                     # Check if point is within region bounds
-                    if scanCoordinates.validate_coordinates(x, y):
-                        # For circle/manual regions, check if point lies within region shape
-                        valid_point = True
-                        if "Circle" in shape:
-                            radius = (x_max - x_min)/2
-                            center_x = (x_max + x_min)/2
-                            center_y = (y_max + y_min)/2
-                            if (x - center_x)**2 + (y - center_y)**2 > radius**2:
-                                valid_point = False
-                                    
-                        if valid_point:
-                            focus_points.append((x, y))
+                    if scanCoordinates.validate_coordinates(x, y) and scanCoordinates.region_contains_coordinate(region_id, x, y):
+                        focus_points.append((x, y))
                             
         return focus_points
 
