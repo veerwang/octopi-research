@@ -33,6 +33,7 @@ try:
 except:
     pass
 
+from typing import List, Tuple
 from queue import Queue
 from threading import Thread, Lock
 from pathlib import Path
@@ -3714,6 +3715,7 @@ class ScanCoordinates(QObject):
 
         # Centralized region management
         self.region_centers = {}  # {region_id: [x, y, z]}
+        self.region_shapes = {}  # {region_id: "Square"}
         self.region_fov_coordinates = {}  # {region_id: [(x,y,z), ...]}
 
     def add_well_selector(self, well_selector):
@@ -3809,6 +3811,7 @@ class ScanCoordinates(QObject):
                         region_name = f"manual{i}"
                     center = np.mean(shape_coords, axis=0)
                     self.region_centers[region_name] = [center[0], center[1]]
+                    self.region_shapes[region_name] = "Manual"
                     self.region_fov_coordinates[region_name] = scan_coordinates
                     manual_region_added = True
                     print(f"Added Manual Region: {region_name}")
@@ -3869,6 +3872,7 @@ class ScanCoordinates(QObject):
                 scan_coordinates.append((center_x, center_y))
                 self.navigationViewer.register_fov_to_image(center_x, center_y)
 
+        self.region_shapes[well_id] = shape
         self.region_centers[well_id] = [float(center_x), float(center_y), float(self.stage.get_pos().z_mm)]
         self.region_fov_coordinates[well_id] = scan_coordinates
         self.signal_scan_coordinates_updated.emit()
@@ -3877,6 +3881,9 @@ class ScanCoordinates(QObject):
     def remove_region(self, well_id):
         if well_id in self.region_centers:
             del self.region_centers[well_id]
+
+            if well_id in self.region_shapes:
+                del self.region_shapes[well_id]
 
             if well_id in self.region_fov_coordinates:
                 region_scan_coordinates = self.region_fov_coordinates.pop(well_id)
@@ -3888,6 +3895,7 @@ class ScanCoordinates(QObject):
 
     def clear_regions(self):
         self.region_centers.clear()
+        self.region_shapes.clear()
         self.region_fov_coordinates.clear()
         self.navigationViewer.clear_overlay()
         self.signal_scan_coordinates_updated.emit()
@@ -4015,6 +4023,28 @@ class ScanCoordinates(QObject):
 
         return sorted_points.tolist()
 
+    def region_contains_coordinate(self, region_id: str, x: float, y: float) -> bool:
+        # TODO: check for manual region
+        if not self.validate_region(region_id):
+            return False
+
+        bounds = self.get_region_bounds(region_id)
+        shape = self.get_region_shape(region_id)
+
+        # For square regions
+        if not (bounds["min_x"] <= x <= bounds["max_x"] and bounds["min_y"] <= y <= bounds["max_y"]):
+            return False
+
+        # For circle regions
+        if shape == "Circle":
+            center_x = (bounds["max_x"] + bounds["min_x"]) / 2
+            center_y = (bounds["max_y"] + bounds["min_y"]) / 2
+            radius = (bounds["max_x"] - bounds["min_x"]) / 2
+            if (x - center_x)**2 + (y - center_y)**2 > radius**2:
+                return False
+
+        return True
+
     def _is_in_polygon(self, x, y, poly):
         n = len(poly)
         inside = False
@@ -4098,6 +4128,11 @@ class ScanCoordinates(QObject):
             "max_y": np.max(fovs[:, 1]),
         }
 
+    def get_region_shape(self, region_id):
+        if not self.validate_region(region_id):
+            return None
+        return self.region_shapes[region_id]
+
     def get_scan_bounds(self):
         """Get bounds of all scan regions with margin"""
         if not self.has_regions():
@@ -4161,7 +4196,62 @@ class FocusMap:
         self.surface_fit = None
         self.method = "spline"  # can be 'spline' or 'rbf'
         self.is_fitted = False
-        self.points = None
+        self.points_xyz = None
+
+    def generate_grid_coordinates(self, scanCoordinates: ScanCoordinates, rows: int = 4, cols: int = 4, add_margin: bool = False) -> List[Tuple[float, float]]:
+        """
+        Generate focus point grid coordinates for each scan region
+        
+        Args:
+            scanCoordinates: ScanCoordinates instance containing regions
+            rows: Number of rows in focus grid
+            cols: Number of columns in focus grid 
+            add_margin: If True, adds margin to avoid points at region borders
+        
+        Returns:
+            list of (x,y) coordinate tuples for focus points
+        """
+        if rows <= 0 or cols <= 0:
+            raise ValueError("Number of rows and columns must be greater than 0")
+
+        focus_points = []
+
+        # Generate focus points for each region
+        for region_id, region_coords in scanCoordinates.region_fov_coordinates.items():
+            # Get region bounds
+            bounds = scanCoordinates.get_region_bounds(region_id)
+            if not bounds:
+                continue
+
+            x_min, x_max = bounds["min_x"], bounds["max_x"]
+            y_min, y_max = bounds["min_y"], bounds["max_y"]
+
+            # For add_margin we are using one more row and col, taking the middle points on the grid so that the
+            # focus points are not located at the edges of the scaning grid.
+            # TODO: set a value for margin from user input
+            if add_margin:
+                x_step = (x_max - x_min) / cols if cols > 1 else 0 
+                y_step = (y_max - y_min) / rows if rows > 1 else 0
+            else:
+                x_step = (x_max - x_min) / (cols-1) if cols > 1 else 0
+                y_step = (y_max - y_min) / (rows-1) if rows > 1 else 0
+            
+            # Generate grid points
+            for i in range(rows):
+                for j in range(cols):
+                    if add_margin:
+                        x = x_min + x_step/2 + j*x_step
+                        y = y_min + y_step/2 + i*y_step
+                    else:
+                        x = x_min + j*x_step
+                        y = y_min + i*y_step
+                        
+                    # Check if point is within region bounds
+                    if scanCoordinates.validate_coordinates(x, y) and scanCoordinates.region_contains_coordinate(region_id, x, y):
+                        focus_points.append((x, y))
+                            
+        return focus_points
+
 
     def set_method(self, method):
         """Set interpolation method
