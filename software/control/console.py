@@ -8,7 +8,8 @@ from qtpy.QtWidgets import QApplication, QMainWindow, QWidget, QVBoxLayout, QPus
 from qtpy.QtCore import QThread, Signal, Qt, QObject, QMetaObject
 import sys
 import code
-import readline
+from pyreadline3 import Readline
+readline = Readline()
 import rlcompleter
 import threading
 import traceback
