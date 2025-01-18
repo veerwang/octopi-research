@@ -92,6 +92,9 @@ if SUPPORT_LASER_AUTOFOCUS:
 
 SINGLE_WINDOW = True  # set to False if use separate windows for display and control
 
+if USE_JUPYTER_CONSOLE:
+    from control.console import JupyterWidget
+
 
 class MovementUpdater(QObject):
     position_after_move = Signal(squid.abc.Pos)
@@ -178,6 +181,18 @@ class HighContentScreeningGui(QMainWindow):
             led_matrix_action = QAction("LED Matrix", self)
             led_matrix_action.triggered.connect(self.openLedMatrixSettings)
             settings_menu.addAction(led_matrix_action)
+
+        if USE_JUPYTER_CONSOLE:
+            # Create namespace to expose to Jupyter
+            self.namespace = {
+                'microscope': self.microscope,
+            }
+            
+            # Create Jupyter widget as a dock widget
+            self.jupyter_dock = QDockWidget("Jupyter Console", self)
+            self.jupyter_widget = JupyterWidget(namespace=self.namespace)
+            self.jupyter_dock.setWidget(self.jupyter_widget)
+            self.addDockWidget(Qt.LeftDockWidgetArea, self.jupyter_dock)
 
     def loadObjects(self, is_simulation):
         self.illuminationController = None
