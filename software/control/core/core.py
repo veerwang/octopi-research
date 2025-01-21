@@ -4,6 +4,7 @@ import sys
 
 from control.microcontroller import Microcontroller
 from squid.abc import AbstractStage
+import squid.logging
 
 # qt libraries
 os.environ["QT_API"] = "pyqt5"
@@ -1468,6 +1469,7 @@ class MultiPointWorker(QObject):
         while self.time_point < self.Nt:
             # check if abort acquisition has been requested
             if self.multiPointController.abort_acqusition_requested:
+                self._log.debug("In run, abort_acquisition_requested=True")
                 break
 
             self.run_single_time_point()
@@ -1489,6 +1491,7 @@ class MultiPointWorker(QObject):
                 # wait until it's time to do the next acquisition
                 while time.time() < self.timestamp_acquisition_started + self.time_point * self.dt:
                     if self.multiPointController.abort_acqusition_requested:
+                        self._log.debug("In run wait loop, abort_acquisition_requested=True")
                         break
                     time.sleep(0.05)
 
@@ -2179,7 +2182,7 @@ class MultiPointController(QObject):
         parent=None,
     ):
         QObject.__init__(self)
-
+        self._log = squid.logging.get_logger(self.__class__.__name__)
         self.camera = camera
         if DO_FLUORESCENCE_RTP:
             self.processingHandler = ProcessingHandler()
@@ -2533,6 +2536,7 @@ class MultiPointController(QObject):
         self.thread.start()
 
     def _on_acquisition_completed(self):
+        self._log.debug("MultiPointController._on_acquisition_completed called")
         # restore the previous selected mode
         if self.gen_focus_map:
             self.autofocusController.clear_focus_map()
@@ -3218,6 +3222,7 @@ class NavigationViewer(QFrame):
 
     def __init__(self, objectivestore, sample="glass slide", invertX=False, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        self._log = squid.logging.get_logger(self.__class__.__name__)
         self.setFrameStyle(QFrame.Panel | QFrame.Raised)
         self.sample = sample
         self.objectiveStore = objectivestore
@@ -3493,6 +3498,7 @@ class NavigationViewer(QFrame):
             x_mm = (mouse_point.x() - self.origin_x_pixel) * self.mm_per_pixel
             y_mm = (mouse_point.y() - self.origin_y_pixel) * self.mm_per_pixel
 
+            self._log.debug(f"Got double click at (x_mm, y_mm) = {x_mm, y_mm}")
             self.signal_coordinates_clicked.emit(x_mm, y_mm)
 
         except Exception as e:
