@@ -740,6 +740,9 @@ AWB_RATIOS_R = 1.375
 AWB_RATIOS_G = 1
 AWB_RATIOS_B = 1.4141
 
+USE_TERMINAL_CONSOLE = False
+USE_JUPYTER_CONSOLE = False
+
 try:
     with open("cache/config_file_path.txt", "r") as file:
         for line in file:
