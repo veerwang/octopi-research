@@ -434,7 +434,7 @@ class HighContentScreeningGui(QMainWindow):
 
         if USE_XERYON:
             try:
-                self.xeryon = XeryonController(sn=)
+                self.xeryon = XeryonController(sn=XERYON_SERIAL_NUMBER)
             except Exception:
                 self.log.error("Error initializing Xeryon objective switcher")
                 raise
