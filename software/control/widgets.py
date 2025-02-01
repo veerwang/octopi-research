@@ -527,7 +527,7 @@ class SpinningDiskConfocalWidget(QWidget):
 class ObjectivesWidget(QWidget):
     signal_objective_changed = Signal()
 
-    def __init__(self, objective_store):
+    def __init__(self, objective_store, objective_switcher=None):
         super(ObjectivesWidget, self).__init__()
         self.objectiveStore = objective_store
         self.init_ui()
@@ -547,6 +547,11 @@ class ObjectivesWidget(QWidget):
     def on_objective_changed(self, objective_name):
         self.objectiveStore.set_current_objective(objective_name)
         self.signal_objective_changed.emit()
+        if USE_XERYON:
+            if objective_name == XERYON_OBJECTIVE_SWITCHER_POS_1 and self.objective_switcher.currentPosition() != 1:
+                self.objective_switcher.moveToPosition1()
+            elif objective_name == XERYON_OBJECTIVE_SWITCHER_POS_2 and self.objective_switcher.currentPosition() != 2:
+                self.objective_switcher.moveToPosition1()
 
 
 class CameraSettingsWidget(QFrame):

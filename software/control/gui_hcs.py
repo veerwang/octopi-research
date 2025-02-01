@@ -80,6 +80,9 @@ elif FOCUS_CAMERA_TYPE == "FLIR":
 else:
     import control.camera as camera_fc
 
+if USE_XERYON:
+    from control.xeryon_controller import XeryonController
+
 import control.core.core as core
 import control.microcontroller as microcontroller
 import control.serial_peripherals as serial_peripherals
@@ -429,6 +432,13 @@ class HighContentScreeningGui(QMainWindow):
                 self.log.error("Error initializing Optospin Emission Filter Wheel")
                 raise
 
+        if USE_XERYON:
+            try:
+                self.xeryon = XeryonController(sn=)
+            except Exception:
+                self.log.error("Error initializing Xeryon objective switcher")
+                raise
+
     def setupHardware(self):
         # Setup hardware components
         if USE_ZABER_EMISSION_FILTER_WHEEL:
@@ -482,6 +492,10 @@ class HighContentScreeningGui(QMainWindow):
             if SQUID_FILTERWHEEL_HOMING_ENABLED:
                 self.squid_filter_wheel.homing()
 
+        if USE_XERYON:
+            self.xeryon.homing()
+            self.xeryon.setSpeed(80)
+
     def waitForMicrocontroller(self, timeout=5.0, error_message=None):
         try:
             self.microcontroller.wait_till_operation_is_completed(timeout)
@@ -526,7 +540,10 @@ class HighContentScreeningGui(QMainWindow):
         self.dacControlWidget = widgets.DACControWidget(self.microcontroller)
         self.autofocusWidget = widgets.AutoFocusWidget(self.autofocusController)
         self.piezoWidget = widgets.PiezoWidget(self.microcontroller)
-        self.objectivesWidget = widgets.ObjectivesWidget(self.objectiveStore)
+        if USE_XERYON:
+            self.objectivesWidget = widgets.ObjectivesWidget(self.objectiveStore, self.xeryon)
+        else:
+            self.objectivesWidget = widgets.ObjectivesWidget(self.objectiveStore)
 
         if USE_ZABER_EMISSION_FILTER_WHEEL or USE_OPTOSPIN_EMISSION_FILTER_WHEEL:
             self.filterControllerWidget = widgets.FilterControllerWidget(
