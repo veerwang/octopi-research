@@ -3193,9 +3193,9 @@ class WellplateMultiPointWidget(QFrame):
         # Add a combo box for shape selection
         self.combobox_shape = QComboBox()
         if self.performance_mode:
-            self.combobox_shape.addItems(["Square", "Circle"])
+            self.combobox_shape.addItems(["Square", "Circle", "Rectangle"])
         else:
-            self.combobox_shape.addItems(["Square", "Circle", "Manual"])
+            self.combobox_shape.addItems(["Square", "Circle", "Rectangle", "Manual"])
             self.combobox_shape.model().item(2).setEnabled(False)
         self.combobox_shape.setFixedWidth(btn_width)
         # self.combobox_shape.currentTextChanged.connect(self.on_shape_changed)
@@ -3521,6 +3521,8 @@ class WellplateMultiPointWidget(QFrame):
     def set_default_shape(self):
         if self.scanCoordinates.format in ["384 well plate", "1536 well plate"]:
             self.combobox_shape.setCurrentText("Square")
+        # elif self.scanCoordinates.format in ["4 slide"]:
+        #     self.combobox_shape.setCurrentText("Rectangle")
         elif self.scanCoordinates.format != 0:
             self.combobox_shape.setCurrentText("Circle")
 
