@@ -495,6 +495,10 @@ class HighContentScreeningGui(QMainWindow):
         if USE_XERYON:
             self.xeryon.homing()
             self.xeryon.setSpeed(80)
+            if DEFAULT_OBJECTIVE == XERYON_OBJECTIVE_SWITCHER_POS_1:
+                self.xeryon.moveToPosition1()
+            elif DEFAULT_OBJECTIVE == XERYON_OBJECTIVE_SWITCHER_POS_2:
+                self.xeryon.moveToPosition2()
 
     def waitForMicrocontroller(self, timeout=5.0, error_message=None):
         try:
