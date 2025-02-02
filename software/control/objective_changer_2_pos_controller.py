@@ -17,14 +17,10 @@ class ObjectiveChanger2PosController:
         self.position1 = -19
         self.position2 = 19
 
-        self.current_position = 1
+        self.current_position = None
 
-    def stopScan(self):
-        self.axisX.stopScan()
-
-    def homing(self):
+    def home(self):
         self.axisX.findIndex()
-        self.axisX.stopScan()
 
     def moveToPosition1(self):
         self.axisX.setDPOS(self.position1)

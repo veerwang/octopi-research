@@ -493,11 +493,11 @@ class HighContentScreeningGui(QMainWindow):
                 self.squid_filter_wheel.homing()
 
         if USE_XERYON:
-            self.objective_changer.homing()
-            self.objective_changer.setSpeed(80)
-            if DEFAULT_OBJECTIVE == XERYON_OBJECTIVE_SWITCHER_POS_1:
+            self.objective_changer.home()
+            self.objective_changer.setSpeed(XERYON_SPEED)
+            if DEFAULT_OBJECTIVE in XERYON_OBJECTIVE_SWITCHER_POS_1:
                 self.objective_changer.moveToPosition1()
-            elif DEFAULT_OBJECTIVE == XERYON_OBJECTIVE_SWITCHER_POS_2:
+            elif DEFAULT_OBJECTIVE in XERYON_OBJECTIVE_SWITCHER_POS_2:
                 self.objective_changer.moveToPosition2()
 
     def waitForMicrocontroller(self, timeout=5.0, error_message=None):

@@ -548,9 +548,9 @@ class ObjectivesWidget(QWidget):
     def on_objective_changed(self, objective_name):
         self.objectiveStore.set_current_objective(objective_name)
         if USE_XERYON:
-            if objective_name == XERYON_OBJECTIVE_SWITCHER_POS_1 and self.objective_changer.currentPosition() != 1:
+            if objective_name in XERYON_OBJECTIVE_SWITCHER_POS_1 and self.objective_changer.currentPosition() != 1:
                 self.objective_changer.moveToPosition1()
-            elif objective_name == XERYON_OBJECTIVE_SWITCHER_POS_2 and self.objective_changer.currentPosition() != 2:
+            elif objective_name in XERYON_OBJECTIVE_SWITCHER_POS_2 and self.objective_changer.currentPosition() != 2:
                 self.objective_changer.moveToPosition2()
         self.signal_objective_changed.emit()
 
