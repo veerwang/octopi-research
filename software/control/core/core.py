@@ -3260,7 +3260,7 @@ class NavigationViewer(QFrame):
         print("navigation viewer:", sample)
         self.init_ui(invertX)
 
-        self.load_background_image(self.image_paths.get(sample, "images/slide carrier_828x662.png"))
+        self.load_background_image(self.image_paths.get(sample, "images/4 slide carrier_1509x1010.png"))
         self.create_layers()
         self.update_display_properties(sample)
         # self.update_display()

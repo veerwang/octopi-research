@@ -3196,7 +3196,7 @@ class WellplateMultiPointWidget(QFrame):
             self.combobox_shape.addItems(["Square", "Circle", "Rectangle"])
         else:
             self.combobox_shape.addItems(["Square", "Circle", "Rectangle", "Manual"])
-            self.combobox_shape.model().item(2).setEnabled(False)
+            self.combobox_shape.model().item(3).setEnabled(False)
         self.combobox_shape.setFixedWidth(btn_width)
         # self.combobox_shape.currentTextChanged.connect(self.on_shape_changed)
 
