@@ -5,8 +5,8 @@ import serial
 
 from control.Xeryon import *
 
-class XeryonController:
-    def __init__(self, sn):
+class ObjectiveChanger2PosController:
+    def __init__(self, sn: str):
         super().__init__()
         port = [p.device for p in serial.tools.list_ports.comports() if sn == p.serial_number]
         self.controller = Xeryon(port, 115200)
@@ -34,8 +34,8 @@ class XeryonController:
         self.axisX.setDPOS(self.position2)
         self.current_position = 2
 
-    def currentPosition(self):
+    def currentPosition(self) -> int:
         return self.current_position
 
-    def setSpeed(self, value):
+    def setSpeed(self, value: float):
         self.axisX.setSpeed(value)

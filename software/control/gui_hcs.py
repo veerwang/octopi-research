@@ -81,7 +81,7 @@ else:
     import control.camera as camera_fc
 
 if USE_XERYON:
-    from control.xeryon_controller import XeryonController
+    from control.objective_changer_2_pos_controller import ObjectiveChanger2PosController
 
 import control.core.core as core
 import control.microcontroller as microcontroller
@@ -434,7 +434,7 @@ class HighContentScreeningGui(QMainWindow):
 
         if USE_XERYON:
             try:
-                self.xeryon = XeryonController(sn=XERYON_SERIAL_NUMBER)
+                self.objective_changer = ObjectiveChanger2PosController(sn=XERYON_SERIAL_NUMBER)
             except Exception:
                 self.log.error("Error initializing Xeryon objective switcher")
                 raise
@@ -493,12 +493,12 @@ class HighContentScreeningGui(QMainWindow):
                 self.squid_filter_wheel.homing()
 
         if USE_XERYON:
-            self.xeryon.homing()
-            self.xeryon.setSpeed(80)
+            self.objective_changer.homing()
+            self.objective_changer.setSpeed(80)
             if DEFAULT_OBJECTIVE == XERYON_OBJECTIVE_SWITCHER_POS_1:
-                self.xeryon.moveToPosition1()
+                self.objective_changer.moveToPosition1()
             elif DEFAULT_OBJECTIVE == XERYON_OBJECTIVE_SWITCHER_POS_2:
-                self.xeryon.moveToPosition2()
+                self.objective_changer.moveToPosition2()
 
     def waitForMicrocontroller(self, timeout=5.0, error_message=None):
         try:
@@ -545,7 +545,7 @@ class HighContentScreeningGui(QMainWindow):
         self.autofocusWidget = widgets.AutoFocusWidget(self.autofocusController)
         self.piezoWidget = widgets.PiezoWidget(self.microcontroller)
         if USE_XERYON:
-            self.objectivesWidget = widgets.ObjectivesWidget(self.objectiveStore, self.xeryon)
+            self.objectivesWidget = widgets.ObjectivesWidget(self.objectiveStore, self.objective_changer)
         else:
             self.objectivesWidget = widgets.ObjectivesWidget(self.objectiveStore)
 

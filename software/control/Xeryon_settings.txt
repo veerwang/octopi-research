@@ -1,39 +1,34 @@
-% S_202402_021-XLS_3_60_1250
-% For use with Windows Interface V4_2_59
-% payload: 	
-% environment: 	
+INFO=4    % Select the type of information to be transmitted
+POLI=97   % Set the polling interval (ms)
+FREQ=87500  % Set the excitation frequency for region 1 (Hz)
+FRQ2=85000  % Set the excitation frequency for region 2 (Hz)
+HFRQ=90000  % Set the upper limit of the excitation frequency (Hz)
+LFRQ=84000  % Set the lower limit of the excitation frequency (Hz)
+LLIM=-20   % Set the lower soft limit
+HLIM=20    % Set the upper soft limit
+PROP=250   % Set the proportional control factor for region 1
+PRO2=90    % Set the proportional control factor for region 2
+MPRO=250   % Set the maximum proportional control factor
+INTF=15    % Set the controller integral factor
+MASS=500   % Set the load mass
+MMAS=1000  % Set the maximum load mass
+ZON1=0.01  % Set the width of region 1
+ZON2=1     % Set the width of region 2
 
-INFO=4 % 选择要传输的信息类型
-POLI=97 % 设置轮询间隔时间，单位为毫秒
-FREQ=87500 % 设置区域1的激励频率，单位为赫兹
-FRQ2=85000 % 设置区域2的激励频率，单位为赫兹
-HFRQ=90000 % 设置激励频率的上限，单位为赫兹
-LFRQ=84000 % 设置激励频率的下限，单位为赫兹
-LLIM=-20 % 设置软限位的下限
-HLIM=20 % 设置软限位的上限
-PROP=250 % 设置区域1的比例控制因子
-PRO2=90 % 设置区域2的比例控制因子
-MPRO=250 % 设置最大比例控制因子
-INTF=15 % 设置控制器积分因子
-MASS=500 % 设置负载质量
-MMAS=1000 % 设置最大负载质量
-ZON1=0.01 % 设置区域1的宽度
-ZON2=1 % 设置区域2的宽度
+MSPD=200   % Set the maximum speed (mm/s or deg/s)
+SSPD=100   % Set the speed (mm/s or deg/s)
+ISPD=80    % Set the index search speed (mm/s or deg/s)
+ACCE=65500 % Set the acceleration (m/s²)
+DECE=255   % Set the deceleration (m/s²)
 
-MSPD=200 % 设置最大速度，单位为毫米/秒或度/秒
-SSPD=100 % 设置速度，单位为毫米/秒或度/秒
-ISPD=80 % 设置索引搜索速度，单位为毫米/秒或度/秒
-ACCE=65500 % 设置加速度，单位为米/秒²
-DECE=255 % 设置减速度，单位为米/秒²
+ILIM=3000  % Set the lower hard limit
+ELIM=10000 % Set the error limit
+ENCD=0     % Set the encoder direction
+ACTD=0     % Set the actuation direction
+ENCO=-69   % Set the encoder offset
 
-ILIM=3000 % 设置硬限位的下限
-ELIM=10000 % 设置错误限制
-ENCD=0 % 设置编码器方向
-ACTD=0 % 设置执行方向
-ENCO=-69 % 设置编码器偏移
-
-PTOL=2 % 设置位置公差1
-PTO2=4 % 设置位置公差2
-TOUT=1000 % 设置超时时间1，单位为毫秒
-TOU2=60 % 设置安全超时时间2，单位为秒
-TOU3=0 % 设置安全超时时间3，单位为秒
+PTOL=2     % Set position tolerance 1
+PTO2=4     % Set position tolerance 2
+TOUT=1000  % Set timeout 1 (ms)
+TOU2=60    % Set safety timeout 2 (s)
+TOU3=0     % Set safety timeout 3 (s)
