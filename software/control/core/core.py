@@ -522,9 +522,6 @@ class LiveController(QObject):
 
         self.enable_channel_auto_filter_switching = True
 
-        if USE_LDI_SERIAL_CONTROL:
-            self.ldi = self.microscope.ldi
-
         if SUPPORT_SCIMICROSCOPY_LED_ARRAY:
             # to do: add error handling
             self.led_array = serial_peripherals.SciMicroscopyLEDArray(

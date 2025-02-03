@@ -432,6 +432,7 @@ class LDI(LightSource):
             735: 730,
             750: 730,
         }
+        self.active_channel = None
 
     def initialize(self):
         self.serial_connection.write_and_check("run!\r", "ok")
@@ -474,13 +475,14 @@ class LDI(LightSource):
         except:
             return 0
 
-    def get_intensity_range(self):
-        return [0, 100]
-
     def set_shutter_state(self, channel, on):
         channel = str(channel)
         state = str(on)
+        if self.active_channel is not None and channel != self.active_channel:
+            self.set_active_channel_shutter(False)
         self.serial_connection.write_and_check("shutter:" + channel + "=" + state + "\r", "ok")
+        if on:
+            self.active_channel = channel
 
     def get_shutter_state(self, channel):
         try:
@@ -489,10 +491,6 @@ class LDI(LightSource):
             return 1 if state == 'OPEN' else 0
         except:
             return 0
-
-    def set_active_channel(self, channel):
-        self.active_channel = channel
-        self.log.debug("[set active channel to " + str(channel) + "]")
 
     def set_active_channel_shutter(self, state):
         channel = str(self.active_channel)
@@ -559,19 +557,12 @@ class LDI_Simulation(LightSource):
     def get_intensity(self, channel):
         return 0
 
-    def get_intensity_range(self):
-        return [0, 100]
-
     def set_shutter_state(self, channel, on):
         channel = str(channel)
         state = str(on)
 
     def get_shutter_state(self, channel):
         return 0
-
-    def set_active_channel(self, channel):
-        self.active_channel = channel
-        self.log.debug("[set active channel to " + str(channel) + "]")
 
     def set_active_channel_shutter(self, state):
         channel = str(self.active_channel)
