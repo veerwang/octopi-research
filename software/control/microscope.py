@@ -213,7 +213,6 @@ class IlluminationController:
         self.channel_mappings_software = {}
         self.is_on = {}
         self.intensity_settings = {}
-        self.pmin, self.pmax = 0, 1000
         self.current_channel = None
 
         if self.light_source_type is not None:
@@ -224,7 +223,6 @@ class IlluminationController:
         self.set_intensity_control_mode(self.intensity_control_mode)
         self.set_shutter_control_mode(self.shutter_control_mode)
         self.channel_mappings_software = self.light_source.channel_mappings
-        self.get_intensity_range()
         for ch in self.channel_mappings_software:
             self.intensity_settings[ch] = self.get_intensity(ch)
             self.is_on[ch] = self.light_source.get_shutter_state(self.channel_mappings_software[ch])
@@ -249,14 +247,9 @@ class IlluminationController:
             self.shutter_control_mode = mode
             return mode
 
-    def get_intensity_range(self, channel=None):
-        if self.intensity_control_mode == IntensityControlMode.Software:
-            [self.pmin, self.pmax] = self.light_source.get_intensity_range()
-
     def get_intensity(self, channel):
         if self.intensity_control_mode == IntensityControlMode.Software:
-            power = self.light_source.get_intensity(self.channel_mappings_software[channel])
-            intensity = power / self.pmax * 100
+            intensity = self.light_source.get_intensity(self.channel_mappings_software[channel])
             self.intensity_settings[channel] = intensity
             return intensity  # 0 - 100
 
@@ -267,7 +260,6 @@ class IlluminationController:
         if self.shutter_control_mode == ShutterControlMode.Software:
             self.light_source.set_shutter_state(self.channel_mappings_software[channel], on=True)
         elif self.shutter_control_mode == ShutterControlMode.TTL:
-            print("TTL!!")
             # self.microcontroller.set_illumination(self.channel_mappings_TTL[channel], self.intensity_settings[channel])
             self.microcontroller.turn_on_illumination()
 
@@ -290,8 +282,7 @@ class IlluminationController:
     def set_intensity(self, channel, intensity):
         if self.intensity_control_mode == IntensityControlMode.Software:
             if intensity != self.intensity_settings[channel]:
-                power = intensity / 100 * self.pmax
-                self.light_source.set_intensity(self.channel_mappings_software[channel], power)
+                self.light_source.set_intensity(self.channel_mappings_software[channel], intensity)
                 self.intensity_settings[channel] = intensity
         self.microcontroller.set_illumination(self.channel_mappings_TTL[channel], intensity)
 
