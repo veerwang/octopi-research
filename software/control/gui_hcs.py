@@ -434,7 +434,7 @@ class HighContentScreeningGui(QMainWindow):
 
         if USE_XERYON:
             try:
-                self.objective_changer = ObjectiveChanger2PosController(sn=XERYON_SERIAL_NUMBER)
+                self.objective_changer = ObjectiveChanger2PosController(sn=XERYON_SERIAL_NUMBER,stage=self.stage)
             except Exception:
                 self.log.error("Error initializing Xeryon objective switcher")
                 raise
