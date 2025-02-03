@@ -3260,7 +3260,7 @@ class NavigationViewer(QFrame):
         print("navigation viewer:", sample)
         self.init_ui(invertX)
 
-        self.load_background_image(self.image_paths.get(sample, "images/slide carrier_828x662.png"))
+        self.load_background_image(self.image_paths.get(sample, "images/4 slide carrier_1509x1010.png"))
         self.create_layers()
         self.update_display_properties(sample)
         # self.update_display()
@@ -3844,47 +3844,78 @@ class ScanCoordinates(QObject):
         pixel_size_um = self.objectiveStore.get_pixel_size()
         fov_size_mm = (pixel_size_um / 1000) * Acquisition.CROP_WIDTH
         step_size_mm = fov_size_mm * (1 - overlap_percent / 100)
-
-        steps = math.floor(scan_size_mm / step_size_mm)
-        if shape == "Circle":
-            tile_diagonal = math.sqrt(2) * fov_size_mm
-            if steps % 2 == 1:  # for odd steps
-                actual_scan_size_mm = (steps - 1) * step_size_mm + tile_diagonal
-            else:  # for even steps
-                actual_scan_size_mm = math.sqrt(
-                    ((steps - 1) * step_size_mm + fov_size_mm) ** 2 + (step_size_mm + fov_size_mm) ** 2
-                )
-
-            if actual_scan_size_mm > scan_size_mm:
-                actual_scan_size_mm -= step_size_mm
-                steps -= 1
-        else:
-            actual_scan_size_mm = (steps - 1) * step_size_mm + fov_size_mm
-
-        steps = max(1, steps)  # Ensure at least one step
-        # print("steps:", steps)
-        # print("scan size mm:", scan_size_mm)
-        # print("actual scan size mm:", actual_scan_size_mm)
         scan_coordinates = []
-        half_steps = (steps - 1) / 2
-        radius_squared = (scan_size_mm / 2) ** 2
-        fov_size_mm_half = fov_size_mm / 2
 
-        for i in range(steps):
-            row = []
-            y = center_y + (i - half_steps) * step_size_mm
-            for j in range(steps):
-                x = center_x + (j - half_steps) * step_size_mm
-                if shape == "Square" or (
-                    shape == "Circle" and self._is_in_circle(x, y, center_x, center_y, radius_squared, fov_size_mm_half)
-                ):
+        if shape == "Rectangle":
+            # Use scan_size_mm as height, width is 0.6 * height
+            height_mm = scan_size_mm
+            width_mm = scan_size_mm * 0.6
+            
+            # Calculate steps for height and width separately
+            steps_height = math.floor(height_mm / step_size_mm)
+            steps_width = math.floor(width_mm / step_size_mm)
+            
+            # Calculate actual dimensions
+            actual_scan_height_mm = (steps_height - 1) * step_size_mm + fov_size_mm
+            actual_scan_width_mm = (steps_width - 1) * step_size_mm + fov_size_mm
+            
+            steps_height = max(1, steps_height)
+            steps_width = max(1, steps_width)
+
+            half_steps_height = (steps_height - 1) / 2
+            half_steps_width = (steps_width - 1) / 2
+            
+            for i in range(steps_height):
+                row = []
+                y = center_y + (i - half_steps_height) * step_size_mm
+                for j in range(steps_width):
+                    x = center_x + (j - half_steps_width) * step_size_mm
                     if self.validate_coordinates(x, y):
                         row.append((x, y))
                         self.navigationViewer.register_fov_to_image(x, y)
+                if self.fov_pattern == "S-Pattern" and i % 2 == 1:
+                    row.reverse()
+                scan_coordinates.extend(row)
+        else:
+            steps = math.floor(scan_size_mm / step_size_mm)
+            if shape == "Circle":
+                tile_diagonal = math.sqrt(2) * fov_size_mm
+                if steps % 2 == 1:  # for odd steps
+                    actual_scan_size_mm = (steps - 1) * step_size_mm + tile_diagonal
+                else:  # for even steps
+                    actual_scan_size_mm = math.sqrt(
+                        ((steps - 1) * step_size_mm + fov_size_mm) ** 2 + (step_size_mm + fov_size_mm) ** 2
+                    )
 
-            if self.fov_pattern == "S-Pattern" and i % 2 == 1:
-                row.reverse()
-            scan_coordinates.extend(row)
+                if actual_scan_size_mm > scan_size_mm:
+                    actual_scan_size_mm -= step_size_mm
+                    steps -= 1
+            else:
+                actual_scan_size_mm = (steps - 1) * step_size_mm + fov_size_mm
+
+            steps = max(1, steps)  # Ensure at least one step
+            # print("steps:", steps)
+            # print("scan size mm:", scan_size_mm)
+            # print("actual scan size mm:", actual_scan_size_mm)
+            half_steps = (steps - 1) / 2
+            radius_squared = (scan_size_mm / 2) ** 2
+            fov_size_mm_half = fov_size_mm / 2
+
+            for i in range(steps):
+                row = []
+                y = center_y + (i - half_steps) * step_size_mm
+                for j in range(steps):
+                    x = center_x + (j - half_steps) * step_size_mm
+                    if shape == "Square" or shape == "Rectangle" or (
+                        shape == "Circle" and self._is_in_circle(x, y, center_x, center_y, radius_squared, fov_size_mm_half)
+                    ):
+                        if self.validate_coordinates(x, y):
+                            row.append((x, y))
+                            self.navigationViewer.register_fov_to_image(x, y)
+
+                if self.fov_pattern == "S-Pattern" and i % 2 == 1:
+                    row.reverse()
+                scan_coordinates.extend(row)
 
         if not scan_coordinates and shape == "Circle":
             if self.validate_coordinates(center_x, center_y):
