@@ -80,6 +80,9 @@ elif FOCUS_CAMERA_TYPE == "FLIR":
 else:
     import control.camera as camera_fc
 
+if USE_XERYON:
+    from control.objective_changer_2_pos_controller import ObjectiveChanger2PosController
+
 import control.core.core as core
 import control.microcontroller as microcontroller
 import control.serial_peripherals as serial_peripherals
@@ -429,6 +432,13 @@ class HighContentScreeningGui(QMainWindow):
                 self.log.error("Error initializing Optospin Emission Filter Wheel")
                 raise
 
+        if USE_XERYON:
+            try:
+                self.objective_changer = ObjectiveChanger2PosController(sn=XERYON_SERIAL_NUMBER)
+            except Exception:
+                self.log.error("Error initializing Xeryon objective switcher")
+                raise
+
     def setupHardware(self):
         # Setup hardware components
         if USE_ZABER_EMISSION_FILTER_WHEEL:
@@ -482,6 +492,14 @@ class HighContentScreeningGui(QMainWindow):
             if SQUID_FILTERWHEEL_HOMING_ENABLED:
                 self.squid_filter_wheel.homing()
 
+        if USE_XERYON:
+            self.objective_changer.home()
+            self.objective_changer.setSpeed(XERYON_SPEED)
+            if DEFAULT_OBJECTIVE in XERYON_OBJECTIVE_SWITCHER_POS_1:
+                self.objective_changer.moveToPosition1()
+            elif DEFAULT_OBJECTIVE in XERYON_OBJECTIVE_SWITCHER_POS_2:
+                self.objective_changer.moveToPosition2()
+
     def waitForMicrocontroller(self, timeout=5.0, error_message=None):
         try:
             self.microcontroller.wait_till_operation_is_completed(timeout)
@@ -526,7 +544,10 @@ class HighContentScreeningGui(QMainWindow):
         self.dacControlWidget = widgets.DACControWidget(self.microcontroller)
         self.autofocusWidget = widgets.AutoFocusWidget(self.autofocusController)
         self.piezoWidget = widgets.PiezoWidget(self.microcontroller)
-        self.objectivesWidget = widgets.ObjectivesWidget(self.objectiveStore)
+        if USE_XERYON:
+            self.objectivesWidget = widgets.ObjectivesWidget(self.objectiveStore, self.objective_changer)
+        else:
+            self.objectivesWidget = widgets.ObjectivesWidget(self.objectiveStore)
 
         if USE_ZABER_EMISSION_FILTER_WHEEL or USE_OPTOSPIN_EMISSION_FILTER_WHEEL:
             self.filterControllerWidget = widgets.FilterControllerWidget(
