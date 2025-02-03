@@ -473,7 +473,7 @@ class LDI(LightSource):
                 intensities[int(channel)] = int(value)
             return intensity[channel]
         except:
-            return 0
+            return None
 
     def set_shutter_state(self, channel, on):
         channel = str(channel)
@@ -490,7 +490,7 @@ class LDI(LightSource):
             state = response.split('=')[1]
             return 1 if state == 'OPEN' else 0
         except:
-            return 0
+            return None
 
     def set_active_channel_shutter(self, state):
         channel = str(self.active_channel)
