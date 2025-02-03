@@ -45,7 +45,16 @@ class PriorStage(AbstractStage):
 
         self.set_baudrate(baudrate)
 
+        self._pos_polling_timer: Optional[threading.Timer] = None
+
         self._initialize()
+
+    def _ensure_pos_polling_timer(self):
+        if self._pos_polling_timer and self._pos_polling_timer.is_alive():
+            return
+        self._log.info("Starting position polling timer.")
+        self._pos_polling_timer = threading.Timer(0.25, self._get_pos_poll_stage)
+        self._pos_polling_timer.start()
 
     def set_baudrate(self, baud: int):
         allowed_baudrates = {9600: "96", 19200: "19", 38400: "38", 115200: "115"}
@@ -95,6 +104,7 @@ class PriorStage(AbstractStage):
         self.set_acceleration(self.acceleration)
         self.set_max_speed(self.speed)
         self._get_pos_poll_stage()
+        self._ensure_pos_polling_timer()
 
     def _send_command(self, command: str) -> str:
         with self.serial_lock:
@@ -210,6 +220,7 @@ class PriorStage(AbstractStage):
         self.y_pos = y
 
     def get_pos(self) -> Pos:
+        self._ensure_pos_polling_timer()
         x_mm = self._steps_to_mm(self.x_pos)
         y_mm = self._steps_to_mm(self.y_pos)
         return Pos(x_mm=x_mm, y_mm=y_mm, z_mm=0, theta_rad=0)
