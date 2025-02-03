@@ -3,6 +3,8 @@ from serial.tools import list_ports
 import time
 from typing import Tuple, Optional
 import struct
+from control.microscope import LightSourceType, IntensityControlMode, ShutterControlMode
+from control._def import *
 from squid.abc import LightSource
 
 import squid.logging
@@ -459,22 +461,34 @@ class LDI(LightSource):
         intensity = "{:.2f}".format(intensity)
         self.log.debug("set:" + channel + "=" + intensity + "\r")
         self.serial_connection.write_and_check("set:" + channel + "=" + intensity + "\r", "ok")
-        self.log.debug("active channel: " + str(self.active_channel))
 
     def get_intensity(self, channel):
-        return 0  # To be implemented
+        try:
+            response = self.serial_connection.write_and_read("set?\r")
+            pairs = response.replace('SET:', '').split(',')
+            intensities = {}
+            for pair in pairs:
+                channel, value = pair.split('=')
+                intensities[int(channel)] = int(value)
+            return intensity[channel]
+        except:
+            return 0
 
     def get_intensity_range(self):
         return [0, 100]
 
-    def set_shutter_state(self, channel, state):
+    def set_shutter_state(self, channel, on):
         channel = str(channel)
-        state = str(state)
+        state = str(on)
         self.serial_connection.write_and_check("shutter:" + channel + "=" + state + "\r", "ok")
 
     def get_shutter_state(self, channel):
-        self.serial_connection.write_and_check("shutter?\r", "")
-        return 0  # To be implemented
+        try:
+            response = self.serial_connection.write_and_read("shutter?" + channel + "\r")
+            state = response.split('=')[1]
+            return 1 if state == 'OPEN' else 0
+        except:
+            return 0
 
     def set_active_channel(self, channel):
         self.active_channel = channel
@@ -485,6 +499,12 @@ class LDI(LightSource):
         state = str(state)
         self.log.debug("shutter:" + channel + "=" + state + "\r")
         self.serial_connection.write_and_check("shutter:" + channel + "=" + state + "\r", "ok")
+
+    def shut_down(self):
+        for ch in list(set(self.channel_mappings.values())):
+            self.set_intensity(ch, 0)
+            self.set_shutter_state(ch, False)
+        self.serial_connection.close()
 
 
 class LDI_Simulation(LightSource):
@@ -542,9 +562,9 @@ class LDI_Simulation(LightSource):
     def get_intensity_range(self):
         return [0, 100]
 
-    def set_shutter_state(self, channel, state):
+    def set_shutter_state(self, channel, on):
         channel = str(channel)
-        state = str(state)
+        state = str(on)
 
     def get_shutter_state(self, channel):
         return 0
@@ -557,6 +577,9 @@ class LDI_Simulation(LightSource):
         channel = str(self.active_channel)
         state = str(state)
         self.log.debug("shutter:" + channel + "=" + state + "\r")
+
+    def shut_down(self):
+        pass
 
 
 class SciMicroscopyLEDArray:

@@ -21,7 +21,7 @@ import squid.logging
 import squid.config
 import squid.stage.utils
 import control.microscope
-from control.microscope import LightSourceType, IntensityControlMode, ShutterControlMode
+from control.microscope import LightSourceType, IntensityControlMode, ShutterControlMode, IlluminationController
 
 log = squid.logging.get_logger(__name__)
 
@@ -371,7 +371,7 @@ class HighContentScreeningGui(QMainWindow):
         if USE_LDI_SERIAL_CONTROL:
             try:
                 self.ldi = serial_peripherals.LDI()
-                self.illuminationController = control.microscope.IlluminationController(
+                self.illuminationController = IlluminationController(
                     self.microcontroller, self.ldi.intensity_mode, self.ldi.shutter_mode, LightSourceType.LDI, self.ldi
                 )
             except Exception:
@@ -383,7 +383,7 @@ class HighContentScreeningGui(QMainWindow):
                 import control.celesta
 
                 self.celesta = control.celesta.CELESTA()
-                self.illuminationController = control.microscope.IlluminationController(
+                self.illuminationController = IlluminationController(
                     self.microcontroller,
                     IntensityControlMode.Software,
                     ShutterControlMode.TTL,
