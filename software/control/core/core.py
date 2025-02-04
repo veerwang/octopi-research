@@ -34,7 +34,7 @@ try:
 except:
     pass
 
-from typing import List, Tuple
+from typing import List, Tuple, Optional
 from queue import Queue
 from threading import Thread, Lock
 from pathlib import Path
@@ -2195,6 +2195,8 @@ class MultiPointController(QObject):
         self.liveController = liveController
         self.autofocusController = autofocusController
         self.configurationManager = configurationManager
+        self.multiPointWorker: Optional[MultiPointWorker] = None
+        self.thread: Optional[QThread] = None
         self.NX = 1
         self.NY = 1
         self.NZ = 1
@@ -2237,10 +2239,15 @@ class MultiPointController(QObject):
             pass
         self.z_stacking_config = Z_STACKING_CONFIG
 
+    def acquisition_in_progress(self):
+        if self.thread and self.thread.isRunning() and self.multiPointWorker:
+            return True
+        return False
+
     def set_use_piezo(self, checked):
         print("Use Piezo:", checked)
         self.use_piezo = checked
-        if hasattr(self, "multiPointWorker"):
+        if self.multiPointWorker:
             self.multiPointWorker.update_use_piezo(checked)
 
     def set_z_stacking_config(self, z_stacking_config_index):
