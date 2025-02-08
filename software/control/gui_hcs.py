@@ -83,7 +83,7 @@ else:
     import control.camera as camera_fc
 
 if USE_XERYON:
-    from control.objective_changer_2_pos_controller import ObjectiveChanger2PosController
+    from control.objective_changer_2_pos_controller import ObjectiveChanger2PosController, ObjectiveChanger2PosController_Simulation
 
 import control.core.core as core
 import control.microcontroller as microcontroller
@@ -219,14 +219,6 @@ class HighContentScreeningGui(QMainWindow):
             self.camera, self.microcontroller, self.configurationManager, self.illuminationController, parent=self
         )
 
-        if USE_PRIOR_STAGE:
-            self.stage: squid.abc.AbstractStage = squid.stage.prior.PriorStage(sn=PRIOR_STAGE_SN, stage_config=squid.config.get_stage_config())
-
-        else:
-            self.stage: squid.abc.AbstractStage = squid.stage.cephla.CephlaStage(
-                microcontroller=self.microcontroller, stage_config=squid.config.get_stage_config()
-            )
-
         self.slidePositionController = core.SlidePositionController(
             self.stage, self.liveController, is_for_wellplate=True
         )
@@ -314,6 +306,13 @@ class HighContentScreeningGui(QMainWindow):
         self.microcontroller = microcontroller.Microcontroller(
             serial_device=microcontroller.get_microcontroller_serial_device(simulated=True)
         )
+        if USE_PRIOR_STAGE:
+            self.stage: squid.abc.AbstractStage = squid.stage.prior.PriorStage(sn=PRIOR_STAGE_SN, stage_config=squid.config.get_stage_config())
+
+        else:
+            self.stage: squid.abc.AbstractStage = squid.stage.cephla.CephlaStage(
+                microcontroller=self.microcontroller, stage_config=squid.config.get_stage_config()
+            )
         # Initialize simulation objects
         if ENABLE_SPINNING_DISK_CONFOCAL:
             self.xlight = serial_peripherals.XLight_Simulation()
@@ -340,6 +339,9 @@ class HighContentScreeningGui(QMainWindow):
             self.emission_filter_wheel = serial_peripherals.Optospin_Simulation(SN=None)
         if USE_SQUID_FILTERWHEEL:
             self.squid_filter_wheel = filterwheel.SquidFilterWheelWrapper_Simulation(None)
+        if USE_XERYON:
+            self.objective_changer = ObjectiveChanger2PosController_Simulation(sn=XERYON_SERIAL_NUMBER,stage=self.stage)
+
 
     def loadHardwareObjects(self):
         # Initialize hardware objects
@@ -352,6 +354,14 @@ class HighContentScreeningGui(QMainWindow):
         except Exception:
             self.log.error(f"Error initializing Microcontroller")
             raise
+
+        if USE_PRIOR_STAGE:
+            self.stage: squid.abc.AbstractStage = squid.stage.prior.PriorStage(sn=PRIOR_STAGE_SN, stage_config=squid.config.get_stage_config())
+
+        else:
+            self.stage: squid.abc.AbstractStage = squid.stage.cephla.CephlaStage(
+                microcontroller=self.microcontroller, stage_config=squid.config.get_stage_config()
+            )
 
         if ENABLE_SPINNING_DISK_CONFOCAL:
             try:
