@@ -1982,11 +1982,12 @@ class MultiPointWorker(QObject):
 
     def _save_merged_image(self, image, file_ID, current_path):
         self.image_count += 1
+
         if self.image_count == 1:
             self.merged_image = image
         else:
-            self.merged_image += image
-
+            self.merged_image = np.maximum(self.merged_image, image)
+            
             if self.image_count == len(self.selected_configurations):
                 if image.dtype == np.uint16:
                     saving_path = os.path.join(current_path, file_ID + "_merged" + ".tiff")
@@ -1995,6 +1996,7 @@ class MultiPointWorker(QObject):
 
                 iio.imwrite(saving_path, self.merged_image)
                 self.image_count = 0
+
         return
 
     def return_pseudo_colored_image(self, image, config):
@@ -2008,6 +2010,8 @@ class MultiPointWorker(QObject):
             image = self.grayscale_to_rgb(image, Acquisition.PSEUDO_COLOR_MAP["638"]["hex"])
         elif "730 nm" in config.name:
             image = self.grayscale_to_rgb(image, Acquisition.PSEUDO_COLOR_MAP["730"]["hex"])
+        else:
+            image = np.stack([image] * 3, axis=-1)
 
         return image
 
