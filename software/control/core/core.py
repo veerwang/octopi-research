@@ -2312,7 +2312,7 @@ class MultiPointController(QObject):
         # create a new folder
         utils.ensure_directory_exists(os.path.join(self.base_path, self.experiment_ID))
         self.acquisitionConfigurationManager.write_configuration_selected(
-            self.selected_configurations, os.path.join(self.base_path, self.experiment_ID) + "/configurations.xml"
+            self.objectiveStore.current_objective, self.selected_configurations, os.path.join(self.base_path, self.experiment_ID) + "/configurations.xml"
         )  # save the configuration for the experiment
         # Prepare acquisition parameters
         acquisition_parameters = {
@@ -3587,6 +3587,7 @@ class AcquisitionConfigurationManager(QObject):
         self.channel_configurations = {}  # Dict to store configurations for each objective
         self.autofocus_configurations = {}  # Dict to store autofocus configs for each objective
         self.active_channel_config = None
+        self.active_config_flag = -1  # 0: channel_configurations, 1: confocal_configurations, 2: widefield_configurations
         if ENABLE_SPINNING_DISK_CONFOCAL:
             self.confocal_configurations = {}
             self.widefield_configurations = {}
@@ -3631,6 +3632,7 @@ class AcquisitionConfigurationManager(QObject):
                     self.autofocus_configurations[objective] = json.load(f)
 
             self.active_channel_config = self.channel_configurations
+            self.active_config_flag = 0
 
             if ENABLE_SPINNING_DISK_CONFOCAL:
                 confocal_config_file = objective_path / "confocal_configurations.xml"
@@ -3691,31 +3693,38 @@ class AcquisitionConfigurationManager(QObject):
     def toggle_confocal_widefield(self, confocal: bool):
         if confocal:
             self.active_channel_config = self.confocal_configurations
+            self.active_config_flag = 1
         else:
             self.active_channel_config = self.widefield_configurations
+            self.active_config_flag = 2
 
     def update_channel_configuration(self, objective: str, configuration_id: str, attribute_name: str, new_value: Any) -> None:
         """Update a specific configuration attribute in memory."""
-        if objective not in self.objective_configurations:
+        if objective not in self.active_channel_config:
             raise ValueError(f"Objective {objective} not found")
             
         # Update directly in memory
-        for conf in self.objective_configurations[objective]:
+        for conf in self.active_channel_config[objective]:
             if conf.id == configuration_id:
                 setattr(conf, attribute_name.lower(), new_value)
                 break
                 
     def save_channel_configurations_for_objective(self, objective: str) -> None:
         """Save channel configurations for a specific objective to disk."""
-        if objective not in self.objective_configurations:
+        if objective not in self.active_channel_config:
             raise ValueError(f"Objective {objective} not found")
 
         profile_path = self.base_config_path / self.current_profile
-        config_file = profile_path / objective / "channel_configurations.xml"
+        if self.active_config_flag == 0:
+            config_file = profile_path / objective / "channel_configurations.xml"
+        elif self.active_config_flag == 1:
+            config_file = profile_path / objective / "confocal_configurations.xml"
+        elif self.active_config_flag == 2:
+            config_file = profile_path / objective / "widefield_configurations.xml"
 
         # Create XML structure from configurations
         root = etree.Element("modes")
-        for config in self.objective_configurations[objective]:
+        for config in self.active_channel_config[objective]:
             mode = etree.SubElement(root, "mode")
             # Convert configuration object attributes to XML
             for attr_name, value in vars(config).items():
@@ -3742,8 +3751,20 @@ class AcquisitionConfigurationManager(QObject):
 
     def save_all_configurations(self) -> None:
         """Write all configurations to disk."""
-        for objective in self.objective_configurations:
-            self.save_channel_configurations_for_objective(objective)
+        profile_path = self.base_config_path / self.current_profile
+        for objective in self._get_available_objectives(profile_path):
+            if self.active_config_flag == 0:
+                self.save_channel_configurations_for_objective(objective)
+            if ENABLE_SPINNING_DISK_CONFOCAL:
+                # save current config
+                self.save_channel_configurations_for_objective(objective)
+                # if current config is confocal, set active config to widefield; otherwise set to confocal
+                is_confocal = bool(self.active_config_flag - 1)
+                self.toggle_confocal_widefield(is_confocal)
+                # save the other config
+                self.save_channel_configurations_for_objective(objective)
+                # toggle active config back
+                self.toggle_confocal_widefield(not is_confocal)
             if objective in self.autofocus_configurations:
                 self.save_autofocus_configurations_for_objective(objective)
 
@@ -3764,29 +3785,31 @@ class AcquisitionConfigurationManager(QObject):
         self.available_profiles = self._get_available_profiles()
 
     def write_configuration_selected(self, objective: str, selected_configurations: List[Configuration], filename: Path) -> None:
-        """
-        Uses a temporary configuration tree to write selected states without affecting the original.
-        """
-        # Create a new XML tree for temporary modifications
-        profile_path = self.base_config_path / self.current_profile
-        config_file = profile_path / objective / "channel_configurations.xml"
-
-        # Create a fresh parse of the XML to avoid modifying the working copy
-        temp_tree = etree.parse(str(config_file))
-        temp_root = temp_tree.getroot()
-
-        # First set all Selected to 0
-        for conf in temp_root.iter("mode"):
-            conf.set("Selected", "0")
-
-        # Set selected configurations to 1
-        for conf in selected_configurations:
-            conf_list = temp_root.xpath("//mode[contains(@ID," + "'" + str(conf.id) + "')]")
-            if conf_list:
-                conf_list[0].set("Selected", "1")
-
-        # Write to the specified file
-        temp_tree.write(str(filename), encoding="utf-8", xml_declaration=True, pretty_print=True)
+        """Write selected configurations to a file."""
+        if objective not in self.active_channel_config:
+            raise ValueError(f"Objective {objective} not found")
+            
+        # Create XML structure from configurations
+        root = etree.Element("modes")
+        selected_ids = [conf.id for conf in selected_configurations]
+        
+        # Write all configurations but mark selected ones
+        for config in self.active_channel_config[objective]:
+            mode = etree.SubElement(root, "mode")
+            # Convert configuration object attributes to XML
+            for attr_name, value in vars(config).items():
+                if attr_name != 'id':
+                    xml_name = attr_name.title().replace('_', '')
+                    mode.set(xml_name, str(value))
+                else:
+                    mode.set('ID', str(value))
+            
+            # Set Selected attribute
+            mode.set("Selected", "1" if config.id in selected_ids else "0")
+                
+        # Write to file
+        tree = etree.ElementTree(root)
+        tree.write(str(filename), encoding="utf-8", xml_declaration=True, pretty_print=True)
 
 
 class ContrastManager:
