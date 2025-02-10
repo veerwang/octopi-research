@@ -2208,6 +2208,7 @@ class MultiPointController(QObject):
         self.deltat = 0
         self.do_autofocus = False
         self.do_reflection_af = False
+        self.use_manual_focus_map = False
         self.gen_focus_map = False
         self.focus_map_storage = []
         self.already_using_fmap = False
@@ -2288,6 +2289,9 @@ class MultiPointController(QObject):
     def set_reflection_af_flag(self, flag):
         self.do_reflection_af = flag
 
+    def set_manual_focus_map_flag(self, flag):
+        self.use_manual_focus_map = flag
+
     def set_gen_focus_map_flag(self, flag):
         self.gen_focus_map = flag
         if not flag:
@@ -2335,6 +2339,7 @@ class MultiPointController(QObject):
             "Nt": self.Nt,
             "with AF": self.do_autofocus,
             "with reflection AF": self.do_reflection_af,
+            "with manual focus map": self.use_manual_focus_map,
         }
         try:  # write objective data if it is available
             current_objective = self.parent.objectiveStore.current_objective
@@ -3318,8 +3323,8 @@ class NavigationViewer(QFrame):
 
         self.background_item.setZValue(-1)  # Background layer at the bottom
         self.scan_overlay_item.setZValue(0)  # Scan overlay in the middle
-        self.fov_overlay_item.setZValue(1)  # FOV overlay next
-        self.focus_point_overlay_item.setZValue(2)  # # Focus points on top
+        self.focus_point_overlay_item.setZValue(1)  # # Focus points next
+        self.fov_overlay_item.setZValue(2)  # FOV overlay on top
 
     def update_display_properties(self, sample):
         if sample == "glass slide":
