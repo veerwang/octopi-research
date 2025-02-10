@@ -6,6 +6,8 @@ import numpy as np
 from scipy.ndimage import label
 import os
 
+from control._def import CHANNEL_COLORS_MAP
+
 import squid.logging
 
 _log = squid.logging.get_logger("control.utils")
@@ -167,7 +169,7 @@ def ensure_directory_exists(raw_string_path: str):
     path.mkdir(parents=True, exist_ok=True)
 
 
-def extract_wavelength_from_config_name(self, name):
+def extract_wavelength_from_config_name(name):
     # Split the string and find the wavelength number immediately after "Fluorescence"
     parts = name.split()
     if "Fluorescence" in parts:
@@ -180,6 +182,6 @@ def extract_wavelength_from_config_name(self, name):
     return None
 
 
-def get_channel_color(self, channel):
+def get_channel_color(channel):
     channel_info = CHANNEL_COLORS_MAP.get(extract_wavelength_from_config_name(channel), {"hex": 0xFFFFFF, "name": "gray"})
     return channel_info["hex"]

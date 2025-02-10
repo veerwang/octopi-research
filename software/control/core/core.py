@@ -3613,8 +3613,9 @@ class AcquisitionConfigurationManager(QObject):
         self.current_profile = profile_name
         self.channel_configurations.clear()
         self.autofocus_configurations.clear()
-        self.confocal_configurations.clear()
-        self.widefield_configurations.clear()
+        if ENABLE_SPINNING_DISK_CONFOCAL:
+            self.confocal_configurations.clear()
+            self.widefield_configurations.clear()
 
         # Load configurations for each objective
         for objective in self._get_available_objectives(profile_path):
@@ -3662,7 +3663,7 @@ class AcquisitionConfigurationManager(QObject):
                 Configuration(
                     mode_id=mode.get("ID"),
                     name=mode.get("Name"),
-                    color=self.get_channel_color(mode.get("Name")),
+                    color=utils.get_channel_color(mode.get("Name")),
                     exposure_time=float(mode.get("ExposureTime")),
                     analog_gain=float(mode.get("AnalogGain")),
                     illumination_source=int(mode.get("IlluminationSource")),
@@ -4591,7 +4592,7 @@ class LaserAutofocusController(QObject):
     def __init__(
         self,
         microcontroller: Microcontroller,
-        camera: camera,
+        camera,
         stage: AbstractStage,
         objectiveStore: Optional[ObjectiveStore] = None,
         cachedLaserAFConfigurations: Optional[Dict[str, Any]] = None
@@ -4623,9 +4624,8 @@ class LaserAutofocusController(QObject):
             self.load_cached_configuration()
 
     def initialize_manual(self, x_offset, y_offset, width, height, pixel_to_um, x_reference,
-                        has_two_interfaces=self.has_two_interfaces, use_glass_top=self.use_glass_top,
-                        focus_camera_exposure_time_ms=self.focus_camera_exposure_time_ms,
-                        focus_camera_analog_gain=self.focus_camera_analog_gain):
+                        has_two_interfaces=False, use_glass_top=True,
+                        focus_camera_exposure_time_ms=2, focus_camera_analog_gain=0):
         self.pixel_to_um = pixel_to_um
         self.x_offset = int((x_offset // 8) * 8)
         self.y_offset = int((y_offset // 2) * 2)
@@ -4677,7 +4677,9 @@ class LaserAutofocusController(QObject):
                 pixel_to_um=config.get('pixel_to_um', 1.0),
                 x_reference=config.get('x_reference', 0),
                 has_two_interfaces=config.get('has_two_interfaces', False),
-                use_glass_top=config.get('use_glass_top', True)
+                use_glass_top=config.get('use_glass_top', True),
+                focus_camera_exposure_time_ms=config.get('focus_camera_exposure_time_ms', 2),
+                focus_camera_analog_gain=config.get('focus_camera_analog_gain', 0),
             )
 
     def initialize_auto(self):

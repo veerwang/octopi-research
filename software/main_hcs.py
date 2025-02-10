@@ -19,7 +19,7 @@ squid.logging.setup_uncaught_exception_logging()
 # app specific libraries
 import control.gui_hcs as gui
 from configparser import ConfigParser
-from control.widgets import ConfigEditorBackwardsCompatible, ConfigEditorForAcquisitions
+from control.widgets import ConfigEditorBackwardsCompatible
 from control._def import CACHED_CONFIG_FILE_PATH
 from control._def import USE_TERMINAL_CONSOLE
 if USE_TERMINAL_CONSOLE:

@@ -908,7 +908,7 @@ class LiveControlWidget(QFrame):
         # line 3: choose microscope mode / toggle live mode
         if self.acquisitionConfigurationManager:
             self.dropdown_modeSelection = QComboBox()
-            for microscope_configuration in self.self.acquisitionConfigurationManager.get_channel_configurations_for_objective(self.objectiveStore.current_objective):
+            for microscope_configuration in self.acquisitionConfigurationManager.get_channel_configurations_for_objective(self.objectiveStore.current_objective):
                 self.dropdown_modeSelection.addItems([microscope_configuration.name])
             self.dropdown_modeSelection.setCurrentText(self.currentConfiguration.name)
             self.dropdown_modeSelection.setSizePolicy(sizePolicy)
@@ -3269,7 +3269,7 @@ class WellplateMultiPointWidget(QFrame):
         self.combobox_z_stack.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
 
         self.list_configurations = QListWidget()
-        for microscope_configuration in self.configurationManager.configurations:
+        for microscope_configuration in self.acquisitionConfigurationManager.get_channel_configurations_for_objective(self.objectiveStore.current_objective):
             self.list_configurations.addItems([microscope_configuration.name])
         self.list_configurations.setSelectionMode(QAbstractItemView.MultiSelection)
 
