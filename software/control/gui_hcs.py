@@ -516,7 +516,7 @@ class HighContentScreeningGui(QMainWindow):
     def loadWidgets(self):
         # Initialize all GUI widgets
         if ENABLE_SPINNING_DISK_CONFOCAL:
-            self.spinningDiskConfocalWidget = widgets.SpinningDiskConfocalWidget(self.xlight, self.objectiveStore, self.acquisitionConfigurationManager)
+            self.spinningDiskConfocalWidget = widgets.SpinningDiskConfocalWidget(self.xlight, self.acquisitionConfigurationManager)
         if ENABLE_NL5:
             import control.NL5Widget as NL5Widget
 

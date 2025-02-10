@@ -330,7 +330,7 @@ class ConfigEditorBackwardsCompatible(ConfigEditor):
 
 
 class SpinningDiskConfocalWidget(QWidget):
-    def __init__(self, xlight, objective_store=None, config_manager=None):
+    def __init__(self, xlight, config_manager=None):
         super(SpinningDiskConfocalWidget, self).__init__()
 
         self.objective_store = objective_store
@@ -347,6 +347,9 @@ class SpinningDiskConfocalWidget(QWidget):
         self.dropdown_dichroic.currentIndexChanged.connect(self.set_dichroic)
 
         self.disk_position_state = self.xlight.get_disk_position()
+
+        if self.config_manager is not None:
+            self.config_manager.toogle_confocal_widefield(self.disk_position_state)
 
         if self.disk_position_state == 1:
             self.btn_toggle_widefield.setText("Switch to Widefield")
@@ -465,7 +468,8 @@ class SpinningDiskConfocalWidget(QWidget):
         else:
             self.disk_position_state = self.xlight.set_disk_position(1)
             self.btn_toggle_widefield.setText("Switch to Widefield")
-
+        if self.config_manager is not None:
+            self.config_manager.toogle_confocal_widefield(self.disk_position_state)
         self.enable_all_buttons()
 
     def toggle_motor(self):

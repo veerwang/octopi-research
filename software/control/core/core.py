@@ -3586,6 +3586,7 @@ class AcquisitionConfigurationManager(QObject):
         self.current_profile = profile
         self.channel_configurations = {}  # Dict to store configurations for each objective
         self.autofocus_configurations = {}  # Dict to store autofocus configs for each objective
+        self.active_channel_config = None
         if ENABLE_SPINNING_DISK_CONFOCAL:
             self.confocal_configurations = {}
             self.widefield_configurations = {}
@@ -3611,6 +3612,8 @@ class AcquisitionConfigurationManager(QObject):
         self.current_profile = profile_name
         self.channel_configurations.clear()
         self.autofocus_configurations.clear()
+        self.confocal_configurations.clear()
+        self.widefield_configurations.clear()
 
         # Load configurations for each objective
         for objective in self._get_available_objectives(profile_path):
@@ -3621,11 +3624,13 @@ class AcquisitionConfigurationManager(QObject):
             # Load channel configurations
             if channel_config_file.exists():
                 self.channel_configurations[objective] = self._load_channel_configurations(channel_config_file)
-            
+
             # Load autofocus configurations
             if autofocus_config_file.exists():
                 with open(autofocus_config_file, 'r') as f:
                     self.autofocus_configurations[objective] = json.load(f)
+
+            self.active_channel_config = self.channel_configurations
 
             if ENABLE_SPINNING_DISK_CONFOCAL:
                 confocal_config_file = objective_path / "confocal_configurations.xml"
@@ -3669,7 +3674,7 @@ class AcquisitionConfigurationManager(QObject):
 
     def get_channel_configurations_for_objective(self, objective: str) -> List[Configuration]:
         """Get channel configurations for a specific objective."""
-        return self.channel_configurations.get(objective, [])
+        return self.active_channel_config.get(objective, [])
 
     def get_autofocus_configurations_for_objective(self, objective: str) -> Dict[str, Any]:
         """Get autofocus configurations for a specific objective."""
@@ -3677,11 +3682,17 @@ class AcquisitionConfigurationManager(QObject):
 
     def get_channel_configurations(self) -> Dict[str, List[Configuration]]:
         """Get channel configurations for all objectives."""
-        return self.channel_configurations
+        return self.active_channel_config
 
     def get_autofocus_configurations(self) -> Dict[str, Dict[str, Any]]:
         """Get autofocus configurations for all objectives."""
-        return self.autofocus_configurations
+        return self.active_channel_config
+
+    def toggle_confocal_widefield(self, confocal: bool):
+        if confocal:
+            self.active_channel_config = self.confocal_configurations
+        else:
+            self.active_channel_config = self.widefield_configurations
 
     def update_channel_configuration(self, objective: str, configuration_id: str, attribute_name: str, new_value: Any) -> None:
         """Update a specific configuration attribute in memory."""
