@@ -455,8 +455,6 @@ class Configuration:
         illumination_source=None,
         illumination_intensity=None,
         z_offset=None,
-        pixel_format=None,
-        _pixel_format_options=None,
         emission_filter_position=None,
     ):
         self.id = mode_id
@@ -468,12 +466,6 @@ class Configuration:
         self.illumination_intensity = illumination_intensity
         self.camera_sn = camera_sn
         self.z_offset = z_offset
-        self.pixel_format = pixel_format
-        if self.pixel_format is None:
-            self.pixel_format = "default"
-        self._pixel_format_options = _pixel_format_options
-        if _pixel_format_options is None:
-            self._pixel_format_options = self.pixel_format
         self.emission_filter_position = emission_filter_position
 
 
@@ -482,7 +474,6 @@ class LiveController(QObject):
         self,
         camera,
         microcontroller,
-        configurationManager,
         illuminationController,
         parent=None,
         control_illumination=True,
@@ -493,7 +484,6 @@ class LiveController(QObject):
         self.microscope = parent
         self.camera = camera
         self.microcontroller = microcontroller
-        self.configurationManager = configurationManager
         self.currentConfiguration = None
         self.trigger_mode = TriggerMode.SOFTWARE  # @@@ change to None
         self.is_live = False
@@ -533,7 +523,7 @@ class LiveController(QObject):
     def turn_on_illumination(self):
         if self.illuminationController is not None and not "LED matrix" in self.currentConfiguration.name:
             self.illuminationController.turn_on_illumination(
-                int(self.configurationManager.extract_wavelength(self.currentConfiguration.name))
+                int(utils.extract_wavelength_from_config_name(self.currentConfiguration.name))
             )
         elif SUPPORT_SCIMICROSCOPY_LED_ARRAY and "LED matrix" in self.currentConfiguration.name:
             self.led_array.turn_on_illumination()
@@ -544,7 +534,7 @@ class LiveController(QObject):
     def turn_off_illumination(self):
         if self.illuminationController is not None and not "LED matrix" in self.currentConfiguration.name:
             self.illuminationController.turn_off_illumination(
-                int(self.configurationManager.extract_wavelength(self.currentConfiguration.name))
+                int(utils.extract_wavelength_from_config_name(self.currentConfiguration.name))
             )
         elif SUPPORT_SCIMICROSCOPY_LED_ARRAY and "LED matrix" in self.currentConfiguration.name:
             self.led_array.turn_off_illumination()
@@ -597,7 +587,7 @@ class LiveController(QObject):
             # update illumination
             if self.illuminationController is not None:
                 self.illuminationController.set_intensity(
-                    int(self.configurationManager.extract_wavelength(self.currentConfiguration.name)), intensity
+                    int(utils.extract_wavelength_from_config_name(self.currentConfiguration.name)), intensity
                 )
             elif ENABLE_NL5 and NL5_USE_DOUT and "Fluorescence" in self.currentConfiguration.name:
                 wavelength = int(self.currentConfiguration.name[13:16])
@@ -1386,7 +1376,8 @@ class MultiPointWorker(QObject):
         self.stage: squid.abc.AbstractStage = self.multiPointController.stage
         self.liveController = self.multiPointController.liveController
         self.autofocusController = self.multiPointController.autofocusController
-        self.configurationManager = self.multiPointController.configurationManager
+        self.objectiveStore = self.multiPointController.objectiveStore
+        self.acquisitionConfigurationManager = self.multiPointController.acquisitionConfigurationManager
         self.NX = self.multiPointController.NX
         self.NY = self.multiPointController.NY
         self.NZ = self.multiPointController.NZ
@@ -1763,7 +1754,7 @@ class MultiPointWorker(QObject):
                 config_AF = next(
                     (
                         config
-                        for config in self.configurationManager.configurations
+                        for config in self.acquisitionConfigurationManager.get_channel_configurations_for_objective(self.objectiveStore.current_objective)
                         if config.name == configuration_name_AF
                     )
                 )
@@ -1785,7 +1776,7 @@ class MultiPointWorker(QObject):
                     config_AF = next(
                         (
                             config
-                            for config in self.configurationManager.configurations
+                            for config in self.acquisitionConfigurationManager.get_channel_configurations_for_objective(self.objectiveStore.current_objective)
                             if config.name == configuration_name_AF
                         )
                     )
@@ -1896,7 +1887,7 @@ class MultiPointWorker(QObject):
         rgb_channels = ["BF LED matrix full_R", "BF LED matrix full_G", "BF LED matrix full_B"]
         images = {}
 
-        for config_ in self.configurationManager.configurations:
+        for config_ in self.acquisitionConfigurationManager.get_channel_configurations_for_objective(self.objectiveStore.current_objective):
             if config_.name in rgb_channels:
                 # update the current configuration
                 self.signal_current_configuration.emit(config_)
@@ -2180,7 +2171,8 @@ class MultiPointController(QObject):
         microcontroller: Microcontroller,
         liveController,
         autofocusController,
-        configurationManager,
+        objectiveStore,
+        acquisitionConfigurationManager,
         usb_spectrometer=None,
         scanCoordinates=None,
         parent=None,
@@ -2194,7 +2186,8 @@ class MultiPointController(QObject):
         self.microcontroller = microcontroller
         self.liveController = liveController
         self.autofocusController = autofocusController
-        self.configurationManager = configurationManager
+        self.objectiveStore = objectiveStore,
+        self.acquisitionConfigurationManager = acquisitionConfigurationManager
         self.multiPointWorker: Optional[MultiPointWorker] = None
         self.thread: Optional[QThread] = None
         self.NX = 1
@@ -2318,9 +2311,7 @@ class MultiPointController(QObject):
         self.recording_start_time = time.time()
         # create a new folder
         utils.ensure_directory_exists(os.path.join(self.base_path, self.experiment_ID))
-        # TODO(imo): If the config has changed since boot, is this still the correct config?
-        configManagerThrowaway = ConfigurationManager(self.configurationManager.config_filename)
-        configManagerThrowaway.write_configuration_selected(
+        self.acquisitionConfigurationManager.write_configuration_selected(
             self.selected_configurations, os.path.join(self.base_path, self.experiment_ID) + "/configurations.xml"
         )  # save the configuration for the experiment
         # Prepare acquisition parameters
@@ -2364,7 +2355,9 @@ class MultiPointController(QObject):
         for configuration_name in selected_configurations_name:
             self.selected_configurations.append(
                 next(
-                    (config for config in self.configurationManager.configurations if config.name == configuration_name)
+                    (config
+                    for config in self.acquisitionConfigurationManager.get_channel_configurations_for_objective(self.objectiveStore.current_objective)
+                    if config.name == configuration_name)
                 )
             )
 
@@ -2636,7 +2629,8 @@ class TrackingController(QObject):
         camera,
         microcontroller: Microcontroller,
         stage: AbstractStage,
-        configurationManager,
+        objectiveStore,
+        acquisitionConfigurationManager,
         liveController: LiveController,
         autofocusController,
         imageDisplayWindow,
@@ -2645,7 +2639,8 @@ class TrackingController(QObject):
         self.camera = camera
         self.microcontroller = microcontroller
         self.stage = stage
-        self.configurationManager = configurationManager
+        self.objectiveStore = objectiveStore
+        self.acquisitionConfigurationManager = acquisitionConfigurationManager
         self.liveController = liveController
         self.autofocusController = autofocusController
         self.imageDisplayWindow = imageDisplayWindow
@@ -2751,7 +2746,7 @@ class TrackingController(QObject):
         # create a new folder
         try:
             utils.ensure_directory_exists(os.path.join(self.base_path, self.experiment_ID))
-            self.configurationManager.write_configuration(
+            self.acquisitionConfigurationManager.write_configuration(
                 os.path.join(self.base_path, self.experiment_ID) + "/configurations.xml"
             )  # save the configuration for the experiment
         except:
@@ -2762,8 +2757,10 @@ class TrackingController(QObject):
         self.selected_configurations = []
         for configuration_name in selected_configurations_name:
             self.selected_configurations.append(
-                next(
-                    (config for config in self.configurationManager.configurations if config.name == configuration_name)
+                next((
+                    config
+                    for config in self.acquisitionConfigurationManager.get_channel_configurations_for_objective(self.objectiveStore.current_objective)
+                    if config.name == configuration_name)
                 )
             )
 
@@ -2863,7 +2860,7 @@ class TrackingWorker(QObject):
         self.microcontroller = self.trackingController.microcontroller
         self.liveController = self.trackingController.liveController
         self.autofocusController = self.trackingController.autofocusController
-        self.configurationManager = self.trackingController.configurationManager
+        self.acquisitionConfigurationManager = self.trackingController.acquisitionConfigurationManager
         self.imageDisplayWindow = self.trackingController.imageDisplayWindow
         self.crop_width = self.trackingController.crop_width
         self.crop_height = self.trackingController.crop_height
@@ -3583,13 +3580,15 @@ class ImageArrayDisplayWindow(QMainWindow):
 
 
 class AcquisitionConfigurationManager(QObject):
-    def __init__(self, profile: str = "default_configurations"):
+    def __init__(self, base_path: str = "./acquisition_configurations", profile: str = "default_configurations"):
         QObject.__init__(self)
-        base_path="./acquisition_configurations"
         self.base_config_path = Path(base_path)
         self.current_profile = profile
         self.channel_configurations = {}  # Dict to store configurations for each objective
         self.autofocus_configurations = {}  # Dict to store autofocus configs for each objective
+        if ENABLE_SPINNING_DISK_CONFOCAL:
+            self.confocal_configurations = {}
+            self.widefield_configurations = {}
         self.available_profiles = self._get_available_profiles()
         self.load_profile(profile)
 
@@ -3627,6 +3626,19 @@ class AcquisitionConfigurationManager(QObject):
             if autofocus_config_file.exists():
                 with open(autofocus_config_file, 'r') as f:
                     self.autofocus_configurations[objective] = json.load(f)
+
+            if ENABLE_SPINNING_DISK_CONFOCAL:
+                confocal_config_file = objective_path / "confocal_configurations.xml"
+                if confocal_config_file.exists():
+                    self.confocal_configurations[objective] = self._load_channel_configurations(confocal_config_file)
+                else:
+                    self.confocal_configurations[objective] = self.channel_configurations[objective]
+
+                widefield_config_file = objective_path / "widefield_configurations.xml"
+                if widefield_config_file.exists():
+                    self.widefield_configurations[objective] = self._load_channel_configurations(widefield_config_file)
+                else:
+                    self.widefield_configurations[objective] = self.channel_configurations[objective]
 
     def _load_channel_configurations(self, config_file: Path) -> List[Configuration]:
         """Load channel configurations from XML file."""
@@ -3764,22 +3776,6 @@ class AcquisitionConfigurationManager(QObject):
 
         # Write to the specified file
         temp_tree.write(str(filename), encoding="utf-8", xml_declaration=True, pretty_print=True)
-
-    def get_channel_color(self, channel):
-        channel_info = CHANNEL_COLORS_MAP.get(self.extract_wavelength(channel), {"hex": 0xFFFFFF, "name": "gray"})
-        return channel_info["hex"]
-
-    def extract_wavelength(self, name):
-        # Split the string and find the wavelength number immediately after "Fluorescence"
-        parts = name.split()
-        if "Fluorescence" in parts:
-            index = parts.index("Fluorescence") + 1
-            if index < len(parts):
-                return parts[index].split()[0]  # Assuming 'Fluorescence 488 nm Ex' and taking '488'
-        for color in ["R", "G", "B"]:
-            if color in parts or "full_" + color in parts:
-                return color
-        return None
 
 
 class ContrastManager:
@@ -4562,7 +4558,6 @@ class LaserAutofocusController(QObject):
         self,
         microcontroller: Microcontroller,
         camera: camera,
-        liveController: LiveController,
         stage: AbstractStage,
         objectiveStore: Optional[ObjectiveStore] = None,
         cachedLaserAFConfigurations: Optional[Dict[str, Any]] = None
@@ -4570,7 +4565,6 @@ class LaserAutofocusController(QObject):
         QObject.__init__(self)
         self.microcontroller = microcontroller
         self.camera = camera
-        self.liveController = liveController
         self.stage = stage
         self.objectiveStore = objectiveStore
 

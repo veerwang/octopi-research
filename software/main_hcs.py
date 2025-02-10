@@ -68,7 +68,7 @@ if __name__ == "__main__":
     win = gui.HighContentScreeningGui(is_simulation=args.simulation, live_only_mode=args.live_only)
 
     acq_config_action = QAction("Acquisition Settings", win)
-    acq_config_action.triggered.connect(lambda: show_acq_config(win.configurationManager))
+    acq_config_action.triggered.connect(lambda: show_acq_config(win.acquisitionConfigurationManager))
 
     file_menu = QMenu("File", win)
     file_menu.addAction(acq_config_action)

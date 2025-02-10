@@ -212,11 +212,11 @@ class HighContentScreeningGui(QMainWindow):
 
         # Common object initialization
         self.objectiveStore = core.ObjectiveStore(parent=self)
-        self.configurationManager = core.ConfigurationManager(filename="./channel_configurations.xml")
+        self.acquisitionConfigurationManager = core.AcquisitionConfigurationManager()
         self.contrastManager = core.ContrastManager()
         self.streamHandler = core.StreamHandler(display_resolution_scaling=DEFAULT_DISPLAY_CROP / 100)
         self.liveController = core.LiveController(
-            self.camera, self.microcontroller, self.configurationManager, self.illuminationController, parent=self
+            self.camera, self.microcontroller, self.illuminationController, parent=self
         )
 
         if USE_PRIOR_STAGE:
@@ -246,7 +246,8 @@ class HighContentScreeningGui(QMainWindow):
                 self.camera,
                 self.microcontroller,
                 self.stage,
-                self.configurationManager,
+                self.objectiveStore,
+                self.acquisitionConfigurationManager,
                 self.liveController,
                 self.autofocusController,
                 self.imageDisplayWindow,
@@ -264,20 +265,17 @@ class HighContentScreeningGui(QMainWindow):
             self.microcontroller,
             self.liveController,
             self.autofocusController,
-            self.configurationManager,
+            self.objectiveStore,
+            self.acquisitionConfigurationManager,
             scanCoordinates=self.scanCoordinates,
             parent=self,
         )
 
         if SUPPORT_LASER_AUTOFOCUS:
-            self.configurationManager_focus_camera = core.ConfigurationManager(
-                filename="./focus_camera_configurations.xml"
-            )
             self.streamHandler_focus_camera = core.StreamHandler()
             self.liveController_focus_camera = core.LiveController(
                 self.camera_focus,
                 self.microcontroller,
-                self.configurationManager_focus_camera,
                 self,
                 control_illumination=False,
                 for_displacement_measurement=True,
@@ -288,7 +286,8 @@ class HighContentScreeningGui(QMainWindow):
                 self.microcontroller,
                 self.liveController,
                 self.autofocusController,
-                self.configurationManager,
+                self.objectiveStore,
+                self.acquisitionConfigurationManager,
                 scanCoordinates=self.scanCoordinates,
                 parent=self,
             )
@@ -301,9 +300,8 @@ class HighContentScreeningGui(QMainWindow):
                 self.camera_focus,
                 self.liveController_focus_camera,
                 self.stage,
-                has_two_interfaces=HAS_TWO_INTERFACES,
-                use_glass_top=USE_GLASS_TOP,
-                look_for_cache=False,
+                self.objectiveStore,
+                self.acquisitionConfigurationManager.get_autofocus_configurations()
             )
 
         if USE_SQUID_FILTERWHEEL:
@@ -518,7 +516,7 @@ class HighContentScreeningGui(QMainWindow):
     def loadWidgets(self):
         # Initialize all GUI widgets
         if ENABLE_SPINNING_DISK_CONFOCAL:
-            self.spinningDiskConfocalWidget = widgets.SpinningDiskConfocalWidget(self.xlight, self.configurationManager)
+            self.spinningDiskConfocalWidget = widgets.SpinningDiskConfocalWidget(self.xlight, self.objectiveStore, self.acquisitionConfigurationManager)
         if ENABLE_NL5:
             import control.NL5Widget as NL5Widget
 
@@ -541,7 +539,8 @@ class HighContentScreeningGui(QMainWindow):
         self.liveControlWidget = widgets.LiveControlWidget(
             self.streamHandler,
             self.liveController,
-            self.configurationManager,
+            self.objectiveStore,
+            self.acquisitionConfigurationManager,
             show_display_options=True,
             show_autolevel=True,
             autolevel=True,
@@ -596,7 +595,6 @@ class HighContentScreeningGui(QMainWindow):
             self.liveControlWidget_focus_camera = widgets.LiveControlWidget(
                 self.streamHandler_focus_camera,
                 self.liveController_focus_camera,
-                self.configurationManager_focus_camera,
                 stretch=False,
             )  # ,show_display_options=True)
             self.waveformDisplay = widgets.WaveformDisplay(N=1000, include_x=True, include_y=False)
@@ -629,7 +627,7 @@ class HighContentScreeningGui(QMainWindow):
             self.navigationViewer,
             self.multipointController,
             self.objectiveStore,
-            self.configurationManager,
+            self.acquisitionConfigurationManager,
             self.scanCoordinates,
             self.focusMapWidget,
         )
@@ -638,7 +636,7 @@ class HighContentScreeningGui(QMainWindow):
             self.navigationViewer,
             self.multipointController,
             self.objectiveStore,
-            self.configurationManager,
+            self.acquisitionConfigurationManager,
             self.scanCoordinates,
             self.focusMapWidget,
             self.napariMosaicDisplayWidget,
@@ -648,11 +646,12 @@ class HighContentScreeningGui(QMainWindow):
         if ENABLE_TRACKING:
             self.trackingControlWidget = widgets.TrackingControllerWidget(
                 self.trackingController,
-                self.configurationManager,
+                self.objectiveStore,
+                self.acquisitionConfigurationManager,
                 show_configurations=TRACKING_SHOW_MICROSCOPE_CONFIGURATIONS,
             )
         if ENABLE_STITCHER:
-            self.stitcherWidget = widgets.StitcherWidget(self.configurationManager, self.contrastManager)
+            self.stitcherWidget = widgets.StitcherWidget(self.objectiveStore, self.acquisitionConfigurationManager, self.contrastManager)
 
         self.recordTabWidget = QTabWidget()
         self.setupRecordTabWidget()
@@ -666,7 +665,8 @@ class HighContentScreeningGui(QMainWindow):
                 self.streamHandler,
                 self.liveController,
                 self.stage,
-                self.configurationManager,
+                self.objectiveStore,
+                self.acquisitionConfigurationManager,
                 self.contrastManager,
                 self.wellSelectionWidget,
             )
