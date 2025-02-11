@@ -3860,21 +3860,21 @@ class ScanCoordinates(QObject):
             # Use scan_size_mm as height, width is 0.6 * height
             height_mm = scan_size_mm
             width_mm = scan_size_mm * 0.6
-            
+
             # Calculate steps for height and width separately
             steps_height = math.floor(height_mm / step_size_mm)
             steps_width = math.floor(width_mm / step_size_mm)
-            
+
             # Calculate actual dimensions
             actual_scan_height_mm = (steps_height - 1) * step_size_mm + fov_size_mm
             actual_scan_width_mm = (steps_width - 1) * step_size_mm + fov_size_mm
-            
+
             steps_height = max(1, steps_height)
             steps_width = max(1, steps_width)
 
             half_steps_height = (steps_height - 1) / 2
             half_steps_width = (steps_width - 1) / 2
-            
+
             for i in range(steps_height):
                 row = []
                 y = center_y + (i - half_steps_height) * step_size_mm
@@ -3916,8 +3916,13 @@ class ScanCoordinates(QObject):
                 y = center_y + (i - half_steps) * step_size_mm
                 for j in range(steps):
                     x = center_x + (j - half_steps) * step_size_mm
-                    if shape == "Square" or shape == "Rectangle" or (
-                        shape == "Circle" and self._is_in_circle(x, y, center_x, center_y, radius_squared, fov_size_mm_half)
+                    if (
+                        shape == "Square"
+                        or shape == "Rectangle"
+                        or (
+                            shape == "Circle"
+                            and self._is_in_circle(x, y, center_x, center_y, radius_squared, fov_size_mm_half)
+                        )
                     ):
                         if self.validate_coordinates(x, y):
                             row.append((x, y))
@@ -4059,20 +4064,30 @@ class ScanCoordinates(QObject):
         # valid_points = grid_points[mask]
 
         def corners(x_mm, y_mm, fov):
-            center_to_corner = fov/2
+            center_to_corner = fov / 2
             return (
                 (x_mm + center_to_corner, y_mm + center_to_corner),
                 (x_mm - center_to_corner, y_mm + center_to_corner),
                 (x_mm - center_to_corner, y_mm - center_to_corner),
-                (x_mm + center_to_corner, y_mm - center_to_corner)
+                (x_mm + center_to_corner, y_mm - center_to_corner),
             )
+
         valid_points = []
         for x_center, y_center in grid_points:
             if not self.validate_coordinates(x_center, y_center):
-                self._log.debug(f"Manual coords: ignoring {x_center=},{y_center=} because it is outside our movement range.")
+                self._log.debug(
+                    f"Manual coords: ignoring {x_center=},{y_center=} because it is outside our movement range."
+                )
                 continue
-            if not self._is_in_polygon(x_center, y_center, shape_coords) and not any([self._is_in_polygon(x_corner, y_corner, shape_coords) for (x_corner, y_corner) in corners(x_center, y_center, fov_size_mm)]):
-                self._log.debug(f"Manual coords: ignoring {x_center=},{y_center=} because no corners or center are in poly. (corners={corners(x_center, y_center, fov_size_mm)}")
+            if not self._is_in_polygon(x_center, y_center, shape_coords) and not any(
+                [
+                    self._is_in_polygon(x_corner, y_corner, shape_coords)
+                    for (x_corner, y_corner) in corners(x_center, y_center, fov_size_mm)
+                ]
+            ):
+                self._log.debug(
+                    f"Manual coords: ignoring {x_center=},{y_center=} because no corners or center are in poly. (corners={corners(x_center, y_center, fov_size_mm)}"
+                )
                 continue
 
             valid_points.append((x_center, y_center))
@@ -4493,7 +4508,27 @@ class LaserAutofocusController(QObject):
                 print(e)
                 pass
 
-    def initialize_manual(self, x_offset, y_offset, width, height, pixel_to_um, x_reference, write_to_cache=True):
+    def initialize_manual(
+        self,
+        x_offset: float,
+        y_offset: float,
+        width: int,
+        height: int,
+        pixel_to_um: float,
+        x_reference: float,
+        write_to_cache: bool = True,
+    ) -> None:
+        """Initialize laser autofocus with manual parameters.
+
+        Args:
+            x_offset: X offset for ROI in pixels
+            y_offset: Y offset for ROI in pixels
+            width: Width of ROI in pixels
+            height: Height of ROI in pixels
+            pixel_to_um: Conversion factor from pixels to micrometers
+            x_reference: Reference X position in pixels (relative to full sensor)
+            write_to_cache: Whether to save parameters to cache file
+        """
         cache_string = ",".join(
             [str(x_offset), str(y_offset), str(width), str(height), str(pixel_to_um), str(x_reference)]
         )
@@ -4501,244 +4536,285 @@ class LaserAutofocusController(QObject):
             cache_path = Path("cache/laser_af_reference_plane.txt")
             cache_path.parent.mkdir(parents=True, exist_ok=True)
             cache_path.write_text(cache_string)
+
         # x_reference is relative to the full sensor
         self.pixel_to_um = pixel_to_um
-        self.x_offset = int((x_offset // 8) * 8)
-        self.y_offset = int((y_offset // 2) * 2)
+        self.x_offset = int((x_offset // 8) * 8)  # Round to multiple of 8
+        self.y_offset = int((y_offset // 2) * 2)  # Round to multiple of 2
         self.width = int((width // 8) * 8)
         self.height = int((height // 2) * 2)
         self.x_reference = x_reference - self.x_offset  # self.x_reference is relative to the cropped region
         self.camera.set_ROI(self.x_offset, self.y_offset, self.width, self.height)
         self.is_initialized = True
 
-    def initialize_auto(self):
+    def initialize_auto(self) -> bool:
+        """Automatically initialize laser autofocus by finding the spot and calibrating.
 
-        # first find the region to crop
-        # then calculate the convert factor
+        This method:
+        1. Finds the laser spot on full sensor
+        2. Sets up ROI around the spot
+        3. Calibrates pixel-to-um conversion using two z positions
+        4. Sets initial reference position
 
+        Returns:
+            bool: True if initialization successful, False if any step fails
+        """
         # set camera to use full sensor
         self.camera.set_ROI(0, 0, None, None)  # set offset first
         self.camera.set_ROI(0, 0, 3088, 2064)
+
         # update camera settings
         self.camera.set_exposure_time(FOCUS_CAMERA_EXPOSURE_TIME_MS)
         self.camera.set_analog_gain(FOCUS_CAMERA_ANALOG_GAIN)
 
-        # turn on the laser
+        # Find initial spot position
         self.microcontroller.turn_on_AF_laser()
         self.microcontroller.wait_till_operation_is_completed()
 
-        # get laser spot location
-        x, y = self._get_laser_spot_centroid()
+        result = self._get_laser_spot_centroid()
+        if result is None:
+            _log.error("Failed to find laser spot during initialization")
+            self.microcontroller.turn_off_AF_laser()
+            self.microcontroller.wait_till_operation_is_completed()
+            return False
+        x, y = result
 
-        # turn off the laser
         self.microcontroller.turn_off_AF_laser()
         self.microcontroller.wait_till_operation_is_completed()
 
+        # Set up ROI around spot
         x_offset = x - LASER_AF_CROP_WIDTH / 2
         y_offset = y - LASER_AF_CROP_HEIGHT / 2
-        print("laser spot location on the full sensor is (" + str(int(x)) + "," + str(int(y)) + ")")
+        _log.info(f"Laser spot location on the full sensor is ({int(x)}, {int(y)})")
 
-        # set camera crop
         self.initialize_manual(x_offset, y_offset, LASER_AF_CROP_WIDTH, LASER_AF_CROP_HEIGHT, 1, x)
 
-        # turn on laser
+        # Calibrate pixel-to-um conversion
         self.microcontroller.turn_on_AF_laser()
         self.microcontroller.wait_till_operation_is_completed()
 
-        # move z to - 6 um
+        # Move to first position and measure
         self.stage.move_z(-0.018)
         self.stage.move_z(0.012)
         time.sleep(0.02)
 
-        # measure
-        x0, y0 = self._get_laser_spot_centroid()
+        result = self._get_laser_spot_centroid()
+        if result is None:
+            _log.error("Failed to find laser spot during calibration (position 1)")
+            self.microcontroller.turn_off_AF_laser()
+            self.microcontroller.wait_till_operation_is_completed()
+            return False
+        x0, y0 = result
 
-        # move z to 6 um
+        # Move to second position and measure
         self.stage.move_z(0.006)
         time.sleep(0.02)
 
-        # measure
-        x1, y1 = self._get_laser_spot_centroid()
+        result = self._get_laser_spot_centroid()
+        if result is None:
+            _log.error("Failed to find laser spot during calibration (position 2)")
+            self.microcontroller.turn_off_AF_laser()
+            self.microcontroller.wait_till_operation_is_completed()
+            return False
+        x1, y1 = result
 
-        # turn off laser
         self.microcontroller.turn_off_AF_laser()
         self.microcontroller.wait_till_operation_is_completed()
 
+        # Calculate conversion factor
         if x1 - x0 == 0:
-            # for simulation
-            self.pixel_to_um = 0.4
+            self.pixel_to_um = 0.4  # Simulation value
+            _log.warning("Using simulation value for pixel_to_um conversion")
         else:
-            # calculate the conversion factor
             self.pixel_to_um = 6.0 / (x1 - x0)
-        print("pixel to um conversion factor is " + str(self.pixel_to_um) + " um/pixel")
+        _log.info(f"Pixel to um conversion factor is {self.pixel_to_um:.3f} um/pixel")
 
-        # set reference
+        # Set reference position
         self.x_reference = x1
+        return True
 
-        if self.look_for_cache:
-            cache_path = "cache/laser_af_reference_plane.txt"
-            try:
-                x_offset = None
-                y_offset = None
-                width = None
-                height = None
-                pixel_to_um = None
-                x_reference = None
-                with open(cache_path, "r") as cache_file:
-                    for line in cache_file:
-                        value_list = line.split(",")
-                        x_offset = float(value_list[0])
-                        y_offset = float(value_list[1])
-                        width = int(value_list[2])
-                        height = int(value_list[3])
-                        pixel_to_um = self.pixel_to_um
-                        x_reference = self.x_reference + self.x_offset
-                        break
-                cache_string = ",".join(
-                    [str(x_offset), str(y_offset), str(width), str(height), str(pixel_to_um), str(x_reference)]
-                )
-                cache_path = Path("cache/laser_af_reference_plane.txt")
-                cache_path.parent.mkdir(parents=True, exist_ok=True)
-                cache_path.write_text(cache_string)
-            except (FileNotFoundError, ValueError, IndexError) as e:
-                print("Unable to read laser AF state cache, exception below:")
-                print(e)
-                pass
+    def measure_displacement(self) -> float:
+        """Measure the displacement of the laser spot from the reference position.
 
-    def measure_displacement(self):
+        Returns:
+            float: Displacement in micrometers, or float('nan') if measurement fails
+        """
         # turn on the laser
         self.microcontroller.turn_on_AF_laser()
         self.microcontroller.wait_till_operation_is_completed()
+
         # get laser spot location
-        x, y = self._get_laser_spot_centroid()
+        result = self._get_laser_spot_centroid()
+
         # turn off the laser
         self.microcontroller.turn_off_AF_laser()
         self.microcontroller.wait_till_operation_is_completed()
+
+        if result is None:
+            _log.error("Failed to detect laser spot during displacement measurement")
+            self.signal_displacement_um.emit(float("nan"))  # Signal invalid measurement
+            return float("nan")
+
+        x, y = result
         # calculate displacement
         displacement_um = (x - self.x_reference) * self.pixel_to_um
         self.signal_displacement_um.emit(displacement_um)
         return displacement_um
 
-    def move_to_target(self, target_um):
+    def move_to_target(self, target_um: float) -> bool:
+        """Move the stage to reach a target displacement from reference position.
+
+        Args:
+            target_um: Target displacement in micrometers
+
+        Returns:
+            bool: True if move was successful, False if measurement failed or displacement was out of range
+        """
         current_displacement_um = self.measure_displacement()
-        print("Laser AF displacement: ", current_displacement_um)
+        _log.info(f"Current laser AF displacement: {current_displacement_um:.1f} μm")
+
+        if math.isnan(current_displacement_um):
+            _log.error("Cannot move to target: failed to measure current displacement")
+            return False
 
         if abs(current_displacement_um) > LASER_AF_RANGE:
-            print(
-                f"Warning: Measured displacement ({current_displacement_um:.1f} μm) is unreasonably large, using previous z position"
+            _log.warning(
+                f"Measured displacement ({current_displacement_um:.1f} μm) is unreasonably large, using previous z position"
             )
-            um_to_move = 0
-        else:
-            um_to_move = target_um - current_displacement_um
+            return False
 
-        self.stage.move_z(um_to_move / 1000)
+        um_to_move = target_um - current_displacement_um
+        self.stage.move_z(um_to_move / 1000)  # Convert to mm
 
-        # update the displacement measurement
-        self.measure_displacement()
+        # Verify we reached the target
+        final_displacement = self.measure_displacement()
+        if math.isnan(final_displacement):
+            _log.error("Failed to verify final position")
+            return False
 
-    def set_reference(self):
+        _log.debug(f"Final displacement: {final_displacement:.1f} μm")
+        return abs(final_displacement - target_um) < 1.0  # Success if within 1 μm
+
+    def set_reference(self) -> bool:
+        """Set the current spot position as the reference position.
+
+        Returns:
+            bool: True if reference was set successfully, False if spot detection failed
+        """
         # turn on the laser
         self.microcontroller.turn_on_AF_laser()
         self.microcontroller.wait_till_operation_is_completed()
+
         # get laser spot location
-        x, y = self._get_laser_spot_centroid()
+        result = self._get_laser_spot_centroid()
+
         # turn off the laser
         self.microcontroller.turn_off_AF_laser()
         self.microcontroller.wait_till_operation_is_completed()
+
+        if result is None:
+            _log.error("Failed to detect laser spot while setting reference")
+            return False
+
+        x, y = result
         self.x_reference = x
         self.signal_displacement_um.emit(0)
+        _log.info(f"Set reference position to ({x:.1f}, {y:.1f})")
+        return True
 
-    def _caculate_centroid(self, image):
-        if self.has_two_interfaces == False:
-            h, w = image.shape
-            x, y = np.meshgrid(range(w), range(h))
-            I = image.astype(float)
-            I = I - np.amin(I)
-            I[I / np.amax(I) < 0.2] = 0
-            x = np.sum(x * I) / np.sum(I)
-            y = np.sum(y * I) / np.sum(I)
-            return x, y
-        else:
-            I = image
-            # get the y position of the spots
-            tmp = np.sum(I, axis=1)
-            y0 = np.argmax(tmp)
-            # crop along the y axis
-            I = I[y0 - 96 : y0 + 96, :]
-            # signal along x
-            tmp = np.sum(I, axis=0)
-            # find peaks
-            peak_locations, _ = scipy.signal.find_peaks(tmp, distance=100)
-            idx = np.argsort(tmp[peak_locations])
-            peak_0_location = peak_locations[idx[-1]]
-            peak_1_location = peak_locations[
-                idx[-2]
-            ]  # for air-glass-water, the smaller peak corresponds to the glass-water interface
-            self.spot_spacing_pixels = peak_1_location - peak_0_location
-            """
-            # find peaks - alternative
-            if self.spot_spacing_pixels is not None:
-                peak_locations,_ = scipy.signal.find_peaks(tmp,distance=100)
-                idx = np.argsort(tmp[peak_locations])
-                peak_0_location = peak_locations[idx[-1]]
-                peak_1_location = peak_locations[idx[-2]] # for air-glass-water, the smaller peak corresponds to the glass-water interface
-                self.spot_spacing_pixels = peak_1_location-peak_0_location
-            else:
-                peak_0_location = np.argmax(tmp)
-                peak_1_location = peak_0_location + self.spot_spacing_pixels
-            """
-            # choose which surface to use
-            if self.use_glass_top:
-                x1 = peak_1_location
-            else:
-                x1 = peak_0_location
-            # find centroid
-            h, w = I.shape
-            x, y = np.meshgrid(range(w), range(h))
-            I = I[:, max(0, x1 - 64) : min(w - 1, x1 + 64)]
-            x = x[:, max(0, x1 - 64) : min(w - 1, x1 + 64)]
-            y = y[:, max(0, x1 - 64) : min(w - 1, x1 + 64)]
-            I = I.astype(float)
-            I = I - np.amin(I)
-            I[I / np.amax(I) < 0.1] = 0
-            x1 = np.sum(x * I) / np.sum(I)
-            y1 = np.sum(y * I) / np.sum(I)
-            return x1, y0 - 96 + y1
+    def _get_laser_spot_centroid(self) -> Optional[Tuple[float, float]]:
+        """Get the centroid location of the laser spot.
 
-    def _get_laser_spot_centroid(self):
+        Averages multiple measurements to improve accuracy. The number of measurements
+        is controlled by LASER_AF_AVERAGING_N.
+
+        Returns:
+            Optional[Tuple[float, float]]: (x,y) coordinates of spot centroid, or None if detection fails
+        """
         # disable camera callback
         self.camera.disable_callback()
+
+        successful_detections = 0
         tmp_x = 0
         tmp_y = 0
-        for i in range(LASER_AF_AVERAGING_N):
-            # send camera trigger
-            if self.liveController.trigger_mode == TriggerMode.SOFTWARE:
-                self.camera.send_trigger()
-            elif self.liveController.trigger_mode == TriggerMode.HARDWARE:
-                # self.microcontroller.send_hardware_trigger(control_illumination=True,illumination_on_time_us=self.camera.exposure_time*1000)
-                pass  # to edit
-            # read camera frame
-            image = self.camera.read_frame()
-            self.image = image
-            # optionally display the image
-            if LASER_AF_DISPLAY_SPOT_IMAGE:
-                self.image_to_display.emit(image)
-            # calculate centroid
-            x, y = self._caculate_centroid(image)
-            tmp_x = tmp_x + x
-            tmp_y = tmp_y + y
-        x = tmp_x / LASER_AF_AVERAGING_N
-        y = tmp_y / LASER_AF_AVERAGING_N
-        return x, y
 
-    def get_image(self):
+        for i in range(LASER_AF_AVERAGING_N):
+            try:
+                # send camera trigger
+                if self.liveController.trigger_mode == TriggerMode.SOFTWARE:
+                    self.camera.send_trigger()
+                elif self.liveController.trigger_mode == TriggerMode.HARDWARE:
+                    # self.microcontroller.send_hardware_trigger(control_illumination=True,illumination_on_time_us=self.camera.exposure_time*1000)
+                    pass  # to edit
+
+                # read camera frame
+                image = self.camera.read_frame()
+                if image is None:
+                    _log.warning(f"Failed to read frame {i+1}/{LASER_AF_AVERAGING_N}")
+                    continue
+
+                self.image = image  # store for debugging
+
+                # optionally display the image
+                if LASER_AF_DISPLAY_SPOT_IMAGE:
+                    self.image_to_display.emit(image)
+
+                # calculate centroid
+                result = utils.find_spot_location(image)
+                if result is None:
+                    _log.warning(f"No spot detected in frame {i+1}/{LASER_AF_AVERAGING_N}")
+                    continue
+
+                x, y = result
+                tmp_x += x
+                tmp_y += y
+                successful_detections += 1
+
+            except Exception as e:
+                _log.error(f"Error processing frame {i+1}/{LASER_AF_AVERAGING_N}: {str(e)}")
+                continue
+
+        # Check if we got enough successful detections
+        if successful_detections == 0:
+            _log.error(f"No successful detections")
+            return None
+
+        # Calculate average position from successful detections
+        x = tmp_x / successful_detections
+        y = tmp_y / successful_detections
+
+        _log.debug(f"Spot centroid found at ({x:.1f}, {y:.1f}) from {successful_detections} detections")
+        return (x, y)
+
+    def get_image(self) -> Optional[np.ndarray]:
+        """Capture and display a single image from the laser autofocus camera.
+
+        Turns the laser on, captures an image, displays it, then turns the laser off.
+
+        Returns:
+            Optional[np.ndarray]: The captured image, or None if capture failed
+        """
         # turn on the laser
         self.microcontroller.turn_on_AF_laser()
-        self.microcontroller.wait_till_operation_is_completed()  # send trigger, grab image and display image
-        self.camera.send_trigger()
-        image = self.camera.read_frame()
-        self.image_to_display.emit(image)
-        # turn off the laser
-        self.microcontroller.turn_off_AF_laser()
         self.microcontroller.wait_till_operation_is_completed()
-        return image
+
+        try:
+            # send trigger, grab image and display image
+            self.camera.send_trigger()
+            image = self.camera.read_frame()
+
+            if image is None:
+                _log.error("Failed to read frame in get_image")
+                return None
+
+            self.image_to_display.emit(image)
+            return image
+
+        except Exception as e:
+            _log.error(f"Error capturing image: {str(e)}")
+            return None
+
+        finally:
+            # turn off the laser
+            self.microcontroller.turn_off_AF_laser()
+            self.microcontroller.wait_till_operation_is_completed()
