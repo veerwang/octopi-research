@@ -3874,7 +3874,7 @@ class ScanCoordinates(QObject):
 
             half_steps_height = (steps_height - 1) / 2
             half_steps_width = (steps_width - 1) / 2
-
+            
             for i in range(steps_height):
                 row = []
                 y = center_y + (i - half_steps_height) * step_size_mm
@@ -4468,6 +4468,7 @@ class LaserAutofocusController(QObject):
         look_for_cache=True,
     ):
         QObject.__init__(self)
+        self._log = squid.logging.get_logger(__class__.__name__)
         self.microcontroller = microcontroller
         self.camera = camera
         self.liveController = liveController
@@ -4573,7 +4574,7 @@ class LaserAutofocusController(QObject):
 
         result = self._get_laser_spot_centroid()
         if result is None:
-            _log.error("Failed to find laser spot during initialization")
+            self._log.error("Failed to find laser spot during initialization")
             self.microcontroller.turn_off_AF_laser()
             self.microcontroller.wait_till_operation_is_completed()
             return False
@@ -4585,7 +4586,7 @@ class LaserAutofocusController(QObject):
         # Set up ROI around spot
         x_offset = x - LASER_AF_CROP_WIDTH / 2
         y_offset = y - LASER_AF_CROP_HEIGHT / 2
-        _log.info(f"Laser spot location on the full sensor is ({int(x)}, {int(y)})")
+        self._log.info(f"Laser spot location on the full sensor is ({int(x)}, {int(y)})")
 
         self.initialize_manual(x_offset, y_offset, LASER_AF_CROP_WIDTH, LASER_AF_CROP_HEIGHT, 1, x)
 
@@ -4600,7 +4601,7 @@ class LaserAutofocusController(QObject):
 
         result = self._get_laser_spot_centroid()
         if result is None:
-            _log.error("Failed to find laser spot during calibration (position 1)")
+            self._log.error("Failed to find laser spot during calibration (position 1)")
             self.microcontroller.turn_off_AF_laser()
             self.microcontroller.wait_till_operation_is_completed()
             return False
@@ -4612,7 +4613,7 @@ class LaserAutofocusController(QObject):
 
         result = self._get_laser_spot_centroid()
         if result is None:
-            _log.error("Failed to find laser spot during calibration (position 2)")
+            self._log.error("Failed to find laser spot during calibration (position 2)")
             self.microcontroller.turn_off_AF_laser()
             self.microcontroller.wait_till_operation_is_completed()
             return False
@@ -4624,10 +4625,10 @@ class LaserAutofocusController(QObject):
         # Calculate conversion factor
         if x1 - x0 == 0:
             self.pixel_to_um = 0.4  # Simulation value
-            _log.warning("Using simulation value for pixel_to_um conversion")
+            self._log.warning("Using simulation value for pixel_to_um conversion")
         else:
             self.pixel_to_um = 6.0 / (x1 - x0)
-        _log.info(f"Pixel to um conversion factor is {self.pixel_to_um:.3f} um/pixel")
+        self._log.info(f"Pixel to um conversion factor is {self.pixel_to_um:.3f} um/pixel")
 
         # Set reference position
         self.x_reference = x1
@@ -4651,7 +4652,7 @@ class LaserAutofocusController(QObject):
         self.microcontroller.wait_till_operation_is_completed()
 
         if result is None:
-            _log.error("Failed to detect laser spot during displacement measurement")
+            self._log.error("Failed to detect laser spot during displacement measurement")
             self.signal_displacement_um.emit(float("nan"))  # Signal invalid measurement
             return float("nan")
 
@@ -4671,14 +4672,14 @@ class LaserAutofocusController(QObject):
             bool: True if move was successful, False if measurement failed or displacement was out of range
         """
         current_displacement_um = self.measure_displacement()
-        _log.info(f"Current laser AF displacement: {current_displacement_um:.1f} μm")
+        self._log.info(f"Current laser AF displacement: {current_displacement_um:.1f} μm")
 
         if math.isnan(current_displacement_um):
-            _log.error("Cannot move to target: failed to measure current displacement")
+            self._log.error("Cannot move to target: failed to measure current displacement")
             return False
 
         if abs(current_displacement_um) > LASER_AF_RANGE:
-            _log.warning(
+            self._log.warning(
                 f"Measured displacement ({current_displacement_um:.1f} μm) is unreasonably large, using previous z position"
             )
             return False
@@ -4689,10 +4690,10 @@ class LaserAutofocusController(QObject):
         # Verify we reached the target
         final_displacement = self.measure_displacement()
         if math.isnan(final_displacement):
-            _log.error("Failed to verify final position")
+            self._log.error("Failed to verify final position")
             return False
 
-        _log.debug(f"Final displacement: {final_displacement:.1f} μm")
+        self._log.debug(f"Final displacement: {final_displacement:.1f} μm")
         return abs(final_displacement - target_um) < 1.0  # Success if within 1 μm
 
     def set_reference(self) -> bool:
@@ -4713,13 +4714,13 @@ class LaserAutofocusController(QObject):
         self.microcontroller.wait_till_operation_is_completed()
 
         if result is None:
-            _log.error("Failed to detect laser spot while setting reference")
+            self._log.error("Failed to detect laser spot while setting reference")
             return False
 
         x, y = result
         self.x_reference = x
         self.signal_displacement_um.emit(0)
-        _log.info(f"Set reference position to ({x:.1f}, {y:.1f})")
+        self._log.info(f"Set reference position to ({x:.1f}, {y:.1f})")
         return True
 
     def _get_laser_spot_centroid(self) -> Optional[Tuple[float, float]]:
@@ -4750,7 +4751,7 @@ class LaserAutofocusController(QObject):
                 # read camera frame
                 image = self.camera.read_frame()
                 if image is None:
-                    _log.warning(f"Failed to read frame {i+1}/{LASER_AF_AVERAGING_N}")
+                    self._log.warning(f"Failed to read frame {i+1}/{LASER_AF_AVERAGING_N}")
                     continue
 
                 self.image = image  # store for debugging
@@ -4762,7 +4763,7 @@ class LaserAutofocusController(QObject):
                 # calculate centroid
                 result = utils.find_spot_location(image)
                 if result is None:
-                    _log.warning(f"No spot detected in frame {i+1}/{LASER_AF_AVERAGING_N}")
+                    self._log.warning(f"No spot detected in frame {i+1}/{LASER_AF_AVERAGING_N}")
                     continue
 
                 x, y = result
@@ -4771,19 +4772,19 @@ class LaserAutofocusController(QObject):
                 successful_detections += 1
 
             except Exception as e:
-                _log.error(f"Error processing frame {i+1}/{LASER_AF_AVERAGING_N}: {str(e)}")
+                self._log.error(f"Error processing frame {i+1}/{LASER_AF_AVERAGING_N}: {str(e)}")
                 continue
 
         # Check if we got enough successful detections
         if successful_detections == 0:
-            _log.error(f"No successful detections")
+            self._log.error(f"No successful detections")
             return None
 
         # Calculate average position from successful detections
         x = tmp_x / successful_detections
         y = tmp_y / successful_detections
 
-        _log.debug(f"Spot centroid found at ({x:.1f}, {y:.1f}) from {successful_detections} detections")
+        self._log.debug(f"Spot centroid found at ({x:.1f}, {y:.1f}) from {successful_detections} detections")
         return (x, y)
 
     def get_image(self) -> Optional[np.ndarray]:
@@ -4804,14 +4805,14 @@ class LaserAutofocusController(QObject):
             image = self.camera.read_frame()
 
             if image is None:
-                _log.error("Failed to read frame in get_image")
+                self._log.error("Failed to read frame in get_image")
                 return None
 
             self.image_to_display.emit(image)
             return image
 
         except Exception as e:
-            _log.error(f"Error capturing image: {str(e)}")
+            self._log.error(f"Error capturing image: {str(e)}")
             return None
 
         finally:

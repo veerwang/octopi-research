@@ -4,6 +4,7 @@ import cv2
 from numpy import std, square, mean
 import numpy as np
 from scipy.ndimage import label
+from scipy import signal
 import os
 from typing import Optional, Tuple
 from enum import Enum, auto
@@ -220,7 +221,7 @@ def find_spot_location(
         "x_window": 20,  # Half-width of centroid window
         "min_peak_width": 10,  # Minimum width of peaks
         "min_peak_distance": 10,  # Minimum distance between peaks
-        "mim_peak_prominence": 100,  # Minimum peak prominence
+        "min_peak_prominence": 100,  # Minimum peak prominence
         "intensity_threshold": 0.1,  # Threshold for intensity filtering
         "spot_spacing": 100,  # Expected spacing between spots
     }
