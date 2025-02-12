@@ -330,6 +330,71 @@ class ConfigEditorBackwardsCompatible(ConfigEditor):
         self.close()
 
 
+class LaserAutofocusSettingsWidget(QDialog):
+    def __init__(self, laser_af_controller):
+        super().__init__()
+        self.laser_af_controller = laser_af_controller
+        self.init_ui()
+
+    def init_ui(self):
+        layout = QVBoxLayout()
+
+        # Two interfaces checkbox
+        self.has_two_interfaces_cb = QCheckBox("Has Two Interfaces")
+        layout.addWidget(self.has_two_interfaces_cb)
+
+        # Glass top checkbox  
+        self.use_glass_top_cb = QCheckBox("Use Glass Top")
+        layout.addWidget(self.use_glass_top_cb)
+
+        # Exposure time
+        exposure_layout = QHBoxLayout()
+        exposure_layout.addWidget(QLabel("Focus Camera Exposure (ms):"))
+        self.exposure_spinbox = QDoubleSpinBox()
+        self.exposure_spinbox.setRange(0, 1000)
+        self.exposure_spinbox.setValue(2)
+        self.exposure_spinbox.setDecimals(1)
+        exposure_layout.addWidget(self.exposure_spinbox)
+        layout.addLayout(exposure_layout)
+
+        # Analog gain
+        gain_layout = QHBoxLayout()
+        gain_layout.addWidget(QLabel("Focus Camera Analog Gain:"))
+        self.gain_spinbox = QSpinBox()
+        self.gain_spinbox.setRange(0, 100)
+        self.gain_spinbox.setValue(0)
+        gain_layout.addWidget(self.gain_spinbox)
+        layout.addLayout(gain_layout)
+
+        # Range
+        '''
+        range_layout = QHBoxLayout()
+        range_layout.addWidget(QLabel("Laser AF Range (μm):"))
+        self.range_spinbox = QDoubleSpinBox()
+        self.range_spinbox.setRange(0, 1000)
+        self.range_spinbox.setValue(100)
+        self.range_spinbox.setDecimals(1)
+        range_layout.addWidget(self.range_spinbox)
+        layout.addLayout(range_layout)
+        '''
+
+        # Apply button
+        self.apply_button = QPushButton("Apply and Initialize")
+        self.apply_button.clicked.connect(self.apply_settings)
+        layout.addWidget(self.apply_button)
+
+        self.setLayout(layout)
+
+    def apply_settings(self):
+        self.laser_af_controller.set_laser_af_properties(
+            has_two_interfaces=self.has_two_interfaces_cb.isChecked(),
+            use_glass_top=self.use_glass_top_cb.isChecked(), 
+            focus_camera_exposure_time_ms=self.exposure_spinbox.value(),
+            focus_camera_analog_gain=self.gain_spinbox.value()
+        )
+        self.laser_af_controller.initialize_auto()
+
+
 class SpinningDiskConfocalWidget(QWidget):
     def __init__(self, xlight, config_manager=None):
         super(SpinningDiskConfocalWidget, self).__init__()
