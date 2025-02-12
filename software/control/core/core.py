@@ -3579,78 +3579,59 @@ class ImageArrayDisplayWindow(QMainWindow):
             self.graphics_widget_4.img.setImage(image, autoLevels=False)
 
 
-class AcquisitionConfigurationManager(QObject):
-    def __init__(self, base_path: str = "./acquisition_configurations", profile: str = "default_configurations"):
-        QObject.__init__(self)
-        self.base_config_path = Path(base_path)
-        self.current_profile = profile
-        self.channel_configurations = {}  # Dict to store configurations for each objective
-        self.autofocus_configurations = {}  # Dict to store autofocus configs for each objective
+class ChannelConfigurationManager:
+    """Manages XML-based channel configurations."""
+    def __init__(self):
         self.active_channel_config = None
-        self.active_config_flag = -1  # 0: channel_configurations, 1: confocal_configurations, 2: widefield_configurations
-        if ENABLE_SPINNING_DISK_CONFOCAL:
-            self.confocal_configurations = {}
-            self.widefield_configurations = {}
-        self.available_profiles = self._get_available_profiles()
-        self.load_profile(profile)
+        self.active_config_xml_tree = None
+        self.active_config_xml_tree_root = None
+        self.active_config_flag = -1  # 0: channel, 1: confocal, 2: widefield
+        self.current_profile = None
 
-    def _get_available_profiles(self) -> List[str]:
-        """Get list of available configuration profiles."""
-        if not self.base_config_path.exists():
-            os.makedirs(self.base_config_path)
-        return [d.name for d in self.base_config_path.iterdir() if d.is_dir()]
+        if ENABLE_SPINNING_DISK:
+            self.confocal_configurations = {}  # Dict[str, List[Configuration]]
+            self.confocal_config_xml_tree = {}  # Dict[str, etree.ElementTree]
+            self.confocal_config_xml_tree_root = {}  # Dict[str, etree.ElementTree] 
+            self.widefield_configurations = {}  # Dict[str, List[Configuration]]
+            self.widefield_config_xml_tree = {}  # Dict[str, etree.ElementTree]
+            self.widefield_config_xml_tree_root = {}  # Dict[str, etree.ElementTree]
+        else:
+            self.channel_configurations = {}  # Dict[str, List[Configuration]]
+            self.channel_config_xml_tree = {}  # Dict[str, etree.ElementTree]
+            self.channel_config_xml_tree_root = {}  # Dict[str, etree.ElementTree]
 
-    def _get_available_objectives(self, profile_path: Path) -> List[str]:
-        """Get list of available objectives in the current profile."""
-        return [d.name for d in profile_path.iterdir() if d.is_dir()]
-
-    def load_profile(self, profile_name: str) -> None:
-        """Load all configurations from a specific profile."""
-        profile_path = self.base_config_path / profile_name
-        if not profile_path.exists():
-            raise ValueError(f"Profile {profile_name} does not exist")
-
+    def set_profile_name(self, profile_name: str) -> None:
         self.current_profile = profile_name
-        self.channel_configurations.clear()
-        self.autofocus_configurations.clear()
-        if ENABLE_SPINNING_DISK_CONFOCAL:
-            self.confocal_configurations.clear()
-            self.widefield_configurations.clear()
 
-        # Load configurations for each objective
-        for objective in self._get_available_objectives(profile_path):
-            objective_path = profile_path / objective
+    def load_configurations(self, objective: str) -> None:
+        """Load channel configurations for a specific objective."""
+        objective_path = self.current_profile / objective
+            
+        # Load spinning disk configurations if enabled
+        if ENABLE_SPINNING_DISK:
+            confocal_config_file = objective_path / "confocal_configurations.xml"
+            if confocal_config_file.exists():
+                self.confocal_configurations[objective], self.confocal_config_xml_tree[objective], self.confocal_config_xml_tree_root[objective]
+                 = self._load_xml_config(confocal_config_file)
+                
+            widefield_config_file = objective_path / "widefield_configurations.xml"
+            if widefield_config_file.exists():
+                self.widefield_configurations[objective], self.widefield_config_xml_tree[objective], self.widefield_config_xml_tree_root[objective]
+                 = self._load_xml_config(widefield_config_file)
+
+        else:
             channel_config_file = objective_path / "channel_configurations.xml"
-            autofocus_config_file = objective_path / "autofocus_config.json"
-
-            # Load channel configurations
             if channel_config_file.exists():
-                self.channel_configurations[objective] = self._load_channel_configurations(channel_config_file)
+                self.channel_configurations[objective], self.channel_config_xml_tree[objective], self.channel_config_xml_tree_root[objective]
+                 = self._load_xml_config(channel_config_file)
+                self.active_channel_config = self.channel_configurations
+                self.active_config_xml_tree = self.channel_config_xml_tree
+                self.active_config_xml_tree_root = self.channel_config_xml_tree_root
+                self.active_config_flag = 0
 
-            # Load autofocus configurations
-            if autofocus_config_file.exists():
-                with open(autofocus_config_file, 'r') as f:
-                    self.autofocus_configurations[objective] = json.load(f)
-
-            self.active_channel_config = self.channel_configurations
-            self.active_config_flag = 0
-
-            if ENABLE_SPINNING_DISK_CONFOCAL:
-                confocal_config_file = objective_path / "confocal_configurations.xml"
-                if confocal_config_file.exists():
-                    self.confocal_configurations[objective] = self._load_channel_configurations(confocal_config_file)
-                else:
-                    self.confocal_configurations[objective] = self.channel_configurations[objective]
-
-                widefield_config_file = objective_path / "widefield_configurations.xml"
-                if widefield_config_file.exists():
-                    self.widefield_configurations[objective] = self._load_channel_configurations(widefield_config_file)
-                else:
-                    self.widefield_configurations[objective] = self.channel_configurations[objective]
-
-    def _load_channel_configurations(self, config_file: Path) -> List[Configuration]:
-        """Load channel configurations from XML file."""
-        if not os.path.isfile(config_file):
+    def _load_xml_config(self, config_file: Path) -> List[Configuration]:
+        """Parse XML and create Configuration objects."""
+        if not config_file.is_file():
             utils_config.generate_default_configuration(str(config_file))
             print(f"Generated default config file for {config_file}")
 
@@ -3673,144 +3654,188 @@ class AcquisitionConfigurationManager(QObject):
                     emission_filter_position=int(mode.get("EmissionFilterPosition", 1)),
                 )
             )
-        return configurations
+        return configurations, config_xml_tree, config_xml_tree_root
 
-    def get_channel_configurations_for_objective(self, objective: str) -> List[Configuration]:
-        """Get channel configurations for a specific objective."""
+    def save_configurations(self, objective: str) -> None:
+        """Save channel configurations for a specific objective."""
+        if ENABLE_SPINNING_DISK:
+            # Store current state
+            current_tree = self.active_config_xml_tree
+            # If we're in confocal mode
+            if self.active_config_flag == 1:
+                self._save_xml_config(objective, self.current_profile / objective / "confocal_configurations.xml")
+                self.active_config_xml_tree = self.widefield_configurations
+                self._save_xml_config(objective, self.current_profile / objective / "widefield_configurations.xml")
+            # If we're in widefield mode
+            elif self.active_config_flag == 2:
+                self._save_xml_config(objective, self.current_profile / objective / "widefield_configurations.xml")
+                self.active_config_xml_tree = self.confocal_configurations
+                self._save_xml_config(objective, self.current_profile / objective / "confocal_configurations.xml")
+            # Restore original state
+            self.active_config_xml_tree = current_tree
+        else:
+            self._save_xml_config(objective, self.current_profile / objective / "channel_configurations.xml")
+
+    def get_configurations(self, objective: str) -> List[Configuration]:
+        """Get configurations for the current active mode."""
         return self.active_channel_config.get(objective, [])
 
-    def get_autofocus_configurations_for_objective(self, objective: str) -> Dict[str, Any]:
-        """Get autofocus configurations for a specific objective."""
-        return self.autofocus_configurations.get(objective, {})
-
-    def get_channel_configurations(self) -> Dict[str, List[Configuration]]:
-        """Get channel configurations for all objectives."""
-        return self.active_channel_config
-
-    def get_autofocus_configurations(self) -> Dict[str, Dict[str, Any]]:
-        """Get autofocus configurations for all objectives."""
-        return self.active_channel_config
-
-    def toggle_confocal_widefield(self, confocal: bool):
-        if confocal:
-            self.active_channel_config = self.confocal_configurations
-            self.active_config_flag = 1
-        else:
-            self.active_channel_config = self.widefield_configurations
-            self.active_config_flag = 2
-
-    def update_channel_configuration(self, objective: str, configuration_id: str, attribute_name: str, new_value: Any) -> None:
-        """Update a specific configuration attribute in memory."""
+    def update_configuration(self, objective: str, config_id: str, attr_name: str, value: Any) -> None:
+        """Update a specific configuration in the current active mode."""
         if objective not in self.active_channel_config:
-            raise ValueError(f"Objective {objective} not found")
-            
-        # Update directly in memory
-        for conf in self.active_channel_config[objective]:
-            if conf.id == configuration_id:
-                setattr(conf, attribute_name.lower(), new_value)
-                break
-                
-    def save_channel_configurations_for_objective(self, objective: str) -> None:
-        """Save channel configurations for a specific objective to disk."""
-        if objective not in self.active_channel_config:
-            raise ValueError(f"Objective {objective} not found")
+            return
 
-        profile_path = self.base_config_path / self.current_profile
+        conf_list = self.active_config_xml_tree_root[objective].xpath("//mode[contains(@ID," + "'" + str(config_id) + "')]")
+        mode_to_update = conf_list[0]
+        mode_to_update.set(attr_name, str(value))
+
         if self.active_config_flag == 0:
-            config_file = profile_path / objective / "channel_configurations.xml"
+            config_file = self.current_profile / objective / "channel_configurations.xml"
         elif self.active_config_flag == 1:
-            config_file = profile_path / objective / "confocal_configurations.xml"
+            config_file = self.current_profile / objective / "confocal_configurations.xml"
         elif self.active_config_flag == 2:
-            config_file = profile_path / objective / "widefield_configurations.xml"
+            config_file = self.current_profile / objective / "widefield_configurations.xml"
+        self._save_xml_config(objective, config_file)
 
-        # Create XML structure from configurations
-        root = etree.Element("modes")
-        for config in self.active_channel_config[objective]:
-            mode = etree.SubElement(root, "mode")
-            # Convert configuration object attributes to XML
-            for attr_name, value in vars(config).items():
-                if attr_name != 'id':  # Handle ID separately to match original casing
-                    xml_name = attr_name.title().replace('_', '')
-                    mode.set(xml_name, str(value))
-                else:
-                    mode.set('ID', str(value))
-
-        # Write to file
-        tree = etree.ElementTree(root)
-        tree.write(str(config_file), encoding="utf-8", xml_declaration=True, pretty_print=True)
-
-    def save_autofocus_configurations_for_objective(self, objective: str) -> None:
-        """Save autofocus configurations for a specific objective to disk."""
-        if objective not in self.autofocus_configurations:
-            raise ValueError(f"No autofocus configuration found for objective {objective}")
-
-        profile_path = self.base_config_path / self.current_profile
-        config_file = profile_path / objective / "autofocus_config.json"
-
-        with open(config_file, 'w') as f:
-            json.dump(self.autofocus_configurations[objective], f, indent=4)
-
-    def save_all_configurations(self) -> None:
-        """Write all configurations to disk."""
-        profile_path = self.base_config_path / self.current_profile
-        for objective in self._get_available_objectives(profile_path):
-            if self.active_config_flag == 0:
-                self.save_channel_configurations_for_objective(objective)
-            if ENABLE_SPINNING_DISK_CONFOCAL:
-                # save current config
-                self.save_channel_configurations_for_objective(objective)
-                # if current config is confocal, set active config to widefield; otherwise set to confocal
-                is_confocal = bool(self.active_config_flag - 1)
-                self.toggle_confocal_widefield(is_confocal)
-                # save the other config
-                self.save_channel_configurations_for_objective(objective)
-                # toggle active config back
-                self.toggle_confocal_widefield(not is_confocal)
-            if objective in self.autofocus_configurations:
-                self.save_autofocus_configurations_for_objective(objective)
-
-    def create_new_profile(self, profile_name: str) -> None:
-        """Create a new profile using current configurations."""
-        new_profile_path = self.base_config_path / profile_name
-
-        if new_profile_path.exists():
-            raise ValueError(f"Profile {profile_name} already exists")
-        
-        # Create new profile directory
-        os.makedirs(new_profile_path)
-
-        # Save current configurations to new profile
-        self.current_profile = profile_name
-        self.save_all_configurations()
-
-        self.available_profiles = self._get_available_profiles()
+    def _save_xml_config(self, objective: str, filename: Path) -> None:
+        if not filename.parent.exists():
+            os.makedirs(filename.parent)
+        self.active_config_xml_tree[objective].write(filename, encoding="utf-8", xml_declaration=True, pretty_print=True)
 
     def write_configuration_selected(self, objective: str, selected_configurations: List[Configuration], filename: Path) -> None:
         """Write selected configurations to a file."""
         if objective not in self.active_channel_config:
             raise ValueError(f"Objective {objective} not found")
+
+        for conf in self.configurations:
+            self.update_configuration(conf.id, "Selected", 0)
+        for conf in selected_configurations:
+            self.update_configuration(conf.id, "Selected", 1)
+        self._save_xml_config(objective, filename)
+        for conf in selected_configurations:
+            self.update_configuration(conf.id, "Selected", 0)
+
+    def toggle_spinning_disk_mode(self, confocal: bool) -> None:
+        """Toggle between confocal and widefield configurations."""
+        if not ENABLE_SPINNING_DISK:
+            return
             
-        # Create XML structure from configurations
-        root = etree.Element("modes")
-        selected_ids = [conf.id for conf in selected_configurations]
+        if confocal:
+            self.active_channel_config = self.confocal_configurations
+            self.active_config_xml_tree = self.confocal_config_xml_tree
+            self.active_config_xml_tree_root = self.confocal_config_xml_tree_root
+            self.active_config_flag = 1
+        else:
+            self.active_channel_config = self.widefield_configurations
+            self.active_config_xml_tree = self.widefield_config_xml_tree
+            self.active_config_xml_tree_root = self.widefield_config_xml_tree_root
+            self.active_config_flag = 2
+
+class LaserAFConfigurationManager:
+    """Manages JSON-based laser autofocus configurations."""
+    def __init__(self):
+        self.autofocus_configurations = {}  # Dict[str, Dict[str, Any]]
+        self.current_profile = None
+
+    def set_profile_name(self, profile_name: str) -> None:
+        self.current_profile = profile_name
+
+    def load_configurations(self, objective: str) -> None:
+        """Load autofocus configurations for a specific objective."""
+        config_file = self.current_profile / objective / "laser_af_cache.json"
+        if config_file.exists():
+            with open(config_file, 'r') as f:
+                self.autofocus_configurations[objective] = json.load(f)
+
+    def save_configurations(self, objective: str) -> None:
+        """Save autofocus configurations for a specific objective."""
+        if objective not in self.autofocus_configurations:
+            return
+
+        if not self.current_profile/objective.exists():
+            os.makedirs(self.current_profile / objective)
+        config_file = self.current_profile / objective / "laser_af_cache.json"
+        with open(config_file, 'w') as f:
+            json.dump(self.autofocus_configurations[objective], f, indent=4)
+
+    def get_configurations(self, objective: str) -> Dict[str, Any]:
+        return self.autofocus_configurations.get(objective, {})
+
+    def update_configuration(self, objective: str, updates: Dict[str, Any]) -> None:
+        if objective not in self.autofocus_configurations:
+            self.autofocus_configurations[objective] = {}
+        self.autofocus_configurations[objective].update(updates)
+
+class ConfigurationManager(QObject):
+    """Main configuration manager that coordinates channel and autofocus configurations."""
+    def __init__(self, 
+                 base_config_path: Path = Path("acquisition_configurations"), 
+                 profile: str = "default_profile",
+                 channel_manager: ChannelConfigurationManager,
+                 af_manager: Optional[LaserAFCacheManager] = None):
+        super().__init__()
+        self.base_config_path = Path(base_config_path)
+        self.current_profile = profile
+        self.available_profiles = self._get_available_profiles()
         
-        # Write all configurations but mark selected ones
-        for config in self.active_channel_config[objective]:
-            mode = etree.SubElement(root, "mode")
-            # Convert configuration object attributes to XML
-            for attr_name, value in vars(config).items():
-                if attr_name != 'id':
-                    xml_name = attr_name.title().replace('_', '')
-                    mode.set(xml_name, str(value))
-                else:
-                    mode.set('ID', str(value))
-            
-            # Set Selected attribute
-            mode.set("Selected", "1" if config.id in selected_ids else "0")
-                
-        # Write to file
-        tree = etree.ElementTree(root)
-        tree.write(str(filename), encoding="utf-8", xml_declaration=True, pretty_print=True)
+        self.channel_manager = channel_manager
+        self.laser_af_manager = laser_af_manager
+        
+        self.load_profile(profile)
+
+    def _get_available_profiles(self) -> List[str]:
+        if not self.base_config_path.exists():
+            os.makedirs(self.base_config_path)
+            os.makedirs(self.base_config_path / "default_profile")
+            for objective in OBJECTIVES:
+                os.makedirs(self.base_config_path / "default_profile" / objective)
+        return [d.name for d in self.base_config_path.iterdir() if d.is_dir()]
+
+    def _get_available_objectives(self, profile_path: Path) -> List[str]:
+        return [d.name for d in profile_path.iterdir() if d.is_dir()]
+
+    def load_profile(self, profile_name: str) -> None:
+        """Load all configurations from a specific profile."""
+        profile_path = self.base_config_path / profile_name
+        if not profile_path.exists():
+            raise ValueError(f"Profile {profile_name} does not exist")
+
+        self.current_profile = profile_name
+        if self.channel_manager:
+            self.channel_manager.set_profile_name(profile_name)
+        if self.laser_af_manager:
+            self.laser_af_manager.set_profile_name(profile_name)
+
+        # Load configurations for each objective
+        for objective in self._get_available_objectives(profile_path):
+            if self.channel_manager:
+                self.channel_manager.load_configurations(objective)
+            if self.laser_af_manager:
+                self.laser_af_manager.load_configurations(objective)
+
+    def create_new_profile(self, profile_name: str) -> None:
+        """Create a new profile using current configurations."""
+        new_profile_path = self.base_config_path / profile_name
+        if new_profile_path.exists():
+            raise ValueError(f"Profile {profile_name} already exists")
+        os.makedirs(new_profile_path)
+
+        objectives = self.channel_manager.objective_configurations.keys()
+
+        self.current_profile = profile_name
+        if self.channel_manager:
+            self.channel_manager.set_profile_name(profile_name)
+        if self.laser_af_manager:
+            self.laser_af_manager.set_profile_name(profile_name)
+
+        for objective in objectives:
+            os.makedirs(new_profile_path / objective)
+            if self.channel_manager:
+                self.channel_manager.save_configurations(objective)
+            if self.laser_af_manager:
+                self.laser_af_manager.save_configurations(objective)
+
+        self.available_profiles = self._get_available_profiles()
 
 
 class ContrastManager:
