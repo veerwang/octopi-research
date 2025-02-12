@@ -1377,7 +1377,7 @@ class MultiPointWorker(QObject):
         self.liveController = self.multiPointController.liveController
         self.autofocusController = self.multiPointController.autofocusController
         self.objectiveStore = self.multiPointController.objectiveStore
-        self.acquisitionConfigurationManager = self.multiPointController.acquisitionConfigurationManager
+        self.channelConfigurationManager = self.multiPointController.channelConfigurationManager
         self.NX = self.multiPointController.NX
         self.NY = self.multiPointController.NY
         self.NZ = self.multiPointController.NZ
@@ -1754,7 +1754,7 @@ class MultiPointWorker(QObject):
                 config_AF = next(
                     (
                         config
-                        for config in self.acquisitionConfigurationManager.get_channel_configurations_for_objective(self.objectiveStore.current_objective)
+                        for config in self.channelConfigurationManager.get_channel_configurations_for_objective(self.objectiveStore.current_objective)
                         if config.name == configuration_name_AF
                     )
                 )
@@ -1776,7 +1776,7 @@ class MultiPointWorker(QObject):
                     config_AF = next(
                         (
                             config
-                            for config in self.acquisitionConfigurationManager.get_channel_configurations_for_objective(self.objectiveStore.current_objective)
+                            for config in self.channelConfigurationManager.get_channel_configurations_for_objective(self.objectiveStore.current_objective)
                             if config.name == configuration_name_AF
                         )
                     )
@@ -1887,7 +1887,7 @@ class MultiPointWorker(QObject):
         rgb_channels = ["BF LED matrix full_R", "BF LED matrix full_G", "BF LED matrix full_B"]
         images = {}
 
-        for config_ in self.acquisitionConfigurationManager.get_channel_configurations_for_objective(self.objectiveStore.current_objective):
+        for config_ in self.channelConfigurationManager.get_channel_configurations_for_objective(self.objectiveStore.current_objective):
             if config_.name in rgb_channels:
                 # update the current configuration
                 self.signal_current_configuration.emit(config_)
@@ -2172,7 +2172,7 @@ class MultiPointController(QObject):
         liveController,
         autofocusController,
         objectiveStore,
-        acquisitionConfigurationManager,
+        channelConfigurationManager,
         usb_spectrometer=None,
         scanCoordinates=None,
         parent=None,
@@ -2187,7 +2187,7 @@ class MultiPointController(QObject):
         self.liveController = liveController
         self.autofocusController = autofocusController
         self.objectiveStore = objectiveStore,
-        self.acquisitionConfigurationManager = acquisitionConfigurationManager
+        self.channelConfigurationManager = channelConfigurationManager
         self.multiPointWorker: Optional[MultiPointWorker] = None
         self.thread: Optional[QThread] = None
         self.NX = 1
@@ -2311,7 +2311,7 @@ class MultiPointController(QObject):
         self.recording_start_time = time.time()
         # create a new folder
         utils.ensure_directory_exists(os.path.join(self.base_path, self.experiment_ID))
-        self.acquisitionConfigurationManager.write_configuration_selected(
+        self.channelConfigurationManager.write_configuration_selected(
             self.objectiveStore.current_objective, self.selected_configurations, os.path.join(self.base_path, self.experiment_ID) + "/configurations.xml"
         )  # save the configuration for the experiment
         # Prepare acquisition parameters
@@ -2356,7 +2356,7 @@ class MultiPointController(QObject):
             self.selected_configurations.append(
                 next(
                     (config
-                    for config in self.acquisitionConfigurationManager.get_channel_configurations_for_objective(self.objectiveStore.current_objective)
+                    for config in self.channelConfigurationManager.get_channel_configurations_for_objective(self.objectiveStore.current_objective)
                     if config.name == configuration_name)
                 )
             )
@@ -2630,7 +2630,7 @@ class TrackingController(QObject):
         microcontroller: Microcontroller,
         stage: AbstractStage,
         objectiveStore,
-        acquisitionConfigurationManager,
+        channelConfigurationManager,
         liveController: LiveController,
         autofocusController,
         imageDisplayWindow,
@@ -2640,7 +2640,7 @@ class TrackingController(QObject):
         self.microcontroller = microcontroller
         self.stage = stage
         self.objectiveStore = objectiveStore
-        self.acquisitionConfigurationManager = acquisitionConfigurationManager
+        self.channelConfigurationManager = channelConfigurationManager
         self.liveController = liveController
         self.autofocusController = autofocusController
         self.imageDisplayWindow = imageDisplayWindow
@@ -2746,7 +2746,8 @@ class TrackingController(QObject):
         # create a new folder
         try:
             utils.ensure_directory_exists(os.path.join(self.base_path, self.experiment_ID))
-            self.acquisitionConfigurationManager.write_configuration(
+            self.channelConfigurationManager._save_xml_config(
+                self.objectiveStore.current_objective,
                 os.path.join(self.base_path, self.experiment_ID) + "/configurations.xml"
             )  # save the configuration for the experiment
         except:
@@ -2759,7 +2760,7 @@ class TrackingController(QObject):
             self.selected_configurations.append(
                 next((
                     config
-                    for config in self.acquisitionConfigurationManager.get_channel_configurations_for_objective(self.objectiveStore.current_objective)
+                    for config in self.channelConfigurationManager.get_channel_configurations_for_objective(self.objectiveStore.current_objective)
                     if config.name == configuration_name)
                 )
             )
@@ -2860,7 +2861,7 @@ class TrackingWorker(QObject):
         self.microcontroller = self.trackingController.microcontroller
         self.liveController = self.trackingController.liveController
         self.autofocusController = self.trackingController.autofocusController
-        self.acquisitionConfigurationManager = self.trackingController.acquisitionConfigurationManager
+        self.channelConfigurationManager = self.trackingController.channelConfigurationManager
         self.imageDisplayWindow = self.trackingController.imageDisplayWindow
         self.crop_width = self.trackingController.crop_width
         self.crop_height = self.trackingController.crop_height
@@ -3714,8 +3715,11 @@ class ChannelConfigurationManager:
         self._save_xml_config(objective, filename)
         for conf in selected_configurations:
             self.update_configuration(conf.id, "Selected", 0)
+    
+    def get_channel_configurations_for_objective(self, objective: str) -> List[Configuration]:
+        return self.active_channel_config.get(objective, [])
 
-    def toggle_spinning_disk_mode(self, confocal: bool) -> None:
+    def toggle_confocal_widefield(self, confocal: bool) -> None:
         """Toggle between confocal and widefield configurations."""
         if not ENABLE_SPINNING_DISK:
             return
@@ -3731,7 +3735,7 @@ class ChannelConfigurationManager:
             self.active_config_xml_tree_root = self.widefield_config_xml_tree_root
             self.active_config_flag = 2
 
-class LaserAFConfigurationManager:
+class LaserAFCacheManager:
     """Manages JSON-based laser autofocus configurations."""
     def __init__(self):
         self.autofocus_configurations = {}  # Dict[str, Dict[str, Any]]
@@ -3758,10 +3762,13 @@ class LaserAFConfigurationManager:
         with open(config_file, 'w') as f:
             json.dump(self.autofocus_configurations[objective], f, indent=4)
 
-    def get_configurations(self, objective: str) -> Dict[str, Any]:
+    def get_cache_for_objective(self, objective: str) -> Dict[str, Any]:
         return self.autofocus_configurations.get(objective, {})
-
-    def update_configuration(self, objective: str, updates: Dict[str, Any]) -> None:
+    
+    def get_laser_af_cache(self) -> Dict[str, Any]:
+        return self.autofocus_configurations
+    
+    def update_laser_af_cache(self, objective: str, updates: Dict[str, Any]) -> None:
         if objective not in self.autofocus_configurations:
             self.autofocus_configurations[objective] = {}
         self.autofocus_configurations[objective].update(updates)
@@ -3769,10 +3776,10 @@ class LaserAFConfigurationManager:
 class ConfigurationManager(QObject):
     """Main configuration manager that coordinates channel and autofocus configurations."""
     def __init__(self, 
-                 base_config_path: Path = Path("acquisition_configurations"), 
-                 profile: str = "default_profile",
                  channel_manager: ChannelConfigurationManager,
-                 af_manager: Optional[LaserAFCacheManager] = None):
+                 af_manager: Optional[LaserAFCacheManager] = None,
+                 base_config_path: Path = Path("acquisition_configurations"), 
+                 profile: str = "default_profile"):
         super().__init__()
         self.base_config_path = Path(base_config_path)
         self.current_profile = profile
@@ -4620,13 +4627,14 @@ class LaserAutofocusController(QObject):
         camera,
         stage: AbstractStage,
         objectiveStore: Optional[ObjectiveStore] = None,
-        cachedLaserAFConfigurations: Optional[Dict[str, Any]] = None
+        laserAFCacheManager: Optional[LaserAFCacheManager] = None
     ):
         QObject.__init__(self)
         self.microcontroller = microcontroller
         self.camera = camera
         self.stage = stage
         self.objectiveStore = objectiveStore
+        self.laserAFCacheManager = laserAFCacheManager
 
         self.is_initialized = False
         self.x_reference = 0
@@ -4644,8 +4652,8 @@ class LaserAutofocusController(QObject):
         self.image = None  # for saving the focus camera image for debugging when centroid cannot be found
 
         # Load configurations if provided
-        self.laser_af_cache = cachedLaserAFConfigurations
-        if self.laser_af_cache is not None:
+        if self.laserAFCacheManager:
+            self.laser_af_cache = self.laserAFCacheManager.get_laser_af_cache()
             self.load_cached_configuration()
 
     def initialize_manual(self, x_offset, y_offset, width, height, pixel_to_um, x_reference,
@@ -4665,12 +4673,8 @@ class LaserAutofocusController(QObject):
         self.is_initialized = True
 
         # Update cache if objective store and laser_af_cache is available
-        if self.objectiveStore and self.laser_af_cache and self.objectiveStore.current_objective:
-            current_objective = self.objectiveStore.current_objective
-            if current_objective not in self.laser_af_cache:
-                self.laser_af_cache[current_objective] = {}
-
-            self.laser_af_cache[current_objective].update({
+        if self.objectiveStore and self.laserAFCacheManager and self.objectiveStore.current_objective:
+            self.laserAFCacheManager.update_laser_af_cache(self.objectiveStore.current_objective, {
                 'x_offset': x_offset,
                 'y_offset': y_offset,
                 'width': width,
@@ -4687,7 +4691,7 @@ class LaserAutofocusController(QObject):
         """Load configuration from the cache if available."""
         current_objective = self.objectiveStore.current_objective if self.objectiveStore else None
         if current_objective and current_objective in self.laser_af_cache:
-            config = self.laser_af_cache[current_objective]
+            config = self.laserAFCacheManager.get_cache_for_objective(current_objective)
 
             self.focus_camera_exposure_time_ms = config.get('focus_camera_exposure_time_ms', 2),
             self.focus_camera_analog_gain = config.get('focus_camera_analog_gain', 0)
@@ -4739,6 +4743,8 @@ class LaserAutofocusController(QObject):
         # Calibrate pixel to um conversion
         self._calibrate_pixel_to_um()
 
+        self.laserAFCacheManager.save_configurations(self.objectiveStore.current_objective)
+
     def _calibrate_pixel_to_um(self):
         """Calibrate the pixel to micrometer conversion factor."""
         self.microcontroller.turn_on_AF_laser()
@@ -4774,11 +4780,10 @@ class LaserAutofocusController(QObject):
         # set reference
         self.x_reference = x1
 
-        # Update cache if objective store and laser_af_cache is available
-        if self.objectiveStore and self.laser_af_cache and self.objectiveStore.current_objective:
-            current_objective = self.objectiveStore.current_objective
-            if current_objective in self.laser_af_cache:
-                self.laser_af_cache[current_objective]['pixel_to_um'] = self.pixel_to_um
+        # Update cache
+        self.laserAFCacheManager.update_laser_af_cache(self.objectiveStore.current_objective, {
+            'pixel_to_um': self.pixel_to_um
+        })
 
     def set_laser_af_properties(self, has_two_interfaces, use_glass_top, focus_camera_exposure_time_ms, focus_camera_analog_gain):
         # These properties can be set from gui
@@ -4786,6 +4791,8 @@ class LaserAutofocusController(QObject):
         self.use_glass_top = use_glass_top
         self.focus_camera_exposure_time_ms = focus_camera_exposure_time_ms
         self.focus_camera_analog_gain = focus_camera_analog_gain
+
+        self.is_initialized = False
 
     def measure_displacement(self):
         # turn on the laser
@@ -4830,11 +4837,15 @@ class LaserAutofocusController(QObject):
         self.x_reference = x
         self.signal_displacement_um.emit(0)
 
-        # Update cache if objective store and laser_af_cache is available
-        if self.objectiveStore and self.laser_af_cache and self.objectiveStore.current_objective:
-            current_objective = self.objectiveStore.current_objective
-            if current_objective in self.laser_af_cache:
-                self.laser_af_cache[current_objective]['x_reference'] = x + self.x_offset
+        # Update cache
+        self.laserAFCacheManager.update_laser_af_cache(self.objectiveStore.current_objective, {
+            'x_reference': x + self.x_offset
+        })
+        self.laserAFCacheManager.save_configurations(self.objectiveStore.current_objective)
+
+    def on_objective_changed(self):
+        self.is_initialized = False
+        self.load_cached_configurations()
 
     def _calculate_centroid(self, image):
         """Calculate the centroid of the laser spot."""

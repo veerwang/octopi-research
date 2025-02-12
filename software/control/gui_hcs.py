@@ -212,7 +212,10 @@ class HighContentScreeningGui(QMainWindow):
 
         # Common object initialization
         self.objectiveStore = core.ObjectiveStore(parent=self)
-        self.acquisitionConfigurationManager = core.AcquisitionConfigurationManager()
+        self.channelConfigurationManager = core.ChannelConfigurationManager()
+        if SUPPORT_LASER_AUTOFOCUS:
+            self.laserAFCacheManager = core.LaserAFCacheManager()
+        self.configurationManager = core.ConfigurationManager(channel_manager=self.channelConfigurationManager, af_manager=self.laserAFCacheManager)
         self.contrastManager = core.ContrastManager()
         self.streamHandler = core.StreamHandler(display_resolution_scaling=DEFAULT_DISPLAY_CROP / 100)
         self.liveController = core.LiveController(
@@ -247,7 +250,7 @@ class HighContentScreeningGui(QMainWindow):
                 self.microcontroller,
                 self.stage,
                 self.objectiveStore,
-                self.acquisitionConfigurationManager,
+                self.channelConfigurationManager,
                 self.liveController,
                 self.autofocusController,
                 self.imageDisplayWindow,
@@ -266,7 +269,7 @@ class HighContentScreeningGui(QMainWindow):
             self.liveController,
             self.autofocusController,
             self.objectiveStore,
-            self.acquisitionConfigurationManager,
+            self.channelConfigurationManager,
             scanCoordinates=self.scanCoordinates,
             parent=self,
         )
@@ -287,7 +290,7 @@ class HighContentScreeningGui(QMainWindow):
                 self.liveController,
                 self.autofocusController,
                 self.objectiveStore,
-                self.acquisitionConfigurationManager,
+                self.channelConfigurationManager,
                 scanCoordinates=self.scanCoordinates,
                 parent=self,
             )
@@ -301,7 +304,7 @@ class HighContentScreeningGui(QMainWindow):
                 self.liveController_focus_camera,
                 self.stage,
                 self.objectiveStore,
-                self.acquisitionConfigurationManager.get_autofocus_configurations()
+                self.laserAFCacheManager
             )
 
         if USE_SQUID_FILTERWHEEL:
@@ -516,7 +519,7 @@ class HighContentScreeningGui(QMainWindow):
     def loadWidgets(self):
         # Initialize all GUI widgets
         if ENABLE_SPINNING_DISK_CONFOCAL:
-            self.spinningDiskConfocalWidget = widgets.SpinningDiskConfocalWidget(self.xlight, self.acquisitionConfigurationManager)
+            self.spinningDiskConfocalWidget = widgets.SpinningDiskConfocalWidget(self.xlight, self.channelConfigurationManager)
         if ENABLE_NL5:
             import control.NL5Widget as NL5Widget
 
@@ -540,7 +543,7 @@ class HighContentScreeningGui(QMainWindow):
             self.streamHandler,
             self.liveController,
             self.objectiveStore,
-            self.acquisitionConfigurationManager,
+            self.configurationManager,
             show_display_options=True,
             show_autolevel=True,
             autolevel=True,
@@ -627,7 +630,7 @@ class HighContentScreeningGui(QMainWindow):
             self.navigationViewer,
             self.multipointController,
             self.objectiveStore,
-            self.acquisitionConfigurationManager,
+            self.channelConfigurationManager,
             self.scanCoordinates,
             self.focusMapWidget,
         )
@@ -636,7 +639,7 @@ class HighContentScreeningGui(QMainWindow):
             self.navigationViewer,
             self.multipointController,
             self.objectiveStore,
-            self.acquisitionConfigurationManager,
+            self.channelConfigurationManager,
             self.scanCoordinates,
             self.focusMapWidget,
             self.napariMosaicDisplayWidget,
@@ -647,11 +650,11 @@ class HighContentScreeningGui(QMainWindow):
             self.trackingControlWidget = widgets.TrackingControllerWidget(
                 self.trackingController,
                 self.objectiveStore,
-                self.acquisitionConfigurationManager,
+                self.channelConfigurationManager,
                 show_configurations=TRACKING_SHOW_MICROSCOPE_CONFIGURATIONS,
             )
         if ENABLE_STITCHER:
-            self.stitcherWidget = widgets.StitcherWidget(self.objectiveStore, self.acquisitionConfigurationManager, self.contrastManager)
+            self.stitcherWidget = widgets.StitcherWidget(self.objectiveStore, self.channelConfigurationManager, self.contrastManager)
 
         self.recordTabWidget = QTabWidget()
         self.setupRecordTabWidget()
@@ -666,7 +669,7 @@ class HighContentScreeningGui(QMainWindow):
                 self.liveController,
                 self.stage,
                 self.objectiveStore,
-                self.acquisitionConfigurationManager,
+                self.channelConfigurationManager,
                 self.contrastManager,
                 self.wellSelectionWidget,
             )
@@ -943,6 +946,16 @@ class HighContentScreeningGui(QMainWindow):
             self.objectivesWidget.signal_objective_changed.connect(self.wellplateMultiPointWidget.update_coordinates)
 
         if SUPPORT_LASER_AUTOFOCUS:
+            def connect_objective_changed_laser_af(self):
+                self.laserAutofocusController.on_objective_changed()
+                self.laserAutofocusControlWidget.update_init_state()
+
+            self.objectivesWidget.signal_objective_changed.connect(
+                self.connect_objective_changed_laser_af
+            )
+            self.objectivesWidget.signal_objective_changed.connect(
+                self.laserAutofocusControlWidget.update_init_state
+            )
             self.liveControlWidget_focus_camera.signal_newExposureTime.connect(
                 self.cameraSettingWidget_focus_camera.set_exposure_time
             )
