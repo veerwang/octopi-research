@@ -3587,9 +3587,9 @@ class ChannelConfigurationManager:
         self.active_config_xml_tree = None
         self.active_config_xml_tree_root = None
         self.active_config_flag = -1  # 0: channel, 1: confocal, 2: widefield
-        self.current_profile = None
+        self.current_profile_path = None
 
-        if ENABLE_SPINNING_DISK:
+        if ENABLE_SPINNING_DISK_CONFOCAL:
             self.confocal_configurations = {}  # Dict[str, List[Configuration]]
             self.confocal_config_xml_tree = {}  # Dict[str, etree.ElementTree]
             self.confocal_config_xml_tree_root = {}  # Dict[str, etree.ElementTree] 
@@ -3601,34 +3601,31 @@ class ChannelConfigurationManager:
             self.channel_config_xml_tree = {}  # Dict[str, etree.ElementTree]
             self.channel_config_xml_tree_root = {}  # Dict[str, etree.ElementTree]
 
-    def set_profile_name(self, profile_name: str) -> None:
-        self.current_profile = profile_name
+    def set_profile_path(self, profile_path: Path) -> None:
+        self.current_profile_path = profile_path
 
     def load_configurations(self, objective: str) -> None:
         """Load channel configurations for a specific objective."""
-        objective_path = self.current_profile / objective
-            
+        objective_path = self.current_profile_path / objective
+
         # Load spinning disk configurations if enabled
-        if ENABLE_SPINNING_DISK:
+        if ENABLE_SPINNING_DISK_CONFOCAL:
             confocal_config_file = objective_path / "confocal_configurations.xml"
-            if confocal_config_file.exists():
-                self.confocal_configurations[objective], self.confocal_config_xml_tree[objective], self.confocal_config_xml_tree_root[objective]
-                 = self._load_xml_config(confocal_config_file)
-                
+            self.confocal_configurations[objective], self.confocal_config_xml_tree[objective], self.confocal_config_xml_tree_root[objective] \
+            = self._load_xml_config(confocal_config_file)
+
             widefield_config_file = objective_path / "widefield_configurations.xml"
-            if widefield_config_file.exists():
-                self.widefield_configurations[objective], self.widefield_config_xml_tree[objective], self.widefield_config_xml_tree_root[objective]
-                 = self._load_xml_config(widefield_config_file)
+            self.widefield_configurations[objective], self.widefield_config_xml_tree[objective], self.widefield_config_xml_tree_root[objective] \
+            = self._load_xml_config(widefield_config_file)
 
         else:
             channel_config_file = objective_path / "channel_configurations.xml"
-            if channel_config_file.exists():
-                self.channel_configurations[objective], self.channel_config_xml_tree[objective], self.channel_config_xml_tree_root[objective]
-                 = self._load_xml_config(channel_config_file)
-                self.active_channel_config = self.channel_configurations
-                self.active_config_xml_tree = self.channel_config_xml_tree
-                self.active_config_xml_tree_root = self.channel_config_xml_tree_root
-                self.active_config_flag = 0
+            self.channel_configurations[objective], self.channel_config_xml_tree[objective], self.channel_config_xml_tree_root[objective] \
+            = self._load_xml_config(channel_config_file)
+            self.active_channel_config = self.channel_configurations
+            self.active_config_xml_tree = self.channel_config_xml_tree
+            self.active_config_xml_tree_root = self.channel_config_xml_tree_root
+            self.active_config_flag = 0
 
     def _load_xml_config(self, config_file: Path) -> List[Configuration]:
         """Parse XML and create Configuration objects."""
@@ -3659,23 +3656,23 @@ class ChannelConfigurationManager:
 
     def save_configurations(self, objective: str) -> None:
         """Save channel configurations for a specific objective."""
-        if ENABLE_SPINNING_DISK:
+        if ENABLE_SPINNING_DISK_CONFOCAL:
             # Store current state
             current_tree = self.active_config_xml_tree
             # If we're in confocal mode
             if self.active_config_flag == 1:
-                self._save_xml_config(objective, self.current_profile / objective / "confocal_configurations.xml")
+                self._save_xml_config(objective, self.current_profile_path / "confocal_configurations.xml")
                 self.active_config_xml_tree = self.widefield_configurations
-                self._save_xml_config(objective, self.current_profile / objective / "widefield_configurations.xml")
+                self._save_xml_config(objective, self.current_profile_path / "widefield_configurations.xml")
             # If we're in widefield mode
             elif self.active_config_flag == 2:
-                self._save_xml_config(objective, self.current_profile / objective / "widefield_configurations.xml")
+                self._save_xml_config(objective, self.current_profile_path / "widefield_configurations.xml")
                 self.active_config_xml_tree = self.confocal_configurations
-                self._save_xml_config(objective, self.current_profile / objective / "confocal_configurations.xml")
+                self._save_xml_config(objective, self.current_profile_path / "confocal_configurations.xml")
             # Restore original state
             self.active_config_xml_tree = current_tree
         else:
-            self._save_xml_config(objective, self.current_profile / objective / "channel_configurations.xml")
+            self._save_xml_config(objective, self.current_profile_path / "channel_configurations.xml")
 
     def get_configurations(self, objective: str) -> List[Configuration]:
         """Get configurations for the current active mode."""
@@ -3691,11 +3688,11 @@ class ChannelConfigurationManager:
         mode_to_update.set(attr_name, str(value))
 
         if self.active_config_flag == 0:
-            config_file = self.current_profile / objective / "channel_configurations.xml"
+            config_file = self.current_profile_path / "channel_configurations.xml"
         elif self.active_config_flag == 1:
-            config_file = self.current_profile / objective / "confocal_configurations.xml"
+            config_file = self.current_profile_path / "confocal_configurations.xml"
         elif self.active_config_flag == 2:
-            config_file = self.current_profile / objective / "widefield_configurations.xml"
+            config_file = self.current_profile_path / "widefield_configurations.xml"
         self._save_xml_config(objective, config_file)
 
     def _save_xml_config(self, objective: str, filename: Path) -> None:
@@ -3739,14 +3736,14 @@ class LaserAFCacheManager:
     """Manages JSON-based laser autofocus configurations."""
     def __init__(self):
         self.autofocus_configurations = {}  # Dict[str, Dict[str, Any]]
-        self.current_profile = None
+        self.current_profile_path = None
 
-    def set_profile_name(self, profile_name: str) -> None:
-        self.current_profile = profile_name
+    def set_profile_path(self, profile_path: Path) -> None:
+        self.current_profile_path = profile_path
 
     def load_configurations(self, objective: str) -> None:
         """Load autofocus configurations for a specific objective."""
-        config_file = self.current_profile / objective / "laser_af_cache.json"
+        config_file = self.current_profile_path / objective / "laser_af_cache.json"
         if config_file.exists():
             with open(config_file, 'r') as f:
                 self.autofocus_configurations[objective] = json.load(f)
@@ -3756,9 +3753,9 @@ class LaserAFCacheManager:
         if objective not in self.autofocus_configurations:
             return
 
-        if not self.current_profile/objective.exists():
-            os.makedirs(self.current_profile / objective)
-        config_file = self.current_profile / objective / "laser_af_cache.json"
+        if not self.current_profile_path / objective.exists():
+            os.makedirs(self.current_profile_path / objective)
+        config_file = self.current_profile_path / objective / "laser_af_cache.json"
         with open(config_file, 'w') as f:
             json.dump(self.autofocus_configurations[objective], f, indent=4)
 
@@ -3777,7 +3774,7 @@ class ConfigurationManager(QObject):
     """Main configuration manager that coordinates channel and autofocus configurations."""
     def __init__(self, 
                  channel_manager: ChannelConfigurationManager,
-                 af_manager: Optional[LaserAFCacheManager] = None,
+                 laser_af_manager: Optional[LaserAFCacheManager] = None,
                  base_config_path: Path = Path("acquisition_configurations"), 
                  profile: str = "default_profile"):
         super().__init__()
@@ -3809,9 +3806,9 @@ class ConfigurationManager(QObject):
 
         self.current_profile = profile_name
         if self.channel_manager:
-            self.channel_manager.set_profile_name(profile_name)
+            self.channel_manager.set_profile_path(profile_path)
         if self.laser_af_manager:
-            self.laser_af_manager.set_profile_name(profile_name)
+            self.laser_af_manager.set_profile_path(profile_path)
 
         # Load configurations for each objective
         for objective in self._get_available_objectives(profile_path):
@@ -3831,9 +3828,9 @@ class ConfigurationManager(QObject):
 
         self.current_profile = profile_name
         if self.channel_manager:
-            self.channel_manager.set_profile_name(profile_name)
+            self.channel_manager.set_profile_path(profile_path)
         if self.laser_af_manager:
-            self.laser_af_manager.set_profile_name(profile_name)
+            self.laser_af_manager.set_profile_path(profile_path)
 
         for objective in objectives:
             os.makedirs(new_profile_path / objective)
@@ -4625,6 +4622,7 @@ class LaserAutofocusController(QObject):
         self,
         microcontroller: Microcontroller,
         camera,
+        liveController,
         stage: AbstractStage,
         objectiveStore: Optional[ObjectiveStore] = None,
         laserAFCacheManager: Optional[LaserAFCacheManager] = None
