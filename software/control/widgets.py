@@ -399,7 +399,6 @@ class SpinningDiskConfocalWidget(QWidget):
     def __init__(self, xlight, config_manager=None):
         super(SpinningDiskConfocalWidget, self).__init__()
 
-        self.objective_store = objective_store
         self.config_manager = config_manager
 
         self.xlight = xlight
@@ -1206,7 +1205,7 @@ class LiveControlWidget(QFrame):
             ),
             None,
             )
-             self.signal_live_configuration.emit(self.currentConfiguration)
+            self.signal_live_configuration.emit(self.currentConfiguration)
             # update the microscope to the current configuration
             self.liveController.set_microscope_mode(self.currentConfiguration)
             # update the exposure time and analog gain settings according to the selected configuration

@@ -953,7 +953,7 @@ class HighContentScreeningGui(QMainWindow):
                 self.laserAutofocusControlWidget.update_init_state()
 
             self.objectivesWidget.signal_objective_changed.connect(
-                self.connect_objective_changed_laser_af
+                connect_objective_changed_laser_af
             )
             self.objectivesWidget.signal_objective_changed.connect(
                 self.laserAutofocusControlWidget.update_init_state
