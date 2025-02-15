@@ -1798,11 +1798,14 @@ class MultiPointWorker(QObject):
             else:
                 self._log.info("laser reflection af")
                 try:
-                    # TODO(imo): We used to have a case here to try to fix backlash by double commanding a position.  Now, just double command it whether or not we are using PID since we don't expose that now.  But in the future, backlash handing shouldb e done at a lower level (and we can remove the double here)
-                    self.microscope.laserAutofocusController.move_to_target(0)
-                    self.microscope.laserAutofocusController.move_to_target(
-                        0
-                    )  # for stepper in open loop mode, repeat the operation to counter backlash.  It's harmless if any other case.
+                    if HAS_OBJECTIVE_PIEZO:  # when piezo is available, one move is sufficient as piezo is closed loop
+                        self.microscope.laserAutofocusController.move_to_target(0)
+                    else:
+                        # TODO(imo): We used to have a case here to try to fix backlash by double commanding a position.  Now, just double command it whether or not we are using PID since we don't expose that now.  But in the future, backlash handing shouldb e done at a lower level (and we can remove the double here)
+                        self.microscope.laserAutofocusController.move_to_target(0)
+                        self.microscope.laserAutofocusController.move_to_target(
+                            0
+                        )  # for stepper in open loop mode, repeat the operation to counter backlash.  It's harmless if any other case.
                 except Exception as e:
                     file_ID = f"{region_id}_focus_camera.bmp"
                     saving_path = os.path.join(self.base_path, self.experiment_ID, str(self.time_point), file_ID)
@@ -4473,6 +4476,7 @@ class LaserAutofocusController(QObject):
         camera,
         liveController,
         stage: AbstractStage,
+        piezo: Optional[PiezoStage] = None,
         look_for_cache=True,
     ):
         QObject.__init__(self)
@@ -4481,6 +4485,7 @@ class LaserAutofocusController(QObject):
         self.camera = camera
         self.liveController = liveController
         self.stage = stage
+        self.piezo = piezo
 
         self.is_initialized = False
         self.x_reference = 0
@@ -4690,13 +4695,13 @@ class LaserAutofocusController(QObject):
             return False
 
         um_to_move = target_um - current_displacement_um
-        self.stage.move_z(um_to_move / 1000)  # Convert to mm
+        self._move_z(um_to_move)
 
         # Verify using cross-correlation that spot is in same location as reference
         if not self._verify_spot_alignment():
             self._log.warning("Cross correlation check failed - spots not well aligned")
             # move back to the current position
-            self.stage.move_z(-um_to_move / 1000)
+            self._move_z(-um_to_move)
             return False
         else:
             self._log.info("Cross correlation check passed - spots are well aligned")
@@ -4719,6 +4724,13 @@ class LaserAutofocusController(QObject):
             self._log.info(f"Final displacement ({final_displacement:.1f} μm) is within the success window ({self.DISPLACEMENT_SUCCESS_WINDOW_UM:.1f} μm)")
             return True
         """
+
+    def _move_z(self, um_to_move: float) -> None:
+        if self.piezo is not None:
+            # TODO: check if um_to_move is in the range of the piezo
+            self.piezo.move_relative(um_to_move)
+        else:
+            self.stage.move_z(um_to_move / 1000)
 
     def set_reference(self) -> bool:
         """Set the current spot position as the reference position.
@@ -4843,7 +4855,7 @@ class LaserAutofocusController(QObject):
                 self.image = image  # store for debugging # TODO: add to return instead of storing
 
                 # calculate centroid
-                result = utils.find_spot_location(image, mode=SPOT_DETECTION_MODE)
+                result = utils.find_spot_location(image, mode=LASER_AF_SPOT_DETECTION_MODE)
                 if result is None:
                     self._log.warning(f"No spot detected in frame {i+1}/{LASER_AF_AVERAGING_N}")
                     continue

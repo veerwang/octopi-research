@@ -304,6 +304,7 @@ class HighContentScreeningGui(QMainWindow):
                 self.camera_focus,
                 self.liveController_focus_camera,
                 self.stage,
+                self.piezo,
                 look_for_cache=False,
             )
 
