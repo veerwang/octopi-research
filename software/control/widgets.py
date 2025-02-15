@@ -2216,7 +2216,7 @@ class FlexibleMultiPointWidget(QFrame):
             grid_af.addWidget(self.checkbox_withReflectionAutofocus)
         # grid_af.addWidget(self.checkbox_genAFMap)  # we are not using auto-focus map for now
         grid_af.addWidget(self.checkbox_useFocusMap)
-        if ENABLE_OBJECTIVE_PIEZO:
+        if HAS_OBJECTIVE_PIEZO:
             grid_af.addWidget(self.checkbox_usePiezo)
         grid_af.addWidget(self.checkbox_set_z_range)
         if ENABLE_STITCHER:
@@ -3332,7 +3332,7 @@ class WellplateMultiPointWidget(QFrame):
             options_layout.addWidget(self.checkbox_withReflectionAutofocus)
         # options_layout.addWidget(self.checkbox_genAFMap)  # We are not using AF map now
         options_layout.addWidget(self.checkbox_useFocusMap)
-        if ENABLE_OBJECTIVE_PIEZO:
+        if HAS_OBJECTIVE_PIEZO:
             options_layout.addWidget(self.checkbox_usePiezo)
         options_layout.addWidget(self.checkbox_set_z_range)
         if ENABLE_STITCHER:

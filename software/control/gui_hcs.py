@@ -33,6 +33,8 @@ if USE_PRIOR_STAGE:
     import squid.stage.prior
 else:
     import squid.stage.cephla
+from control.piezo import PiezoStage
+from control._def import ZStageConfig
 
 if CAMERA_TYPE == "Toupcam":
     try:
@@ -213,11 +215,25 @@ class HighContentScreeningGui(QMainWindow):
                 self.log.error("---- !! ERROR CONNECTING TO HARDWARE !! ----", stack_info=True, exc_info=True)
                 raise
 
+        if HAS_OBJECTIVE_PIEZO:
+            self.piezo = PiezoStage(
+                self.microcontroller,
+                {
+                    "OBJECTIVE_PIEZO_HOME_UM": OBJECTIVE_PIEZO_HOME_UM,
+                    "OBJECTIVE_PIEZO_RANGE_UM": OBJECTIVE_PIEZO_RANGE_UM,
+                    "OBJECTIVE_PIEZO_CONTROL_VOLTAGE_RANGE": OBJECTIVE_PIEZO_CONTROL_VOLTAGE_RANGE,
+                    "OBJECTIVE_PIEZO_FLIP_DIR": OBJECTIVE_PIEZO_FLIP_DIR,
+                },
+            )
+        else:
+            self.piezo = None
+
         # Common object initialization
         self.objectiveStore = core.ObjectiveStore(parent=self)
         self.configurationManager = core.ConfigurationManager(filename="./channel_configurations.xml")
         self.contrastManager = core.ContrastManager()
         self.streamHandler = core.StreamHandler(display_resolution_scaling=DEFAULT_DISPLAY_CROP / 100)
+
         self.liveController = core.LiveController(
             self.camera, self.microcontroller, self.configurationManager, self.illuminationController, parent=self
         )
@@ -256,6 +272,7 @@ class HighContentScreeningGui(QMainWindow):
         self.multipointController = core.MultiPointController(
             self.camera,
             self.stage,
+            self.piezo,
             self.microcontroller,
             self.liveController,
             self.autofocusController,
@@ -276,16 +293,6 @@ class HighContentScreeningGui(QMainWindow):
                 self,
                 control_illumination=False,
                 for_displacement_measurement=True,
-            )
-            self.multipointController = core.MultiPointController(
-                self.camera,
-                self.stage,
-                self.microcontroller,
-                self.liveController,
-                self.autofocusController,
-                self.configurationManager,
-                scanCoordinates=self.scanCoordinates,
-                parent=self,
             )
             self.imageDisplayWindow_focus = core.ImageDisplayWindow(
                 draw_crosshairs=True, show_LUT=False, autoLevels=False
@@ -487,7 +494,7 @@ class HighContentScreeningGui(QMainWindow):
                 self.stage.move_x(20)
                 self.stage.move_y(20)
 
-            if ENABLE_OBJECTIVE_PIEZO:
+            if HAS_OBJECTIVE_PIEZO:
                 OUTPUT_GAINS.CHANNEL7_GAIN = OBJECTIVE_PIEZO_CONTROL_VOLTAGE_RANGE == 5
             div = 1 if OUTPUT_GAINS.REFDIV else 0
             gains = sum(getattr(OUTPUT_GAINS, f"CHANNEL{i}_GAIN") << i for i in range(8))
@@ -764,7 +771,7 @@ class HighContentScreeningGui(QMainWindow):
     def setupCameraTabWidget(self):
         if not USE_NAPARI_FOR_LIVE_CONTROL or self.live_only_mode:
             self.cameraTabWidget.addTab(self.navigationWidget, "Stages")
-        if ENABLE_OBJECTIVE_PIEZO:
+        if HAS_OBJECTIVE_PIEZO:
             self.cameraTabWidget.addTab(self.piezoWidget, "Piezo")
         if ENABLE_NL5:
             self.cameraTabWidget.addTab(self.nl5Wdiget, "NL5")

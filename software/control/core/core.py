@@ -3,6 +3,7 @@ import os
 import sys
 
 from control.microcontroller import Microcontroller
+from control.piezo import PiezoStage
 from squid.abc import AbstractStage
 import squid.logging
 
@@ -1384,6 +1385,7 @@ class MultiPointWorker(QObject):
         self.microcontroller = self.multiPointController.microcontroller
         self.usb_spectrometer = self.multiPointController.usb_spectrometer
         self.stage: squid.abc.AbstractStage = self.multiPointController.stage
+        self.piezo: PiezoStage = self.multiPointController.piezo
         self.liveController = self.multiPointController.liveController
         self.autofocusController = self.multiPointController.autofocusController
         self.configurationManager = self.multiPointController.configurationManager
@@ -1556,7 +1558,7 @@ class MultiPointWorker(QObject):
         # reset piezo to home position
         if self.use_piezo:
             self.z_piezo_um = OBJECTIVE_PIEZO_HOME_UM
-            self.microcontroller.set_piezo_um(self.z_piezo_um)
+            self.piezo.move_to(self.z_piezo_um)
             # TODO(imo): Not sure the wait comment below is actually correct?  Should this wait just be in the set_piezo_um helper?
             if (
                 self.liveController.trigger_mode == TriggerMode.SOFTWARE
@@ -2120,7 +2122,7 @@ class MultiPointWorker(QObject):
     def move_z_for_stack(self):
         if self.use_piezo:
             self.z_piezo_um += self.deltaZ * 1000
-            self.microcontroller.set_piezo_um(self.z_piezo_um)
+            self.piezo.move_to(self.z_piezo_um)
             if (
                 self.liveController.trigger_mode == TriggerMode.SOFTWARE
             ):  # for hardware trigger, delay is in waiting for the last row to start exposure
@@ -2134,7 +2136,7 @@ class MultiPointWorker(QObject):
     def move_z_back_after_stack(self):
         if self.use_piezo:
             self.z_piezo_um = OBJECTIVE_PIEZO_HOME_UM
-            self.microcontroller.set_piezo_um(self.z_piezo_um)
+            self.piezo.move_to(self.z_piezo_um)
             if (
                 self.liveController.trigger_mode == TriggerMode.SOFTWARE
             ):  # for hardware trigger, delay is in waiting for the last row to start exposure
@@ -2176,6 +2178,7 @@ class MultiPointController(QObject):
         self,
         camera,
         stage: AbstractStage,
+        piezo: Optional[PiezoStage],
         microcontroller: Microcontroller,
         liveController,
         autofocusController,
@@ -2190,6 +2193,7 @@ class MultiPointController(QObject):
         if DO_FLUORESCENCE_RTP:
             self.processingHandler = ProcessingHandler()
         self.stage = stage
+        self.piezo = piezo
         self.microcontroller = microcontroller
         self.liveController = liveController
         self.autofocusController = autofocusController
@@ -2220,7 +2224,7 @@ class MultiPointController(QObject):
         self.counter = 0
         self.experiment_ID = None
         self.base_path = None
-        self.use_piezo = False  # MULTIPOINT_USE_PIEZO_FOR_ZSTACKS
+        self.use_piezo = MULTIPOINT_USE_PIEZO_FOR_ZSTACKS
         self.selected_configurations = []
         self.usb_spectrometer = usb_spectrometer
         self.scanCoordinates = scanCoordinates
@@ -2246,7 +2250,8 @@ class MultiPointController(QObject):
         return False
 
     def set_use_piezo(self, checked):
-        print("Use Piezo:", checked)
+        if checked and self.piezo is None:
+            raise ValueError("Cannot enable piezo - no piezo stage configured")
         self.use_piezo = checked
         if self.multiPointWorker:
             self.multiPointWorker.update_use_piezo(checked)
