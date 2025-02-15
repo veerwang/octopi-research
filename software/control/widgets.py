@@ -330,24 +330,43 @@ class ConfigEditorBackwardsCompatible(ConfigEditor):
         self.close()
 
 
-class LaserAutofocusSettingsWidget(QDialog):
-    def __init__(self, laser_af_controller):
+class FocusCameraControlWidget(QWidget):
+
+    signal_newExposureTime = Signal(float)
+    signal_start_live = Signal()
+
+    def __init__(self, streamHandler, liveController, laser_af_controller, stretch=True):
         super().__init__()
+        self.streamHandler = streamHandler
+        self.liveController = liveController
         self.laser_af_controller = laser_af_controller
+        self.stretch = stretch
+
+        # Enable background filling
+        self.setAutoFillBackground(True)
+
+        # Create and set background color
+        palette = self.palette()
+        palette.setColor(self.backgroundRole(), QColor(240, 240, 240))
+        self.setPalette(palette)
+
         self.init_ui()
 
     def init_ui(self):
         layout = QVBoxLayout()
+        layout.setContentsMargins(9, 9, 9, 9)
 
-        # Two interfaces checkbox
-        self.has_two_interfaces_cb = QCheckBox("Has Two Interfaces")
-        layout.addWidget(self.has_two_interfaces_cb)
+        # Live control group
+        live_group = QFrame()
+        live_group.setFrameStyle(QFrame.Panel | QFrame.Raised)
+        live_layout = QVBoxLayout()
 
-        # Glass top checkbox  
-        self.use_glass_top_cb = QCheckBox("Use Glass Top")
-        layout.addWidget(self.use_glass_top_cb)
+        # Live button
+        self.btn_live = QPushButton("Start Live")
+        self.btn_live.setCheckable(True)
+        self.btn_live.setStyleSheet("background-color: #C2C2FF")
 
-        # Exposure time
+        # Exposure time control
         exposure_layout = QHBoxLayout()
         exposure_layout.addWidget(QLabel("Focus Camera Exposure (ms):"))
         self.exposure_spinbox = QDoubleSpinBox()
@@ -355,16 +374,22 @@ class LaserAutofocusSettingsWidget(QDialog):
         self.exposure_spinbox.setValue(2)
         self.exposure_spinbox.setDecimals(1)
         exposure_layout.addWidget(self.exposure_spinbox)
-        layout.addLayout(exposure_layout)
 
-        # Analog gain
-        gain_layout = QHBoxLayout()
-        gain_layout.addWidget(QLabel("Focus Camera Analog Gain:"))
-        self.gain_spinbox = QSpinBox()
-        self.gain_spinbox.setRange(0, 100)
-        self.gain_spinbox.setValue(0)
-        gain_layout.addWidget(self.gain_spinbox)
-        layout.addLayout(gain_layout)
+        # Add to live group
+        live_layout.addWidget(self.btn_live)
+        live_layout.addLayout(exposure_layout)
+        live_group.setLayout(live_layout)
+
+        # Settings group
+        settings_group = QFrame()
+        settings_group.setFrameStyle(QFrame.Panel | QFrame.Raised)
+        settings_layout = QVBoxLayout()
+
+        # Two interfaces checkbox
+        self.has_two_interfaces_cb = QCheckBox("Has Two Interfaces")
+        
+        # Glass top checkbox  
+        self.use_glass_top_cb = QCheckBox("Use Glass Top")
 
         # Range
         '''
@@ -380,17 +405,41 @@ class LaserAutofocusSettingsWidget(QDialog):
 
         # Apply button
         self.apply_button = QPushButton("Apply and Initialize")
-        self.apply_button.clicked.connect(self.apply_settings)
-        layout.addWidget(self.apply_button)
 
+        # Add settings controls
+        settings_layout.addWidget(self.has_two_interfaces_cb)
+        settings_layout.addWidget(self.use_glass_top_cb)
+        settings_layout.addWidget(self.apply_button)
+        settings_group.setLayout(settings_layout)
+
+        # Add to main layout
+        layout.addWidget(live_group)
+        layout.addWidget(settings_group)
         self.setLayout(layout)
+
+        if not self.stretch:
+            layout.addStretch()
+
+        # Connect all signals to slots
+        self.btn_live.clicked.connect(self.toggle_live)
+        self.exposure_spinbox.valueChanged.connect(self.update_exposure_time)
+        self.apply_button.clicked.connect(self.apply_settings)
+
+    def toggle_live(self, pressed):
+        if pressed:
+            self.liveController.start_live()
+            self.btn_live.setText("Stop Live")
+        else:
+            self.liveController.stop_live()
+            self.btn_live.setText("Start Live")
+
+    def update_exposure_time(self, value):
+        self.signal_newExposureTime.emit(value)
 
     def apply_settings(self):
         self.laser_af_controller.set_laser_af_properties(
             has_two_interfaces=self.has_two_interfaces_cb.isChecked(),
             use_glass_top=self.use_glass_top_cb.isChecked(), 
-            focus_camera_exposure_time_ms=self.exposure_spinbox.value(),
-            focus_camera_analog_gain=self.gain_spinbox.value()
         )
         self.laser_af_controller.initialize_auto()
 
@@ -938,7 +987,7 @@ class LiveControlWidget(QFrame):
         else:
             self.currentConfiguration = Configuration()
         self.add_components(show_trigger_options, show_display_options, show_autolevel, autolevel, stretch)
-        self.setFrameStyle(QFrame.Panel | QFrame.Raised)
+        self.setFrameStyle(QFrame.NoFrame)
         self.update_microscope_mode_by_name(self.currentConfiguration.name)
 
         self.is_switching_mode = False  # flag used to prevent from settings being set by twice - from both mode change slot and value change slot; another way is to use blockSignals(True)
@@ -1128,9 +1177,22 @@ class LiveControlWidget(QFrame):
             else:
                 grid_line05.addWidget(self.label_resolutionScaling)
 
-        self.grid = QVBoxLayout()
+         # Create separate frames for each section
+        self.profile_frame = QFrame()
+        self.profile_frame.setFrameStyle(QFrame.Panel | QFrame.Raised)
+        self.control_frame = QFrame()
+        self.control_frame.setFrameStyle(QFrame.Panel | QFrame.Raised)
+
+        # First section layout
+        self.grid0 = QVBoxLayout()
         if self.configurationManager:
-            self.grid.addLayout(grid_line_profile)
+            self.grid0.addLayout(grid_line_profile)
+        if not stretch:
+            self.grid0.addStretch()
+        self.profile_frame.setLayout(self.grid0)
+
+        # Second section layout
+        self.grid = QVBoxLayout()
         if show_trigger_options:
             self.grid.addLayout(grid_line0)
         self.grid.addLayout(grid_line1)
@@ -1140,7 +1202,14 @@ class LiveControlWidget(QFrame):
             self.grid.addLayout(grid_line05)
         if not stretch:
             self.grid.addStretch()
-        self.setLayout(self.grid)
+        self.control_frame.setLayout(self.grid)
+
+        # Main layout to hold both frames
+        main_layout = QVBoxLayout()
+        main_layout.setContentsMargins(0, 0, 0, 0) 
+        main_layout.addWidget(self.profile_frame)
+        main_layout.addWidget(self.control_frame)
+        self.setLayout(main_layout)
 
     def load_profile(self):
         """Load the selected profile."""

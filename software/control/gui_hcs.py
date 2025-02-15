@@ -597,9 +597,10 @@ class HighContentScreeningGui(QMainWindow):
                     include_camera_temperature_setting=False,
                     include_camera_auto_wb_setting=True,
                 )
-            self.liveControlWidget_focus_camera = widgets.LiveControlWidget(
+            self.focusCameraControlWidget = widgets.FocusCameraControlWidget(
                 self.streamHandler_focus_camera,
                 self.liveController_focus_camera,
+                self.laserAutofocusController,
                 stretch=False,
             )  # ,show_display_options=True)
             self.waveformDisplay = widgets.WaveformDisplay(N=1000, include_x=True, include_y=False)
@@ -712,9 +713,9 @@ class HighContentScreeningGui(QMainWindow):
 
             dock_laserfocus_liveController = dock.Dock("Focus Camera Controller", autoOrientation=False)
             dock_laserfocus_liveController.showTitleBar()
-            dock_laserfocus_liveController.addWidget(self.liveControlWidget_focus_camera)
+            dock_laserfocus_liveController.addWidget(self.focusCameraControlWidget)
             dock_laserfocus_liveController.setStretch(x=100, y=100)
-            dock_laserfocus_liveController.setFixedWidth(self.liveControlWidget_focus_camera.minimumSizeHint().width())
+            dock_laserfocus_liveController.setFixedWidth(self.focusCameraControlWidget.minimumSizeHint().width())
 
             dock_waveform = dock.Dock("Displacement Measurement", autoOrientation=False)
             dock_waveform.showTitleBar()
@@ -955,16 +956,11 @@ class HighContentScreeningGui(QMainWindow):
             self.objectivesWidget.signal_objective_changed.connect(
                 connect_objective_changed_laser_af
             )
-            self.objectivesWidget.signal_objective_changed.connect(
-                self.laserAutofocusControlWidget.update_init_state
-            )
-            self.liveControlWidget_focus_camera.signal_newExposureTime.connect(
+            self.focusCameraControlWidget.signal_newExposureTime.connect(
                 self.cameraSettingWidget_focus_camera.set_exposure_time
             )
-            self.liveControlWidget_focus_camera.signal_newAnalogGain.connect(
-                self.cameraSettingWidget_focus_camera.set_analog_gain
-            )
-            self.liveControlWidget_focus_camera.update_camera_settings()
+
+            self.focusCameraControlWidget.update_exposure_time(self.focusCameraControlWidget.exposure_spinbox.value())
 
             self.streamHandler_focus_camera.signal_new_frame_received.connect(
                 self.liveController_focus_camera.on_new_frame
