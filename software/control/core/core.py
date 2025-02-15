@@ -4468,8 +4468,6 @@ class LaserAutofocusController(QObject):
         camera,
         liveController,
         stage: AbstractStage,
-        has_two_interfaces=True,
-        use_glass_top=True,
         look_for_cache=True,
     ):
         QObject.__init__(self)
@@ -4487,8 +4485,6 @@ class LaserAutofocusController(QObject):
         self.x_width = 3088
         self.y_width = 2064
 
-        self.has_two_interfaces = has_two_interfaces  # e.g. air-glass and glass water, set to false when (1) using oil immersion (2) using 1 mm thick slide (3) using metal coated slide or Si wafer
-        self.use_glass_top = use_glass_top
         self.spot_spacing_pixels = None  # spacing between the spots from the two interfaces (unit: pixel)
 
         self.look_for_cache = look_for_cache
@@ -4842,7 +4838,7 @@ class LaserAutofocusController(QObject):
                 self.image = image  # store for debugging # TODO: add to return instead of storing
 
                 # calculate centroid
-                result = utils.find_spot_location(image, mode=SpotDetectionMode.DUAL_RIGHT)
+                result = utils.find_spot_location(image, mode=SPOT_DETECTION_MODE)
                 if result is None:
                     self._log.warning(f"No spot detected in frame {i+1}/{LASER_AF_AVERAGING_N}")
                     continue

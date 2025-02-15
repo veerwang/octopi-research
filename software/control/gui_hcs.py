@@ -83,7 +83,10 @@ else:
     import control.camera as camera_fc
 
 if USE_XERYON:
-    from control.objective_changer_2_pos_controller import ObjectiveChanger2PosController, ObjectiveChanger2PosController_Simulation
+    from control.objective_changer_2_pos_controller import (
+        ObjectiveChanger2PosController,
+        ObjectiveChanger2PosController_Simulation,
+    )
 
 import control.core.core as core
 import control.microcontroller as microcontroller
@@ -190,9 +193,9 @@ class HighContentScreeningGui(QMainWindow):
         if USE_JUPYTER_CONSOLE:
             # Create namespace to expose to Jupyter
             self.namespace = {
-                'microscope': self.microscope,
+                "microscope": self.microscope,
             }
-            
+
             # Create Jupyter widget as a dock widget
             self.jupyter_dock = QDockWidget("Jupyter Console", self)
             self.jupyter_widget = JupyterWidget(namespace=self.namespace)
@@ -293,8 +296,6 @@ class HighContentScreeningGui(QMainWindow):
                 self.camera_focus,
                 self.liveController_focus_camera,
                 self.stage,
-                has_two_interfaces=HAS_TWO_INTERFACES,
-                use_glass_top=USE_GLASS_TOP,
                 look_for_cache=False,
             )
 
@@ -307,7 +308,9 @@ class HighContentScreeningGui(QMainWindow):
             serial_device=microcontroller.get_microcontroller_serial_device(simulated=True)
         )
         if USE_PRIOR_STAGE:
-            self.stage: squid.abc.AbstractStage = squid.stage.prior.PriorStage(sn=PRIOR_STAGE_SN, stage_config=squid.config.get_stage_config())
+            self.stage: squid.abc.AbstractStage = squid.stage.prior.PriorStage(
+                sn=PRIOR_STAGE_SN, stage_config=squid.config.get_stage_config()
+            )
 
         else:
             self.stage: squid.abc.AbstractStage = squid.stage.cephla.CephlaStage(
@@ -340,8 +343,9 @@ class HighContentScreeningGui(QMainWindow):
         if USE_SQUID_FILTERWHEEL:
             self.squid_filter_wheel = filterwheel.SquidFilterWheelWrapper_Simulation(None)
         if USE_XERYON:
-            self.objective_changer = ObjectiveChanger2PosController_Simulation(sn=XERYON_SERIAL_NUMBER,stage=self.stage)
-
+            self.objective_changer = ObjectiveChanger2PosController_Simulation(
+                sn=XERYON_SERIAL_NUMBER, stage=self.stage
+            )
 
     def loadHardwareObjects(self):
         # Initialize hardware objects
@@ -356,7 +360,9 @@ class HighContentScreeningGui(QMainWindow):
             raise
 
         if USE_PRIOR_STAGE:
-            self.stage: squid.abc.AbstractStage = squid.stage.prior.PriorStage(sn=PRIOR_STAGE_SN, stage_config=squid.config.get_stage_config())
+            self.stage: squid.abc.AbstractStage = squid.stage.prior.PriorStage(
+                sn=PRIOR_STAGE_SN, stage_config=squid.config.get_stage_config()
+            )
 
         else:
             self.stage: squid.abc.AbstractStage = squid.stage.cephla.CephlaStage(
@@ -452,7 +458,7 @@ class HighContentScreeningGui(QMainWindow):
 
         if USE_XERYON:
             try:
-                self.objective_changer = ObjectiveChanger2PosController(sn=XERYON_SERIAL_NUMBER,stage=self.stage)
+                self.objective_changer = ObjectiveChanger2PosController(sn=XERYON_SERIAL_NUMBER, stage=self.stage)
             except Exception:
                 self.log.error("Error initializing Xeryon objective switcher")
                 raise
