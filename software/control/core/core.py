@@ -4631,7 +4631,7 @@ class LaserAutofocusController(QObject):
             self.pixel_to_um = 0.4  # Simulation value
             self._log.warning("Using simulation value for pixel_to_um conversion")
         else:
-            self.pixel_to_um = PIXEL_TO_UM_CALIBRATION_DISTANCE / (x1 - x0)
+            self.pixel_to_um = self.PIXEL_TO_UM_CALIBRATION_DISTANCE / (x1 - x0)
         self._log.info(f"Pixel to um conversion factor is {self.pixel_to_um:.3f} um/pixel")
 
         # Set reference position
