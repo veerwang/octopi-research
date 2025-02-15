@@ -171,7 +171,10 @@ def ensure_directory_exists(raw_string_path: str):
 
 
 def find_spot_location(
-    image: np.ndarray, mode: SpotDetectionMode = SpotDetectionMode.SINGLE, params: Optional[dict] = None
+    image: np.ndarray,
+    mode: SpotDetectionMode = SpotDetectionMode.SINGLE,
+    params: Optional[dict] = None,
+    debug_plot: bool = False,
 ) -> Optional[Tuple[float, float]]:
     """Find the location of a spot in an image.
 
@@ -204,7 +207,7 @@ def find_spot_location(
         "x_window": 20,  # Half-width of centroid window
         "min_peak_width": 10,  # Minimum width of peaks
         "min_peak_distance": 10,  # Minimum distance between peaks
-        "min_peak_prominence": 100,  # Minimum peak prominence
+        "min_peak_prominence": 0.25,  # Minimum peak prominence
         "intensity_threshold": 0.1,  # Threshold for intensity filtering
         "spot_spacing": 100,  # Expected spacing between spots
     }
@@ -215,11 +218,11 @@ def find_spot_location(
 
     try:
         # Get the y position of the spots
-        intensity_profile = np.sum(image, axis=1)
-        if np.all(intensity_profile == 0):
+        y_intensity_profile = np.sum(image, axis=1)
+        if np.all(y_intensity_profile == 0):
             raise ValueError("No spots detected in image")
 
-        peak_y = np.argmax(intensity_profile)
+        peak_y = np.argmax(y_intensity_profile)
 
         # Validate peak_y location
         if peak_y < p["y_window"] or peak_y > image.shape[0] - p["y_window"]:
@@ -229,16 +232,22 @@ def find_spot_location(
         cropped_image = image[peak_y - p["y_window"] : peak_y + p["y_window"], :]
 
         # Get signal along x
-        intensity_profile = np.sum(cropped_image, axis=0)
+        x_intensity_profile = np.sum(cropped_image, axis=0)
+
+        # Normalize intensity profile
+        x_intensity_profile = x_intensity_profile - np.min(x_intensity_profile)
+        x_intensity_profile = x_intensity_profile / np.max(x_intensity_profile)
 
         # Find all peaks
         peaks = signal.find_peaks(
-            intensity_profile,
+            x_intensity_profile,
             width=p["min_peak_width"],
             distance=p["min_peak_distance"],
             prominence=p["min_peak_prominence"],
         )
         peak_locations = peaks[0]
+        peak_properties = peaks[1]
+
         if len(peak_locations) == 0:
             raise ValueError("No peaks detected")
 
@@ -247,22 +256,66 @@ def find_spot_location(
             if len(peak_locations) > 1:
                 raise ValueError(f"Found {len(peak_locations)} peaks but expected single peak")
             peak_x = peak_locations[0]
-
         elif mode == SpotDetectionMode.DUAL_RIGHT:
             peak_x = peak_locations[-1]
-
         elif mode == SpotDetectionMode.DUAL_LEFT:
             peak_x = peak_locations[0]
-
         elif mode == SpotDetectionMode.MULTI_RIGHT:
             peak_x = peak_locations[-1]
-
         elif mode == SpotDetectionMode.MULTI_SECOND_RIGHT:
+            """
+            if len(peak_locations) < 2:
+                raise ValueError("Not enough peaks for MULTI_SECOND_RIGHT mode")
             peak_x = peak_locations[-2]
+            """
             peak_x = _calculate_spot_centroid(cropped_image, peak_x, peak_y, p)
             peak_x = peak_x - p["spot_spacing"]
         else:
             raise ValueError(f"Unknown spot detection mode: {mode}")
+
+        if debug_plot:
+            import matplotlib.pyplot as plt
+
+            fig, (ax1, ax2, ax3) = plt.subplots(3, 1, figsize=(10, 8))
+
+            # Plot original image
+            ax1.imshow(image, cmap="gray")
+            ax1.axhline(y=peak_y, color="r", linestyle="--", label="Peak Y")
+            ax1.axhline(y=peak_y - p["y_window"], color="g", linestyle="--", label="Crop Window")
+            ax1.axhline(y=peak_y + p["y_window"], color="g", linestyle="--")
+            ax1.legend()
+            ax1.set_title("Original Image with Y-crop Lines")
+
+            # Plot Y intensity profile
+            ax2.plot(y_intensity_profile)
+            ax2.axvline(x=peak_y, color="r", linestyle="--", label="Peak Y")
+            ax2.axvline(x=peak_y - p["y_window"], color="g", linestyle="--", label="Crop Window")
+            ax2.axvline(x=peak_y + p["y_window"], color="g", linestyle="--")
+            ax2.legend()
+            ax2.set_title("Y Intensity Profile")
+
+            # Plot X intensity profile and detected peaks
+            ax3.plot(x_intensity_profile, label="Intensity Profile")
+            ax3.plot(peak_locations, x_intensity_profile[peak_locations], "x", color="r", label="All Peaks")
+
+            # Plot prominence for all peaks
+            for peak_idx, prominence in zip(peak_locations, peak_properties["prominences"]):
+                ax3.vlines(
+                    x=peak_idx,
+                    ymin=x_intensity_profile[peak_idx] - prominence,
+                    ymax=x_intensity_profile[peak_idx],
+                    color="g",
+                )
+
+            # Highlight selected peak
+            ax3.plot(peak_x, x_intensity_profile[peak_x], "o", color="yellow", markersize=10, label="Selected Peak")
+            ax3.axvline(x=peak_x, color="yellow", linestyle="--", alpha=0.5)
+
+            ax3.legend()
+            ax3.set_title(f"X Intensity Profile (Mode: {mode.name})")
+
+            plt.tight_layout()
+            plt.show()
 
         # Calculate centroid in window around selected peak
         return _calculate_spot_centroid(cropped_image, peak_x, peak_y, p)
