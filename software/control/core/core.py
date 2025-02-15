@@ -3874,7 +3874,7 @@ class ScanCoordinates(QObject):
 
             half_steps_height = (steps_height - 1) / 2
             half_steps_width = (steps_width - 1) / 2
-            
+
             for i in range(steps_height):
                 row = []
                 y = center_y + (i - half_steps_height) * step_size_mm
@@ -4454,6 +4454,11 @@ class FocusMap:
 
 class LaserAutofocusController(QObject):
 
+    DISPLACEMENT_SUCCESS_WINDOW_UM = 1.0  # if the displacement is within this window, we consider the move successful
+    SPOT_CROP_SIZE = 100  # Size of region to crop around spot for correlation
+    CORRELATION_THRESHOLD = 0.9  # Minimum correlation coefficient for valid alignment
+    PIXEL_TO_UM_CALIBRATION_DISTANCE = 6.0  # Distance moved in um during calibration
+
     image_to_display = Signal(np.ndarray)
     signal_displacement_um = Signal(float)
 
@@ -4596,8 +4601,7 @@ class LaserAutofocusController(QObject):
 
         # Move to first position and measure
         self.stage.move_z(-0.018)
-        self.stage.move_z(0.012)
-        time.sleep(0.02)
+        self.stage.move_z(-0.018+self.PIXEL_TO_UM_CALIBRATION_DISTANCE/1000)
 
         result = self._get_laser_spot_centroid()
         if result is None:
@@ -4608,7 +4612,7 @@ class LaserAutofocusController(QObject):
         x0, y0 = result
 
         # Move to second position and measure
-        self.stage.move_z(0.006)
+        self.stage.move_z(self.PIXEL_TO_UM_CALIBRATION_DISTANCE/1000)
         time.sleep(0.02)
 
         result = self._get_laser_spot_centroid()
@@ -4627,7 +4631,7 @@ class LaserAutofocusController(QObject):
             self.pixel_to_um = 0.4  # Simulation value
             self._log.warning("Using simulation value for pixel_to_um conversion")
         else:
-            self.pixel_to_um = 6.0 / (x1 - x0)
+            self.pixel_to_um = PIXEL_TO_UM_CALIBRATION_DISTANCE / (x1 - x0)
         self._log.info(f"Pixel to um conversion factor is {self.pixel_to_um:.3f} um/pixel")
 
         # Set reference position
@@ -4687,17 +4691,39 @@ class LaserAutofocusController(QObject):
         um_to_move = target_um - current_displacement_um
         self.stage.move_z(um_to_move / 1000)  # Convert to mm
 
+        # Verify using cross-correlation that spot is in same location as reference
+        if not self._verify_spot_alignment():
+            self._log.warning("Cross correlation check failed - spots not well aligned")
+            # move back to the current position
+            self.stage.move_z(-um_to_move / 1000)
+            return False
+        else:
+            self._log.info("Cross correlation check passed - spots are well aligned")
+            return True
+
+        """
         # Verify we reached the target
         final_displacement = self.measure_displacement()
         if math.isnan(final_displacement):
             self._log.error("Failed to verify final position")
+            # move back to the current position
+            self.stage.move_z(-um_to_move / 1000)
             return False
-
-        self._log.debug(f"Final displacement: {final_displacement:.1f} μm")
-        return abs(final_displacement - target_um) < 1.0  # Success if within 1 μm
+        if abs(final_displacement - target_um) > self.DISPLACEMENT_SUCCESS_WINDOW_UM:
+            self._log.warning(f"Final displacement ({final_displacement:.1f} μm) is out of the success window ({self.DISPLACEMENT_SUCCESS_WINDOW_UM:.1f} μm)")
+            # move back to the current position
+            self.stage.move_z(-um_to_move / 1000)
+            return False
+        else:
+            self._log.info(f"Final displacement ({final_displacement:.1f} μm) is within the success window ({self.DISPLACEMENT_SUCCESS_WINDOW_UM:.1f} μm)")
+            return True
+        """
 
     def set_reference(self) -> bool:
         """Set the current spot position as the reference position.
+
+        Captures and stores both the spot position and a cropped reference image
+        around the spot for later alignment verification.
 
         Returns:
             bool: True if reference was set successfully, False if spot detection failed
@@ -4706,21 +4732,80 @@ class LaserAutofocusController(QObject):
         self.microcontroller.turn_on_AF_laser()
         self.microcontroller.wait_till_operation_is_completed()
 
-        # get laser spot location
+        # get laser spot location and image
         result = self._get_laser_spot_centroid()
+        reference_image = self.image
 
         # turn off the laser
         self.microcontroller.turn_off_AF_laser()
         self.microcontroller.wait_till_operation_is_completed()
 
-        if result is None:
+        if result is None or reference_image is None:
             self._log.error("Failed to detect laser spot while setting reference")
             return False
 
         x, y = result
         self.x_reference = x
+
+        # Store cropped and normalized reference image
+        center_y = int(reference_image.shape[0] / 2)
+        x_start = max(0, int(x) - self.SPOT_CROP_SIZE // 2)
+        x_end = min(reference_image.shape[1], int(x) + self.SPOT_CROP_SIZE // 2)
+        y_start = max(0, center_y - self.SPOT_CROP_SIZE // 2)
+        y_end = min(reference_image.shape[0], center_y + self.SPOT_CROP_SIZE // 2)
+
+        reference_crop = reference_image[y_start:y_end, x_start:x_end].astype(np.float32)
+        self.reference_crop = (reference_crop - np.mean(reference_crop)) / np.max(reference_crop)
+
         self.signal_displacement_um.emit(0)
         self._log.info(f"Set reference position to ({x:.1f}, {y:.1f})")
+        return True
+
+    def _verify_spot_alignment(self) -> bool:
+        """Verify laser spot alignment using cross-correlation with reference image.
+
+        Captures current laser spot image and compares it with the reference image
+        using normalized cross-correlation. Images are cropped around the expected
+        spot location and normalized by maximum intensity before comparison.
+
+        Returns:
+            bool: True if spots are well aligned (correlation > CORRELATION_THRESHOLD), False otherwise
+        """
+        # Get current spot image
+        self.microcontroller.turn_on_AF_laser()
+        self.microcontroller.wait_till_operation_is_completed()
+
+        current_image = self.camera.read_frame()
+
+        self.microcontroller.turn_off_AF_laser()
+        self.microcontroller.wait_till_operation_is_completed()
+
+        if current_image is None or not hasattr(self, "reference_crop"):
+            self._log.error("Failed to get images for cross-correlation check")
+            return False
+
+        # Crop and normalize current image
+        center_x = int(self.x_reference)
+        center_y = int(current_image.shape[0] / 2)
+
+        x_start = max(0, center_x - self.SPOT_CROP_SIZE // 2)
+        x_end = min(current_image.shape[1], center_x + self.SPOT_CROP_SIZE // 2)
+        y_start = max(0, center_y - self.SPOT_CROP_SIZE // 2)
+        y_end = min(current_image.shape[0], center_y + self.SPOT_CROP_SIZE // 2)
+
+        current_crop = current_image[y_start:y_end, x_start:x_end].astype(np.float32)
+        current_norm = (current_crop - np.mean(current_crop)) / np.max(current_crop)
+
+        # Calculate normalized cross correlation
+        correlation = np.corrcoef(current_norm.ravel(), self.reference_crop.ravel())[0, 1]
+
+        self._log.info(f"Cross correlation with reference: {correlation:.3f}")
+
+        # Check if correlation exceeds threshold
+        if correlation < self.CORRELATION_THRESHOLD:
+            self._log.warning("Cross correlation check failed - spots not well aligned")
+            return False
+
         return True
 
     def _get_laser_spot_centroid(self) -> Optional[Tuple[float, float]]:
@@ -4754,14 +4839,10 @@ class LaserAutofocusController(QObject):
                     self._log.warning(f"Failed to read frame {i+1}/{LASER_AF_AVERAGING_N}")
                     continue
 
-                self.image = image  # store for debugging
-
-                # optionally display the image
-                if LASER_AF_DISPLAY_SPOT_IMAGE:
-                    self.image_to_display.emit(image)
+                self.image = image  # store for debugging # TODO: add to return instead of storing
 
                 # calculate centroid
-                result = utils.find_spot_location(image)
+                result = utils.find_spot_location(image, mode=SpotDetectionMode.DUAL_RIGHT)
                 if result is None:
                     self._log.warning(f"No spot detected in frame {i+1}/{LASER_AF_AVERAGING_N}")
                     continue
@@ -4774,6 +4855,10 @@ class LaserAutofocusController(QObject):
             except Exception as e:
                 self._log.error(f"Error processing frame {i+1}/{LASER_AF_AVERAGING_N}: {str(e)}")
                 continue
+
+        # optionally display the image
+        if LASER_AF_DISPLAY_SPOT_IMAGE:
+            self.image_to_display.emit(image)
 
         # Check if we got enough successful detections
         if successful_detections == 0:
