@@ -1419,7 +1419,7 @@ class MultiPointWorker(QObject):
         self.z_range = self.multiPointController.z_range
 
         self.microscope = self.multiPointController.parent
-        self.performance_mode = self.microscope.performance_mode
+        self.performance_mode = self.microscope and self.microscope.performance_mode
 
         try:
             self.model = self.microscope.segmentation_model
@@ -1431,8 +1431,7 @@ class MultiPointWorker(QObject):
         self.t_inf = []
         self.t_over = []
 
-        if USE_NAPARI_FOR_MULTIPOINT:
-            self.init_napari_layers = False
+        self.init_napari_layers = not USE_NAPARI_FOR_MULTIPOINT
 
         self.count = 0
 
@@ -2208,6 +2207,7 @@ class MultiPointController(QObject):
         self.deltat = 0
         self.do_autofocus = False
         self.do_reflection_af = False
+        self.focus_map = None
         self.use_manual_focus_map = False
         self.gen_focus_map = False
         self.focus_map_storage = []
@@ -2410,7 +2410,7 @@ class MultiPointController(QObject):
                 self.usb_spectrometer_was_streaming = False
 
         # set current tabs
-        if self.parent.performance_mode:
+        if self.parent and self.parent.performance_mode:
             self.parent.imageDisplayTabs.setCurrentIndex(0)
 
         elif self.parent is not None and not self.parent.live_only_mode:

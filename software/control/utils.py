@@ -1,6 +1,11 @@
+import inspect
+import os
 import pathlib
+import sys
+from typing import Optional
 
 import cv2
+import git
 from numpy import std, square, mean
 import numpy as np
 from scipy.ndimage import label
@@ -369,3 +374,21 @@ def _calculate_spot_centroid(cropped_image: np.ndarray, peak_x: int, peak_y: int
     centroid_y = peak_y - params["y_window"] + centroid_y
 
     return (centroid_x, centroid_y)
+
+  def get_squid_repo_state_description() -> Optional[str]:
+    # From here: https://stackoverflow.com/a/22881871
+    def get_script_dir(follow_symlinks=True):
+        if getattr(sys, "frozen", False):  # py2exe, PyInstaller, cx_Freeze
+            path = os.path.abspath(sys.executable)
+        else:
+            path = inspect.getabsfile(get_script_dir)
+        if follow_symlinks:
+            path = os.path.realpath(path)
+        return os.path.dirname(path)
+
+    try:
+        repo = git.Repo(get_script_dir(), search_parent_directories=True)
+        return f"{repo.head.object.hexsha} (dirty={repo.is_dirty()})"
+    except git.GitError as e:
+        _log.warning(f"Failed to get script git repo info: {e}")
+        return None
