@@ -1210,9 +1210,9 @@ class PiezoWidget(QFrame):
     def adjust_position(self, up):
         increment = self.increment_spinBox.value()
         if up:
-            self.slider_value = min(OBJECTIVE_PIEZO_RANGE_UM, self.slider_value + increment)
+            self.slider_value = min(OBJECTIVE_PIEZO_RANGE_UM, self.spinBox.value() + increment)
         else:
-            self.slider_value = max(0, self.slider_value - increment)
+            self.slider_value = max(0, self.spinBox.value() - increment)
         self.update_spinBox()
         self.update_slider()
         self.update_piezo_position()
