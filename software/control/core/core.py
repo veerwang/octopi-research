@@ -4861,7 +4861,7 @@ class LaserAutofocusController(QObject):
             self.image_to_display.emit(image)
 
         # Check if we got enough successful detections
-        if successful_detections == 0:
+        if successful_detections <= 0:
             self._log.error(f"No successful detections")
             return None
 
