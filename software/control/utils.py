@@ -7,7 +7,7 @@ from scipy.ndimage import label
 from scipy import signal
 import os
 from typing import Optional, Tuple
-from enum import Enum, auto
+from ._def import SpotDetectionMode
 
 import squid.logging
 
@@ -170,23 +170,6 @@ def ensure_directory_exists(raw_string_path: str):
     path.mkdir(parents=True, exist_ok=True)
 
 
-class SpotDetectionMode(Enum):
-    """Specifies which spot to detect when multiple spots are present.
-
-    SINGLE: Expect and detect single spot
-    DUAL_RIGHT: In dual-spot case, use rightmost spot
-    DUAL_LEFT: In dual-spot case, use leftmost spot
-    MULTI_RIGHT: In multi-spot case, use rightmost spot
-    MULTI_SECOND_RIGHT: In multi-spot case, use spot immediately left of rightmost spot
-    """
-
-    SINGLE = auto()
-    DUAL_RIGHT = auto()
-    DUAL_LEFT = auto()
-    MULTI_RIGHT = auto()
-    MULTI_SECOND_RIGHT = auto()
-
-
 def find_spot_location(
     image: np.ndarray, mode: SpotDetectionMode = SpotDetectionMode.SINGLE, params: Optional[dict] = None
 ) -> Optional[Tuple[float, float]]:
@@ -256,7 +239,6 @@ def find_spot_location(
             prominence=p["min_peak_prominence"],
         )
         peak_locations = peaks[0]
-
         if len(peak_locations) == 0:
             raise ValueError("No peaks detected")
 

@@ -5,6 +5,7 @@ from pathlib import Path
 from configparser import ConfigParser
 import json
 import csv
+from enum import Enum, auto
 
 import squid.logging
 
@@ -239,6 +240,22 @@ class CAMERA_CONFIG:
     ROI_OFFSET_Y_DEFAULT = 0
     ROI_WIDTH_DEFAULT = 3104
     ROI_HEIGHT_DEFAULT = 2084
+
+class SpotDetectionMode(Enum):
+    """Specifies which spot to detect when multiple spots are present.
+
+    SINGLE: Expect and detect single spot
+    DUAL_RIGHT: In dual-spot case, use rightmost spot
+    DUAL_LEFT: In dual-spot case, use leftmost spot
+    MULTI_RIGHT: In multi-spot case, use rightmost spot
+    MULTI_SECOND_RIGHT: In multi-spot case, use spot immediately left of rightmost spot
+    """
+
+    SINGLE = auto()
+    DUAL_RIGHT = auto()
+    DUAL_LEFT = auto()
+    MULTI_RIGHT = auto()
+    MULTI_SECOND_RIGHT = auto()
 
 
 PRINT_CAMERA_FPS = True
