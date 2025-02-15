@@ -4597,7 +4597,7 @@ class LaserAutofocusController(QObject):
 
         # Move to first position and measure
         self.stage.move_z(-0.018)
-        self.stage.move_z(-0.018+self.PIXEL_TO_UM_CALIBRATION_DISTANCE/1000)
+        self.stage.move_z(-0.018 + self.PIXEL_TO_UM_CALIBRATION_DISTANCE / 1000)
 
         result = self._get_laser_spot_centroid()
         if result is None:
@@ -4608,7 +4608,7 @@ class LaserAutofocusController(QObject):
         x0, y0 = result
 
         # Move to second position and measure
-        self.stage.move_z(self.PIXEL_TO_UM_CALIBRATION_DISTANCE/1000)
+        self.stage.move_z(self.PIXEL_TO_UM_CALIBRATION_DISTANCE / 1000)
         time.sleep(0.02)
 
         result = self._get_laser_spot_centroid()
