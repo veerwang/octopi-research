@@ -7,6 +7,7 @@ import json
 import csv
 from control.utils import SpotDetectionMode
 import squid.logging
+from enum import Enum, auto
 
 log = squid.logging.get_logger(__name__)
 
@@ -239,6 +240,23 @@ class CAMERA_CONFIG:
     ROI_OFFSET_Y_DEFAULT = 0
     ROI_WIDTH_DEFAULT = 3104
     ROI_HEIGHT_DEFAULT = 2084
+
+class ZStageConfig(Enum):
+    STEPPER_ONLY = auto()
+    PIEZO_ONLY = auto()
+    STEPPER_AND_PIEZO = auto()
+
+    @classmethod
+    def from_string(cls, mode_str: str) -> 'ZStageConfig':
+        mapping = {
+            'stepper_only': cls.STEPPER_ONLY,
+            'piezo_only': cls.PIEZO_ONLY,
+            'stepper_and_piezo': cls.STEPPER_AND_PIEZO
+        }
+        if mode_str.lower() not in mapping:
+            raise ValueError(f"Invalid z_stage_mode. Must be one of: {', '.join(mapping.keys())}")
+        return mapping[mode_str.lower()]
+
 
 
 PRINT_CAMERA_FPS = True
