@@ -7,8 +7,7 @@ from scipy.ndimage import label
 from scipy import signal
 import os
 from typing import Optional, Tuple
-from ._def import SpotDetectionMode
-
+from enum import Enum, auto
 import squid.logging
 
 _log = squid.logging.get_logger("control.utils")
@@ -168,6 +167,23 @@ def ensure_directory_exists(raw_string_path: str):
     path: pathlib.Path = pathlib.Path(raw_string_path)
     _log.debug(f"Making sure directory '{path}' exists.")
     path.mkdir(parents=True, exist_ok=True)
+
+
+class SpotDetectionMode(Enum):
+    """Specifies which spot to detect when multiple spots are present.
+
+    SINGLE: Expect and detect single spot
+    DUAL_RIGHT: In dual-spot case, use rightmost spot
+    DUAL_LEFT: In dual-spot case, use leftmost spot
+    MULTI_RIGHT: In multi-spot case, use rightmost spot
+    MULTI_SECOND_RIGHT: In multi-spot case, use spot immediately left of rightmost spot
+    """
+
+    SINGLE = auto()
+    DUAL_RIGHT = auto()
+    DUAL_LEFT = auto()
+    MULTI_RIGHT = auto()
+    MULTI_SECOND_RIGHT = auto()
 
 
 def find_spot_location(
