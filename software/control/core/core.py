@@ -3,6 +3,7 @@ import os
 import sys
 
 from control.microcontroller import Microcontroller
+from control.piezo import PiezoStage
 from squid.abc import AbstractStage
 import squid.logging
 
@@ -1384,6 +1385,7 @@ class MultiPointWorker(QObject):
         self.microcontroller = self.multiPointController.microcontroller
         self.usb_spectrometer = self.multiPointController.usb_spectrometer
         self.stage: squid.abc.AbstractStage = self.multiPointController.stage
+        self.piezo: PiezoStage = self.multiPointController.piezo
         self.liveController = self.multiPointController.liveController
         self.autofocusController = self.multiPointController.autofocusController
         self.configurationManager = self.multiPointController.configurationManager
@@ -1556,7 +1558,7 @@ class MultiPointWorker(QObject):
         # reset piezo to home position
         if self.use_piezo:
             self.z_piezo_um = OBJECTIVE_PIEZO_HOME_UM
-            self.microcontroller.set_piezo_um(self.z_piezo_um)
+            self.piezo.move_to(self.z_piezo_um)
             # TODO(imo): Not sure the wait comment below is actually correct?  Should this wait just be in the set_piezo_um helper?
             if (
                 self.liveController.trigger_mode == TriggerMode.SOFTWARE
@@ -1796,11 +1798,14 @@ class MultiPointWorker(QObject):
             else:
                 self._log.info("laser reflection af")
                 try:
-                    # TODO(imo): We used to have a case here to try to fix backlash by double commanding a position.  Now, just double command it whether or not we are using PID since we don't expose that now.  But in the future, backlash handing shouldb e done at a lower level (and we can remove the double here)
-                    self.microscope.laserAutofocusController.move_to_target(0)
-                    self.microscope.laserAutofocusController.move_to_target(
-                        0
-                    )  # for stepper in open loop mode, repeat the operation to counter backlash.  It's harmless if any other case.
+                    if HAS_OBJECTIVE_PIEZO:  # when piezo is available, one move is sufficient as piezo is closed loop
+                        self.microscope.laserAutofocusController.move_to_target(0)
+                    else:
+                        # TODO(imo): We used to have a case here to try to fix backlash by double commanding a position.  Now, just double command it whether or not we are using PID since we don't expose that now.  But in the future, backlash handing shouldb e done at a lower level (and we can remove the double here)
+                        self.microscope.laserAutofocusController.move_to_target(0)
+                        self.microscope.laserAutofocusController.move_to_target(
+                            0
+                        )  # for stepper in open loop mode, repeat the operation to counter backlash.  It's harmless if any other case.
                 except Exception as e:
                     file_ID = f"{region_id}_focus_camera.bmp"
                     saving_path = os.path.join(self.base_path, self.experiment_ID, str(self.time_point), file_ID)
@@ -2120,7 +2125,7 @@ class MultiPointWorker(QObject):
     def move_z_for_stack(self):
         if self.use_piezo:
             self.z_piezo_um += self.deltaZ * 1000
-            self.microcontroller.set_piezo_um(self.z_piezo_um)
+            self.piezo.move_to(self.z_piezo_um)
             if (
                 self.liveController.trigger_mode == TriggerMode.SOFTWARE
             ):  # for hardware trigger, delay is in waiting for the last row to start exposure
@@ -2134,7 +2139,7 @@ class MultiPointWorker(QObject):
     def move_z_back_after_stack(self):
         if self.use_piezo:
             self.z_piezo_um = OBJECTIVE_PIEZO_HOME_UM
-            self.microcontroller.set_piezo_um(self.z_piezo_um)
+            self.piezo.move_to(self.z_piezo_um)
             if (
                 self.liveController.trigger_mode == TriggerMode.SOFTWARE
             ):  # for hardware trigger, delay is in waiting for the last row to start exposure
@@ -2176,6 +2181,7 @@ class MultiPointController(QObject):
         self,
         camera,
         stage: AbstractStage,
+        piezo: Optional[PiezoStage],
         microcontroller: Microcontroller,
         liveController,
         autofocusController,
@@ -2190,6 +2196,7 @@ class MultiPointController(QObject):
         if DO_FLUORESCENCE_RTP:
             self.processingHandler = ProcessingHandler()
         self.stage = stage
+        self.piezo = piezo
         self.microcontroller = microcontroller
         self.liveController = liveController
         self.autofocusController = autofocusController
@@ -2220,7 +2227,7 @@ class MultiPointController(QObject):
         self.counter = 0
         self.experiment_ID = None
         self.base_path = None
-        self.use_piezo = False  # MULTIPOINT_USE_PIEZO_FOR_ZSTACKS
+        self.use_piezo = MULTIPOINT_USE_PIEZO_FOR_ZSTACKS
         self.selected_configurations = []
         self.usb_spectrometer = usb_spectrometer
         self.scanCoordinates = scanCoordinates
@@ -2246,7 +2253,8 @@ class MultiPointController(QObject):
         return False
 
     def set_use_piezo(self, checked):
-        print("Use Piezo:", checked)
+        if checked and self.piezo is None:
+            raise ValueError("Cannot enable piezo - no piezo stage configured")
         self.use_piezo = checked
         if self.multiPointWorker:
             self.multiPointWorker.update_use_piezo(checked)
@@ -4468,6 +4476,7 @@ class LaserAutofocusController(QObject):
         camera,
         liveController,
         stage: AbstractStage,
+        piezo: Optional[PiezoStage] = None,
         look_for_cache=True,
     ):
         QObject.__init__(self)
@@ -4476,6 +4485,7 @@ class LaserAutofocusController(QObject):
         self.camera = camera
         self.liveController = liveController
         self.stage = stage
+        self.piezo = piezo
 
         self.is_initialized = False
         self.x_reference = 0
@@ -4597,7 +4607,7 @@ class LaserAutofocusController(QObject):
 
         # Move to first position and measure
         self.stage.move_z(-0.018)
-        self.stage.move_z(-0.018+self.PIXEL_TO_UM_CALIBRATION_DISTANCE/1000)
+        self.stage.move_z(-0.018 + self.PIXEL_TO_UM_CALIBRATION_DISTANCE / 1000)
 
         result = self._get_laser_spot_centroid()
         if result is None:
@@ -4608,7 +4618,7 @@ class LaserAutofocusController(QObject):
         x0, y0 = result
 
         # Move to second position and measure
-        self.stage.move_z(self.PIXEL_TO_UM_CALIBRATION_DISTANCE/1000)
+        self.stage.move_z(self.PIXEL_TO_UM_CALIBRATION_DISTANCE / 1000)
         time.sleep(0.02)
 
         result = self._get_laser_spot_centroid()
@@ -4685,13 +4695,13 @@ class LaserAutofocusController(QObject):
             return False
 
         um_to_move = target_um - current_displacement_um
-        self.stage.move_z(um_to_move / 1000)  # Convert to mm
+        self._move_z(um_to_move)
 
         # Verify using cross-correlation that spot is in same location as reference
         if not self._verify_spot_alignment():
             self._log.warning("Cross correlation check failed - spots not well aligned")
             # move back to the current position
-            self.stage.move_z(-um_to_move / 1000)
+            self._move_z(-um_to_move)
             return False
         else:
             self._log.info("Cross correlation check passed - spots are well aligned")
@@ -4714,6 +4724,13 @@ class LaserAutofocusController(QObject):
             self._log.info(f"Final displacement ({final_displacement:.1f} μm) is within the success window ({self.DISPLACEMENT_SUCCESS_WINDOW_UM:.1f} μm)")
             return True
         """
+
+    def _move_z(self, um_to_move: float) -> None:
+        if self.piezo is not None:
+            # TODO: check if um_to_move is in the range of the piezo
+            self.piezo.move_relative(um_to_move)
+        else:
+            self.stage.move_z(um_to_move / 1000)
 
     def set_reference(self) -> bool:
         """Set the current spot position as the reference position.
@@ -4838,7 +4855,7 @@ class LaserAutofocusController(QObject):
                 self.image = image  # store for debugging # TODO: add to return instead of storing
 
                 # calculate centroid
-                result = utils.find_spot_location(image, mode=SPOT_DETECTION_MODE)
+                result = utils.find_spot_location(image, mode=LASER_AF_SPOT_DETECTION_MODE)
                 if result is None:
                     self._log.warning(f"No spot detected in frame {i+1}/{LASER_AF_AVERAGING_N}")
                     continue

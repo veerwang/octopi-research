@@ -375,7 +375,8 @@ def _calculate_spot_centroid(cropped_image: np.ndarray, peak_x: int, peak_y: int
 
     return (centroid_x, centroid_y)
 
-  def get_squid_repo_state_description() -> Optional[str]:
+
+def get_squid_repo_state_description() -> Optional[str]:
     # From here: https://stackoverflow.com/a/22881871
     def get_script_dir(follow_symlinks=True):
         if getattr(sys, "frozen", False):  # py2exe, PyInstaller, cx_Freeze
