@@ -4788,6 +4788,7 @@ class LaserAutofocusController(QObject):
         self.microcontroller.turn_on_AF_laser()
         self.microcontroller.wait_till_operation_is_completed()
 
+        self.camera.send_trigger()
         current_image = self.camera.read_frame()
 
         self.microcontroller.turn_off_AF_laser()
