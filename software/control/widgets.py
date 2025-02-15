@@ -1987,7 +1987,7 @@ class FlexibleMultiPointWidget(QFrame):
         self.entry_deltaZ = QDoubleSpinBox()
         self.entry_deltaZ.setMinimum(0)
         self.entry_deltaZ.setMaximum(1000)
-        self.entry_deltaZ.setSingleStep(0.2)
+        self.entry_deltaZ.setSingleStep(0.1)
         self.entry_deltaZ.setValue(Acquisition.DZ)
         self.entry_deltaZ.setDecimals(3)
         self.entry_deltaZ.setSuffix(" μm")
@@ -2516,8 +2516,11 @@ class FlexibleMultiPointWidget(QFrame):
                 )
 
     def set_deltaZ(self, value):
-        mm_per_ustep = 1.0 / self.stage.get_config().Z_AXIS.convert_real_units_to_ustep(1.0)
-        deltaZ = round(value / 1000 / mm_per_ustep) * mm_per_ustep * 1000
+        if self.checkbox_usePiezo.isChecked():
+            deltaZ = value
+        else:
+            mm_per_ustep = 1.0 / self.stage.get_config().Z_AXIS.convert_real_units_to_ustep(1.0)
+            deltaZ = round(value / 1000 / mm_per_ustep) * mm_per_ustep * 1000
         self.entry_deltaZ.setValue(deltaZ)
         self.multipointController.set_deltaZ(deltaZ)
 
@@ -3164,7 +3167,7 @@ class WellplateMultiPointWidget(QFrame):
         self.entry_deltaZ = QDoubleSpinBox()
         self.entry_deltaZ.setMinimum(0)
         self.entry_deltaZ.setMaximum(1000)
-        self.entry_deltaZ.setSingleStep(0.2)
+        self.entry_deltaZ.setSingleStep(0.1)
         self.entry_deltaZ.setValue(Acquisition.DZ)
         self.entry_deltaZ.setDecimals(3)
         # self.entry_deltaZ.setEnabled(False)
@@ -3818,8 +3821,11 @@ class WellplateMultiPointWidget(QFrame):
         self.base_path_is_set = True
 
     def set_deltaZ(self, value):
-        mm_per_ustep = 1.0 / self.stage.get_config().Z_AXIS.convert_real_units_to_ustep(1.0)
-        deltaZ = round(value / 1000 / mm_per_ustep) * mm_per_ustep * 1000
+        if self.checkbox_usePiezo.isChecked():
+            deltaZ = value
+        else:
+            mm_per_ustep = 1.0 / self.stage.get_config().Z_AXIS.convert_real_units_to_ustep(1.0)
+            deltaZ = round(value / 1000 / mm_per_ustep) * mm_per_ustep * 1000
         self.entry_deltaZ.setValue(deltaZ)
         self.multipointController.set_deltaZ(deltaZ)
 
