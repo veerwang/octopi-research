@@ -225,6 +225,7 @@ class HighContentScreeningGui(QMainWindow):
                     "OBJECTIVE_PIEZO_FLIP_DIR": OBJECTIVE_PIEZO_FLIP_DIR,
                 },
             )
+            self.piezo.home()
         else:
             self.piezo = None
 

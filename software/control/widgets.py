@@ -1136,12 +1136,15 @@ class PiezoWidget(QFrame):
         self.slider = QSlider(Qt.Horizontal, self)
         self.slider.setMinimum(0)
         self.slider.setMaximum(int(OBJECTIVE_PIEZO_RANGE_UM * 100))  # Multiplied by 100 for 0.01 precision
+        self.slider.setValue(int(OBJECTIVE_PIEZO_HOME_UM * 100))
 
         self.spinBox = QDoubleSpinBox(self)
         self.spinBox.setRange(0.0, OBJECTIVE_PIEZO_RANGE_UM)
         self.spinBox.setDecimals(2)
-        self.spinBox.setSingleStep(0.01)
+        self.spinBox.setSingleStep(1)
         self.spinBox.setSuffix(" μm")
+        self.spinBox.setKeyboardTracking(False)
+        self.spinBox.setValue(OBJECTIVE_PIEZO_HOME_UM)
 
         # Row 3: Home Button
         self.home_btn = QPushButton(f" Set to {OBJECTIVE_PIEZO_HOME_UM} μm ", self)
