@@ -3,7 +3,7 @@ import sys
 from typing import Optional
 
 import squid.logging
-from control.core.core import TrackingController, Configuration
+from control.core.core import TrackingController
 from control.microcontroller import Microcontroller
 import control.utils as utils
 from squid.abc import AbstractStage
@@ -958,8 +958,8 @@ class LiveControlWidget(QFrame):
         self,
         streamHandler,
         liveController,
-        objectiveStore=None,
-        configurationManager=None,
+        objectiveStore,
+        configurationManager,
         show_trigger_options=True,
         show_display_options=False,
         show_autolevel=False,
@@ -974,18 +974,14 @@ class LiveControlWidget(QFrame):
         self.streamHandler = streamHandler
         self.objectiveStore = objectiveStore
         self.configurationManager = configurationManager
-        if self.configurationManager:
-            self.channelConfigurationManager = self.configurationManager.channel_manager
+        self.channelConfigurationManager = self.configurationManager.channel_manager
         self.fps_trigger = 10
         self.fps_display = 10
         self.liveController.set_trigger_fps(self.fps_trigger)
         self.streamHandler.set_display_fps(self.fps_display)
 
         self.triggerMode = TriggerMode.SOFTWARE
-        if self.configurationManager and self.channelConfigurationManager:
-            self.currentConfiguration = self.channelConfigurationManager.get_channel_configurations_for_objective(self.objectiveStore.current_objective)[0]
-        else:
-            self.currentConfiguration = Configuration()
+        self.currentConfiguration = self.channelConfigurationManager.get_channel_configurations_for_objective(self.objectiveStore.current_objective)[0]
         self.add_components(show_trigger_options, show_display_options, show_autolevel, autolevel, stretch)
         self.setFrameStyle(QFrame.NoFrame)
         self.update_microscope_mode_by_name(self.currentConfiguration.name)
@@ -995,9 +991,8 @@ class LiveControlWidget(QFrame):
     def add_components(self, show_trigger_options, show_display_options, show_autolevel, autolevel, stretch):
         # line 0: acquisition configuration profile management
         self.dropdown_profiles = QComboBox()
-        if self.configurationManager:
-            self.dropdown_profiles.addItems(self.configurationManager.available_profiles)
-            self.dropdown_profiles.setCurrentText(self.configurationManager.current_profile)
+        self.dropdown_profiles.addItems(self.configurationManager.available_profiles)
+        self.dropdown_profiles.setCurrentText(self.configurationManager.current_profile)
         sizePolicy = QSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         self.dropdown_profiles.setSizePolicy(sizePolicy)
 
@@ -1020,12 +1015,11 @@ class LiveControlWidget(QFrame):
         self.entry_triggerFPS.setDecimals(0)
 
         # line 3: choose microscope mode / toggle live mode
-        if self.configurationManager and self.channelConfigurationManager:
-            self.dropdown_modeSelection = QComboBox()
-            for microscope_configuration in self.channelConfigurationManager.get_channel_configurations_for_objective(self.objectiveStore.current_objective):
-                self.dropdown_modeSelection.addItems([microscope_configuration.name])
-            self.dropdown_modeSelection.setCurrentText(self.currentConfiguration.name)
-            self.dropdown_modeSelection.setSizePolicy(sizePolicy)
+        self.dropdown_modeSelection = QComboBox()
+        for microscope_configuration in self.channelConfigurationManager.get_channel_configurations_for_objective(self.objectiveStore.current_objective):
+            self.dropdown_modeSelection.addItems([microscope_configuration.name])
+        self.dropdown_modeSelection.setCurrentText(self.currentConfiguration.name)
+        self.dropdown_modeSelection.setSizePolicy(sizePolicy)
 
         self.btn_live = QPushButton("Start Live")
         self.btn_live.setCheckable(True)
@@ -1114,8 +1108,7 @@ class LiveControlWidget(QFrame):
         self.entry_displayFPS.valueChanged.connect(self.streamHandler.set_display_fps)
         self.slider_resolutionScaling.valueChanged.connect(self.streamHandler.set_display_resolution_scaling)
         self.slider_resolutionScaling.valueChanged.connect(self.liveController.set_display_resolution_scaling)
-        if self.configurationManager and self.channelConfigurationManager:
-            self.dropdown_modeSelection.currentTextChanged.connect(self.update_microscope_mode_by_name)
+        self.dropdown_modeSelection.currentTextChanged.connect(self.update_microscope_mode_by_name)
         self.dropdown_triggerManu.currentIndexChanged.connect(self.update_trigger_mode)
         self.btn_live.clicked.connect(self.toggle_live)
         self.entry_exposureTime.valueChanged.connect(self.update_config_exposure_time)
@@ -1138,8 +1131,7 @@ class LiveControlWidget(QFrame):
 
         grid_line1 = QHBoxLayout()
         grid_line1.addWidget(QLabel("Live Configuration"))
-        if self.configurationManager and self.channelConfigurationManager:
-            grid_line1.addWidget(self.dropdown_modeSelection, 2)
+        grid_line1.addWidget(self.dropdown_modeSelection, 2)
         grid_line1.addWidget(self.btn_live, 1)
 
         grid_line2 = QHBoxLayout()
@@ -1185,8 +1177,7 @@ class LiveControlWidget(QFrame):
 
         # First section layout
         self.grid0 = QVBoxLayout()
-        if self.configurationManager:
-            self.grid0.addLayout(grid_line_profile)
+        self.grid0.addLayout(grid_line_profile)
         if not stretch:
             self.grid0.addStretch()
         self.profile_frame.setLayout(self.grid0)
@@ -1213,38 +1204,36 @@ class LiveControlWidget(QFrame):
 
     def load_profile(self):
         """Load the selected profile."""
-        if self.configurationManager:
-            profile_name = self.dropdown_profiles.currentText()
-            # Load the profile
-            self.configurationManager.load_profile(profile_name)
-            # Update the mode selection dropdown
-            self.dropdown_modeSelection.clear()
-            for microscope_configuration in self.channelConfigurationManager.get_channel_configurations_for_objective(self.objectiveStore.current_objective):
-                self.dropdown_modeSelection.addItem(microscope_configuration.name)
-            # Update to first configuration
-            if self.dropdown_modeSelection.count() > 0:
-                self.update_microscope_mode_by_name(self.dropdown_modeSelection.currentText())
+        profile_name = self.dropdown_profiles.currentText()
+        # Load the profile
+        self.configurationManager.load_profile(profile_name)
+        # Update the mode selection dropdown
+        self.dropdown_modeSelection.clear()
+        for microscope_configuration in self.channelConfigurationManager.get_channel_configurations_for_objective(self.objectiveStore.current_objective):
+            self.dropdown_modeSelection.addItem(microscope_configuration.name)
+        # Update to first configuration
+        if self.dropdown_modeSelection.count() > 0:
+            self.update_microscope_mode_by_name(self.dropdown_modeSelection.currentText())
 
     def create_new_profile(self):
         """Create a new profile with current configurations."""
-        if self.configurationManager:
-            dialog = QInputDialog()
-            profile_name, ok = dialog.getText(
-                self, 
-                "New Profile",
-                "Enter new profile name:",
-                QLineEdit.Normal,
-                ""
-            )
+        dialog = QInputDialog()
+        profile_name, ok = dialog.getText(
+            self, 
+            "New Profile",
+            "Enter new profile name:",
+            QLineEdit.Normal,
+            ""
+        )
 
-            if ok and profile_name:
-                try:
-                    self.configurationManager.create_new_profile(profile_name)
-                    # Update profile dropdown
-                    self.dropdown_profiles.addItem(profile_name)
-                    self.dropdown_profiles.setCurrentText(profile_name)
-                except ValueError as e:
-                    QMessageBox.warning(self, "Error", str(e))
+        if ok and profile_name:
+            try:
+                self.configurationManager.create_new_profile(profile_name)
+                # Update profile dropdown
+                self.dropdown_profiles.addItem(profile_name)
+                self.dropdown_profiles.setCurrentText(profile_name)
+            except ValueError as e:
+                QMessageBox.warning(self, "Error", str(e))
 
     def toggle_live(self, pressed):
         if pressed:
@@ -1265,31 +1254,22 @@ class LiveControlWidget(QFrame):
     def update_microscope_mode_by_name(self, current_microscope_mode_name):
         self.is_switching_mode = True
         # identify the mode selected (note that this references the object in self.channelConfigurationManager.get_channel_configurations_for_objective(self.objectiveStore.current_objective))
-        if self.configurationManager and self.channelConfigurationManager:
-            self.currentConfiguration = next(
-                (
-                    config
-                    for config in self.channelConfigurationManager.get_channel_configurations_for_objective(self.objectiveStore.current_objective)
-                    if config.name == current_microscope_mode_name
-            ),
-            None,
-            )
-            self.signal_live_configuration.emit(self.currentConfiguration)
-            # update the microscope to the current configuration
-            self.liveController.set_microscope_mode(self.currentConfiguration)
-            # update the exposure time and analog gain settings according to the selected configuration
-            self.entry_exposureTime.setValue(self.currentConfiguration.exposure_time)
-            self.entry_analogGain.setValue(self.currentConfiguration.analog_gain)
-            self.entry_illuminationIntensity.setValue(self.currentConfiguration.illumination_intensity)
-            self.is_switching_mode = False
-
-        else:
-            # laser autofocus live control
-            self.currentConfiguration = Configuration(exposure_time=100, analog_gain=0.0)
-            # update the exposure time and analog gain settings according to the selected configuration
-            self.entry_exposureTime.setValue(self.currentConfiguration.exposure_time)
-            self.entry_analogGain.setValue(self.currentConfiguration.analog_gain)
-            self.is_switching_mode = False
+        self.currentConfiguration = next(
+            (
+                config
+                for config in self.channelConfigurationManager.get_channel_configurations_for_objective(self.objectiveStore.current_objective)
+                if config.name == current_microscope_mode_name
+        ),
+        None,
+        )
+        self.signal_live_configuration.emit(self.currentConfiguration)
+        # update the microscope to the current configuration
+        self.liveController.set_microscope_mode(self.currentConfiguration)
+        # update the exposure time and analog gain settings according to the selected configuration
+        self.entry_exposureTime.setValue(self.currentConfiguration.exposure_time)
+        self.entry_analogGain.setValue(self.currentConfiguration.analog_gain)
+        self.entry_illuminationIntensity.setValue(self.currentConfiguration.illumination_intensity)
+        self.is_switching_mode = False
 
     def update_trigger_mode(self):
         self.liveController.set_trigger_mode(self.dropdown_triggerManu.currentText())
@@ -4887,25 +4867,19 @@ class NapariLiveWidget(QWidget):
         self.dropdown_modeSelection.setCurrentText(config.name)
 
     def update_microscope_mode_by_name(self, current_microscope_mode_name):
-        if self.configurationManager and self.channelConfigurationManager:
-            self.live_configuration = next(
-                (
-                    config
-                    for config in self.channelConfigurationManager.get_channel_configurations_for_objective(self.objectiveStore.current_objective)
-                    if config.name == current_microscope_mode_name
-                ),
-                None,
-            )
-            if self.live_configuration:
-                self.liveController.set_microscope_mode(self.live_configuration)
-                self.entry_exposureTime.setValue(self.live_configuration.exposure_time)
-                self.entry_analogGain.setValue(self.live_configuration.analog_gain)
-                self.slider_illuminationIntensity.setValue(int(self.live_configuration.illumination_intensity))
-        else:
-            # laser autofocus live control
-            self.live_configuration = Configuration(exposure_time=100, analog_gain=0.0)
+        self.live_configuration = next(
+            (
+                config
+                for config in self.channelConfigurationManager.get_channel_configurations_for_objective(self.objectiveStore.current_objective)
+                if config.name == current_microscope_mode_name
+            ),
+            None,
+        )
+        if self.live_configuration:
+            self.liveController.set_microscope_mode(self.live_configuration)
             self.entry_exposureTime.setValue(self.live_configuration.exposure_time)
             self.entry_analogGain.setValue(self.live_configuration.analog_gain)
+            self.slider_illuminationIntensity.setValue(int(self.live_configuration.illumination_intensity))
 
     def update_config_exposure_time(self, new_value):
         self.live_configuration.exposure_time = new_value

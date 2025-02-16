@@ -13,6 +13,7 @@ import pyqtgraph as pg
 from qtpy.QtCore import *
 from qtpy.QtWidgets import *
 from qtpy.QtGui import *
+QMetaType.registerType(ChannelMode)
 
 # control
 from control._def import *
@@ -2154,7 +2155,7 @@ class MultiPointController(QObject):
     image_to_display = Signal(np.ndarray)
     image_to_display_multi = Signal(np.ndarray, int)
     spectrum_to_display = Signal(np.ndarray)
-    signal_current_configuration = Signal(Configuration)
+    signal_current_configuration = Signal(ChannelMode)
     signal_register_current_fov = Signal(float, float)
     detection_stats = Signal(object)
     signal_stitcher = Signal(str)
@@ -2623,7 +2624,7 @@ class TrackingController(QObject):
     signal_tracking_stopped = Signal()
     image_to_display = Signal(np.ndarray)
     image_to_display_multi = Signal(np.ndarray, int)
-    signal_current_configuration = Signal(Configuration)
+    signal_current_configuration = Signal(ChannelMode)
 
     def __init__(
         self,
@@ -2851,7 +2852,7 @@ class TrackingWorker(QObject):
     finished = Signal()
     image_to_display = Signal(np.ndarray)
     image_to_display_multi = Signal(np.ndarray, int)
-    signal_current_configuration = Signal(Configuration)
+    signal_current_configuration = Signal(ChannelMode)
 
     def __init__(self, trackingController: TrackingController):
         QObject.__init__(self)
@@ -3812,9 +3813,9 @@ class ConfigurationManager(QObject):
 
         self.current_profile = profile_name
         if self.channel_manager:
-            self.channel_manager.set_profile_path(profile_path)
+            self.channel_manager.set_profile_path(new_profile_path)
         if self.laser_af_manager:
-            self.laser_af_manager.set_profile_path(profile_path)
+            self.laser_af_manager.set_profile_path(new_profile_path)
 
         for objective in objectives:
             os.makedirs(new_profile_path / objective)
