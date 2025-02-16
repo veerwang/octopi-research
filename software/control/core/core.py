@@ -39,11 +39,12 @@ from queue import Queue
 from threading import Thread, Lock
 from pathlib import Path
 from datetime import datetime
+from enum import Enum
+from pydantic_xml import BaseXmlModel, attr, element
 import time
 import subprocess
 import shutil
 import itertools
-from lxml import etree
 import json
 import math
 import random
@@ -3580,157 +3581,140 @@ class ImageArrayDisplayWindow(QMainWindow):
             self.graphics_widget_4.img.setImage(image, autoLevels=False)
 
 
-class ChannelConfigurationManager:
-    """Manages XML-based channel configurations."""
-    def __init__(self):
-        self.active_channel_config = None
-        self.active_config_xml_tree = None
-        self.active_config_xml_tree_root = None
-        self.active_config_flag = -1  # 0: channel, 1: confocal, 2: widefield
-        self.current_profile_path = None
+class ConfigType(Enum):
+    CHANNEL = "channel"
+    CONFOCAL = "confocal"
+    WIDEFIELD = "widefield"
 
-        if ENABLE_SPINNING_DISK_CONFOCAL:
-            self.confocal_configurations = {}  # Dict[str, List[Configuration]]
-            self.confocal_config_xml_tree = {}  # Dict[str, etree.ElementTree]
-            self.confocal_config_xml_tree_root = {}  # Dict[str, etree.ElementTree] 
-            self.widefield_configurations = {}  # Dict[str, List[Configuration]]
-            self.widefield_config_xml_tree = {}  # Dict[str, etree.ElementTree]
-            self.widefield_config_xml_tree_root = {}  # Dict[str, etree.ElementTree]
-        else:
-            self.channel_configurations = {}  # Dict[str, List[Configuration]]
-            self.channel_config_xml_tree = {}  # Dict[str, etree.ElementTree]
-            self.channel_config_xml_tree_root = {}  # Dict[str, etree.ElementTree]
+
+class ChannelMode(BaseXmlModel, tag='mode'):
+    """Channel configuration model"""
+    mode_id: str = attr(name='ID')
+    name: str = attr(name='Name')
+    exposure_time: float = attr(name='ExposureTime')
+    analog_gain: float = attr(name='AnalogGain')
+    illumination_source: int = attr(name='IlluminationSource')
+    illumination_intensity: float = attr(name='IlluminationIntensity')
+    camera_sn: Optional[str] = attr(name='CameraSN', default=None)
+    z_offset: float = attr(name='ZOffset')
+    emission_filter_position: int = attr(name='EmissionFilterPosition', default=1)
+    selected: bool = attr(name='Selected', default=False)
+    color: Optional[str] = None  # Not stored in XML but computed from name
+
+    def __init__(self, **data):
+        super().__init__(**data)
+        self.color = utils.get_channel_color(self.name)
+
+
+class ChannelConfig(BaseXmlModel, tag='configurations'):
+    """Root configuration file model"""
+    modes: List[ChannelMode] = element(tag='mode')
+
+
+class ChannelConfigurationManager:
+    def __init__(self, config_root: Path):
+        self.config_root = config_root
+        self.all_configs: Dict[ConfigType, Dict[str, ChannelConfig]] = {
+            ConfigType.CHANNEL: {},
+            ConfigType.CONFOCAL: {},
+            ConfigType.WIDEFIELD: {}
+        }
+        self.active_config_type = ConfigType.CHANNEL if not ENABLE_SPINNING_DISK_CONFOCAL else ConfigType.CONFOCAL
 
     def set_profile_path(self, profile_path: Path) -> None:
-        self.current_profile_path = profile_path
+        """Set the root path for configurations"""
+        self.config_root = profile_path
+
+    def _load_xml_config(self, objective: str, config_type: ConfigType) -> None:
+        """Load XML configuration for a specific config type, generating default if needed"""
+        config_file = self.config_root / objective / f"{config_type.value}_configurations.xml"
+
+        if not config_file.exists():
+            utils_config.generate_default_configuration(str(config_file))
+            
+        self.all_configs[config_type][objective] = ChannelConfig.parse_file(config_file)
 
     def load_configurations(self, objective: str) -> None:
-        """Load channel configurations for a specific objective."""
-        objective_path = self.current_profile_path / objective
-
-        # Load spinning disk configurations if enabled
+        """Load available configurations for an objective"""
         if ENABLE_SPINNING_DISK_CONFOCAL:
-            confocal_config_file = objective_path / "confocal_configurations.xml"
-            self.confocal_configurations[objective], self.confocal_config_xml_tree[objective], self.confocal_config_xml_tree_root[objective] \
-            = self._load_xml_config(confocal_config_file)
-
-            widefield_config_file = objective_path / "widefield_configurations.xml"
-            self.widefield_configurations[objective], self.widefield_config_xml_tree[objective], self.widefield_config_xml_tree_root[objective] \
-            = self._load_xml_config(widefield_config_file)
-
+            # Load both confocal and widefield configurations
+            self._load_xml_config(objective, ConfigType.CONFOCAL)
+            self._load_xml_config(objective, ConfigType.WIDEFIELD)
         else:
-            channel_config_file = objective_path / "channel_configurations.xml"
-            self.channel_configurations[objective], self.channel_config_xml_tree[objective], self.channel_config_xml_tree_root[objective] \
-            = self._load_xml_config(channel_config_file)
-            self.active_channel_config = self.channel_configurations
-            self.active_config_xml_tree = self.channel_config_xml_tree
-            self.active_config_xml_tree_root = self.channel_config_xml_tree_root
-            self.active_config_flag = 0
+            # Load only channel configurations
+            self._load_xml_config(objective, ConfigType.CHANNEL)
 
-    def _load_xml_config(self, config_file: Path) -> List[Configuration]:
-        """Parse XML and create Configuration objects."""
-        if not config_file.is_file():
-            utils_config.generate_default_configuration(str(config_file))
-            print(f"Generated default config file for {config_file}")
+    def _save_xml_config(self, objective: str, config_type: ConfigType) -> None:
+        """Save XML configuration for a specific config type"""
+        if objective not in self.all_configs[config_type]:
+            return
 
-        config_xml_tree = etree.parse(str(config_file))
-        config_xml_tree_root = config_xml_tree.getroot()
-        configurations = []
+        config = self.all_configs[config_type][objective]
+        save_path = self.config_root / objective / f"{config_type.value}_configurations.xml"
 
-        for mode in config_xml_tree_root.iter("mode"):
-            configurations.append(
-                Configuration(
-                    mode_id=mode.get("ID"),
-                    name=mode.get("Name"),
-                    color=utils.get_channel_color(mode.get("Name")),
-                    exposure_time=float(mode.get("ExposureTime")),
-                    analog_gain=float(mode.get("AnalogGain")),
-                    illumination_source=int(mode.get("IlluminationSource")),
-                    illumination_intensity=float(mode.get("IlluminationIntensity")),
-                    camera_sn=mode.get("CameraSN"),
-                    z_offset=float(mode.get("ZOffset")),
-                    emission_filter_position=int(mode.get("EmissionFilterPosition", 1)),
-                )
-            )
-        return configurations, config_xml_tree, config_xml_tree_root
+        if not save_path.parent.exists():
+            save_path.parent.mkdir(parents=True)
+
+        xml_str = config.to_xml(pretty_print=True, encoding='utf-8')
+        save_path.write_bytes(xml_str)
 
     def save_configurations(self, objective: str) -> None:
-        """Save channel configurations for a specific objective."""
+        """Save configurations based on spinning disk configuration"""
         if ENABLE_SPINNING_DISK_CONFOCAL:
-            # Store current state
-            current_tree = self.active_config_xml_tree
-            # If we're in confocal mode
-            if self.active_config_flag == 1:
-                self._save_xml_config(objective, self.current_profile_path / "confocal_configurations.xml")
-                self.active_config_xml_tree = self.widefield_configurations
-                self._save_xml_config(objective, self.current_profile_path / "widefield_configurations.xml")
-            # If we're in widefield mode
-            elif self.active_config_flag == 2:
-                self._save_xml_config(objective, self.current_profile_path / "widefield_configurations.xml")
-                self.active_config_xml_tree = self.confocal_configurations
-                self._save_xml_config(objective, self.current_profile_path / "confocal_configurations.xml")
-            # Restore original state
-            self.active_config_xml_tree = current_tree
+            # Save both confocal and widefield configurations
+            self._save_xml_config(objective, ConfigType.CONFOCAL)
+            self._save_xml_config(objective, ConfigType.WIDEFIELD)
         else:
-            self._save_xml_config(objective, self.current_profile_path / "channel_configurations.xml")
+            # Save only channel configurations
+            self._save_xml_config(objective, ConfigType.CHANNEL)
 
-    def get_configurations(self, objective: str) -> List[Configuration]:
-        """Get configurations for the current active mode."""
-        return self.active_channel_config.get(objective, [])
+    def get_configurations(self, objective: str) -> List[ChannelMode]:
+        """Get channel modes for current active type"""
+        config = self.all_configs[self.active_config_type].get(objective)
+        if not config:
+            return []
+        return config.modes
 
     def update_configuration(self, objective: str, config_id: str, attr_name: str, value: Any) -> None:
-        """Update a specific configuration in the current active mode."""
-        if objective not in self.active_channel_config:
+        """Update a specific configuration in current active type"""
+        config = self.all_configs[self.active_config_type].get(objective)
+        if not config:
             return
 
-        conf_list = self.active_config_xml_tree_root[objective].xpath("//mode[contains(@ID," + "'" + str(config_id) + "')]")
-        mode_to_update = conf_list[0]
-        mode_to_update.set(attr_name, str(value))
+        for mode in config.modes:
+            if mode.mode_id == config_id:
+                setattr(mode, attr_name.lower(), value)
+                break
 
-        if self.active_config_flag == 0:
-            config_file = self.current_profile_path / "channel_configurations.xml"
-        elif self.active_config_flag == 1:
-            config_file = self.current_profile_path / "confocal_configurations.xml"
-        elif self.active_config_flag == 2:
-            config_file = self.current_profile_path / "widefield_configurations.xml"
-        self._save_xml_config(objective, config_file)
+        self.save_configurations(objective)
 
-    def _save_xml_config(self, objective: str, filename: Path) -> None:
-        if not filename.parent.exists():
-            os.makedirs(filename.parent)
-        self.active_config_xml_tree[objective].write(filename, encoding="utf-8", xml_declaration=True, pretty_print=True)
-
-    def write_configuration_selected(self, objective: str, selected_configurations: List[Configuration], filename: Path) -> None:
-        """Write selected configurations to a file."""
-        if objective not in self.active_channel_config:
+    def write_configuration_selected(self, objective: str, selected_configurations: List[ChannelMode], filename: Path) -> None:
+        """Write selected configurations to a file"""
+        config = self.all_configs[self.active_config_type].get(objective)
+        if not config:
             raise ValueError(f"Objective {objective} not found")
 
-        for conf in self.configurations:
-            self.update_configuration(conf.id, "Selected", 0)
-        for conf in selected_configurations:
-            self.update_configuration(conf.id, "Selected", 1)
-        self._save_xml_config(objective, filename)
-        for conf in selected_configurations:
-            self.update_configuration(conf.id, "Selected", 0)
-    
-    def get_channel_configurations_for_objective(self, objective: str) -> List[Configuration]:
-        return self.active_channel_config.get(objective, [])
+        # Update selected status
+        for mode in config.modes:
+            mode.selected = any(conf.mode_id == mode.mode_id for conf in selected_configurations)
+            
+        # Save to specified file
+        xml_str = config.to_xml(pretty_print=True, encoding='utf-8')
+        filename.write_bytes(xml_str)
+        
+        # Reset selected status
+        for mode in config.modes:
+            mode.selected = False
+        self.save_configurations(objective)
+
+    def get_channel_configurations_for_objective(self, objective: str) -> List[ChannelMode]:
+        """Get Configuration objects for current active type (alias for get_configurations)"""
+        return self.get_configurations(objective)
 
     def toggle_confocal_widefield(self, confocal: bool) -> None:
-        """Toggle between confocal and widefield configurations."""
-        if not ENABLE_SPINNING_DISK:
-            return
-            
-        if confocal:
-            self.active_channel_config = self.confocal_configurations
-            self.active_config_xml_tree = self.confocal_config_xml_tree
-            self.active_config_xml_tree_root = self.confocal_config_xml_tree_root
-            self.active_config_flag = 1
-        else:
-            self.active_channel_config = self.widefield_configurations
-            self.active_config_xml_tree = self.widefield_config_xml_tree
-            self.active_config_xml_tree_root = self.widefield_config_xml_tree_root
-            self.active_config_flag = 2
+        """Toggle between confocal and widefield configurations"""
+        self.active_config_type = ConfigType.CONFOCAL if confocal else ConfigType.WIDEFIELD
+
 
 class LaserAFCacheManager:
     """Manages JSON-based laser autofocus configurations."""
