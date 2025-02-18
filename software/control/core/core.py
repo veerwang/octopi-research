@@ -13,7 +13,6 @@ import pyqtgraph as pg
 from qtpy.QtCore import *
 from qtpy.QtWidgets import *
 from qtpy.QtGui import *
-QMetaType.registerType(ChannelMode)
 
 # control
 from control._def import *
@@ -55,6 +54,33 @@ import scipy.signal
 import cv2
 import imageio as iio
 import squid.abc
+
+
+class ChannelMode(BaseXmlModel, tag='mode'):
+    """Channel configuration model"""
+    mode_id: str = attr(name='ID')
+    name: str = attr(name='Name')
+    exposure_time: float = attr(name='ExposureTime')
+    analog_gain: float = attr(name='AnalogGain')
+    illumination_source: int = attr(name='IlluminationSource')
+    illumination_intensity: float = attr(name='IlluminationIntensity')
+    camera_sn: Optional[str] = attr(name='CameraSN', default=None)
+    z_offset: float = attr(name='ZOffset')
+    emission_filter_position: int = attr(name='EmissionFilterPosition', default=1)
+    selected: bool = attr(name='Selected', default=False)
+    color: Optional[str] = None  # Not stored in XML but computed from name
+
+    def __init__(self, **data):
+        super().__init__(**data)
+        self.color = utils.get_channel_color(self.name)
+
+
+QMetaType.registerType(ChannelMode)
+
+
+class ChannelConfig(BaseXmlModel, tag='configurations'):
+    """Root configuration file model"""
+    modes: List[ChannelMode] = element(tag='mode')
 
 
 class ObjectiveStore:
@@ -443,32 +469,6 @@ class ImageDisplay(QObject):
         self.queue.join()
         self.stop_signal_received = True
         self.thread.join()
-
-
-class Configuration:
-    def __init__(
-        self,
-        mode_id=None,
-        name=None,
-        color=None,
-        camera_sn=None,
-        exposure_time=None,
-        analog_gain=None,
-        illumination_source=None,
-        illumination_intensity=None,
-        z_offset=None,
-        emission_filter_position=None,
-    ):
-        self.id = mode_id
-        self.name = name
-        self.color = color
-        self.exposure_time = exposure_time
-        self.analog_gain = analog_gain
-        self.illumination_source = illumination_source
-        self.illumination_intensity = illumination_intensity
-        self.camera_sn = camera_sn
-        self.z_offset = z_offset
-        self.emission_filter_position = emission_filter_position
 
 
 class LiveController(QObject):
@@ -1353,7 +1353,7 @@ class MultiPointWorker(QObject):
     image_to_display = Signal(np.ndarray)
     spectrum_to_display = Signal(np.ndarray)
     image_to_display_multi = Signal(np.ndarray, int)
-    signal_current_configuration = Signal(Configuration)
+    signal_current_configuration = Signal(ChannelMode)
     signal_register_current_fov = Signal(float, float)
     signal_detection_stats = Signal(object)
     signal_update_stats = Signal(object)
@@ -2748,7 +2748,7 @@ class TrackingController(QObject):
         # create a new folder
         try:
             utils.ensure_directory_exists(os.path.join(self.base_path, self.experiment_ID))
-            self.channelConfigurationManager._save_xml_config(
+            self.channelConfigurationManager.save_current_configuration_to_path(
                 self.objectiveStore.current_objective,
                 os.path.join(self.base_path, self.experiment_ID) + "/configurations.xml"
             )  # save the configuration for the experiment
@@ -3588,32 +3588,9 @@ class ConfigType(Enum):
     WIDEFIELD = "widefield"
 
 
-class ChannelMode(BaseXmlModel, tag='mode'):
-    """Channel configuration model"""
-    mode_id: str = attr(name='ID')
-    name: str = attr(name='Name')
-    exposure_time: float = attr(name='ExposureTime')
-    analog_gain: float = attr(name='AnalogGain')
-    illumination_source: int = attr(name='IlluminationSource')
-    illumination_intensity: float = attr(name='IlluminationIntensity')
-    camera_sn: Optional[str] = attr(name='CameraSN', default=None)
-    z_offset: float = attr(name='ZOffset')
-    emission_filter_position: int = attr(name='EmissionFilterPosition', default=1)
-    selected: bool = attr(name='Selected', default=False)
-    color: Optional[str] = None  # Not stored in XML but computed from name
-
-    def __init__(self, **data):
-        super().__init__(**data)
-        self.color = utils.get_channel_color(self.name)
-
-
-class ChannelConfig(BaseXmlModel, tag='configurations'):
-    """Root configuration file model"""
-    modes: List[ChannelMode] = element(tag='mode')
-
-
 class ChannelConfigurationManager:
     def __init__(self, config_root: Path):
+        self._log = squid.logging.get_logger(self.__class__.__name__)
         self.config_root = config_root
         self.all_configs: Dict[ConfigType, Dict[str, ChannelConfig]] = {
             ConfigType.CHANNEL: {},
@@ -3633,7 +3610,8 @@ class ChannelConfigurationManager:
         if not config_file.exists():
             utils_config.generate_default_configuration(str(config_file))
             
-        self.all_configs[config_type][objective] = ChannelConfig.parse_file(config_file)
+        xml_content = config_file.read_text()
+        self.all_configs[config_type][objective] = ChannelConfig.model_validate_xml(xml_content)
 
     def load_configurations(self, objective: str) -> None:
         """Load available configurations for an objective"""
@@ -3669,6 +3647,12 @@ class ChannelConfigurationManager:
             # Save only channel configurations
             self._save_xml_config(objective, ConfigType.CHANNEL)
 
+    def save_current_configuration_to_path(self, objective: str, path: Path) -> None:
+        """Only used in TrackingController. Might be temporary."""
+        config = self.all_configs[self.active_config_type][objective]
+        xml_str = config.to_xml(pretty_print=True, encoding='utf-8')
+        path.write_bytes(xml_str)
+
     def get_configurations(self, objective: str) -> List[ChannelMode]:
         """Get channel modes for current active type"""
         config = self.all_configs[self.active_config_type].get(objective)
@@ -3680,6 +3664,7 @@ class ChannelConfigurationManager:
         """Update a specific configuration in current active type"""
         config = self.all_configs[self.active_config_type].get(objective)
         if not config:
+            self._log.error(f"Objective {objective} not found")
             return
 
         for mode in config.modes:
@@ -4613,6 +4598,7 @@ class LaserAutofocusController(QObject):
         laserAFCacheManager: Optional[LaserAFCacheManager] = None
     ):
         QObject.__init__(self)
+        self._log = squid.logging.get_logger(self.__class__.__name__)
         self.microcontroller = microcontroller
         self.camera = camera
         self.stage = stage
@@ -4647,7 +4633,7 @@ class LaserAutofocusController(QObject):
         self.y_offset = int((y_offset // 2) * 2)
         self.width = int((width // 8) * 8)
         self.height = int((height // 2) * 2)
-        self.x_reference = x_reference - self.x_offset
+        self.x_reference = x_reference - self.x_offset  # self.x_reference is relative to the cropped region
         self.has_two_interfaces = has_two_interfaces
         self.use_glass_top = use_glass_top
 
@@ -4718,7 +4704,7 @@ class LaserAutofocusController(QObject):
 
         x_offset = x - LASER_AF_CROP_WIDTH / 2
         y_offset = y - LASER_AF_CROP_HEIGHT / 2
-        print(f"laser spot location on the full sensor is ({int(x)},{int(y)})")
+        self._log.error(f"laser spot location on the full sensor is ({int(x)},{int(y)})")
 
         # set camera crop
         self.initialize_manual(x_offset, y_offset, LASER_AF_CROP_WIDTH, LASER_AF_CROP_HEIGHT, 1, x)

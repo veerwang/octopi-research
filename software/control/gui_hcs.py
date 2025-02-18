@@ -215,9 +215,9 @@ class HighContentScreeningGui(QMainWindow):
         self.channelConfigurationManager = core.ChannelConfigurationManager()
         if SUPPORT_LASER_AUTOFOCUS:
             self.laserAFCacheManager = core.LaserAFCacheManager()
-            self.configurationManager = core.ConfigurationManager(channel_manager=self.channelConfigurationManager, laser_af_manager=self.laserAFCacheManager)
         else:
             self.configurationManager = core.ConfigurationManager(channel_manager=self.channelConfigurationManager)
+        self.configurationManager = core.ConfigurationManager(channel_manager=self.channelConfigurationManager, laser_af_manager=self.laserAFCacheManager)
         self.contrastManager = core.ContrastManager()
         self.streamHandler = core.StreamHandler(display_resolution_scaling=DEFAULT_DISPLAY_CROP / 100)
         self.liveController = core.LiveController(

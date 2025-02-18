@@ -462,7 +462,7 @@ class SpinningDiskConfocalWidget(QWidget):
 
         self.disk_position_state = self.xlight.get_disk_position()
 
-        if self.config_manager is not None:
+        if self.config_manager:
             self.config_manager.toggle_confocal_widefield(self.disk_position_state)
 
         if self.disk_position_state == 1:
