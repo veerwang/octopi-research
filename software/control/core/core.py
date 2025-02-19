@@ -4614,11 +4614,14 @@ class LaserAutofocusController(QObject):
         # Move to first position and measure
         if self.piezo is not None:
             self._move_z(-self.PIXEL_TO_UM_CALIBRATION_DISTANCE/2)
-            time.sleep(MULTIPOINT_PIEZO_DELAY_MS/1000)
         else:
             # TODO: change to _move_z after backlash correction is absorbed into firmware
-            self.stage.move_z(-1.5 * self.PIXEL_TO_UM_CALIBRATION_DISTANCE / 1000)
-            self.stage.move_z(self.PIXEL_TO_UM_CALIBRATION_DISTANCE / 1000)
+            self.stage.move_z(-3.0 * self.PIXEL_TO_UM_CALIBRATION_DISTANCE / 1000)
+            self.microcontroller.wait_till_operation_is_completed()
+            self.stage.move_z(2.0 * self.PIXEL_TO_UM_CALIBRATION_DISTANCE / 1000)
+            self.microcontroller.wait_till_operation_is_completed()
+
+        time.sleep(MULTIPOINT_PIEZO_DELAY_MS / 1000)
 
         result = self._get_laser_spot_centroid()
         if result is None:
@@ -4629,8 +4632,13 @@ class LaserAutofocusController(QObject):
         x0, y0 = result
 
         # Move to second position and measure
-        self._move_z(self.PIXEL_TO_UM_CALIBRATION_DISTANCE/2)
-        time.sleep(MULTIPOINT_PIEZO_DELAY_MS/1000)
+        if self.piezo is not None:
+            self._move_z(self.PIXEL_TO_UM_CALIBRATION_DISTANCE / 2)
+        else:
+            self.stage.move_z(self.PIXEL_TO_UM_CALIBRATION_DISTANCE / 1000)
+            self.microcontroller.wait_till_operation_is_completed()
+
+        time.sleep(MULTIPOINT_PIEZO_DELAY_MS / 1000)
 
         result = self._get_laser_spot_centroid()
         if result is None:

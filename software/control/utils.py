@@ -228,7 +228,7 @@ def find_spot_location(
         "x_window": 20,  # Half-width of centroid window
         "min_peak_width": 10,  # Minimum width of peaks
         "min_peak_distance": 10,  # Minimum distance between peaks
-        "min_peak_prominence": 0.25,  # Minimum peak prominence
+        "min_peak_prominence": 0.2,  # Minimum peak prominence
         "intensity_threshold": 0.1,  # Threshold for intensity filtering
         "spot_spacing": 100,  # Expected spacing between spots
     }
