@@ -948,8 +948,12 @@ class HighContentScreeningGui(QMainWindow):
             self.wellSelectionWidget.signal_wellSelected.connect(self.wellplateMultiPointWidget.update_well_coordinates)
             self.objectivesWidget.signal_objective_changed.connect(self.wellplateMultiPointWidget.update_coordinates)
 
+        self.objectivesWidget.signal_objective_changed.connect(lambda: self.liveControlWidget.update_microscope_mode_by_name(
+            self.liveControlWidget.currentConfiguration.name
+            ))
+
         if SUPPORT_LASER_AUTOFOCUS:
-            def connect_objective_changed_laser_af(self):
+            def connect_objective_changed_laser_af():
                 self.laserAutofocusController.on_objective_changed()
                 self.laserAutofocusControlWidget.update_init_state()
 

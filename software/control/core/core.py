@@ -40,7 +40,7 @@ from threading import Thread, Lock
 from pathlib import Path
 from datetime import datetime
 from enum import Enum
-from pydantic_xml import BaseXmlModel, attr, element
+from control.utils_config import ChannelConfig, ChannelMode
 import time
 import subprocess
 import shutil
@@ -54,33 +54,6 @@ import scipy.signal
 import cv2
 import imageio as iio
 import squid.abc
-
-
-class ChannelMode(BaseXmlModel, tag='mode'):
-    """Channel configuration model"""
-    mode_id: str = attr(name='ID')
-    name: str = attr(name='Name')
-    exposure_time: float = attr(name='ExposureTime')
-    analog_gain: float = attr(name='AnalogGain')
-    illumination_source: int = attr(name='IlluminationSource')
-    illumination_intensity: float = attr(name='IlluminationIntensity')
-    camera_sn: Optional[str] = attr(name='CameraSN', default=None)
-    z_offset: float = attr(name='ZOffset')
-    emission_filter_position: int = attr(name='EmissionFilterPosition', default=1)
-    selected: bool = attr(name='Selected', default=False)
-    color: Optional[str] = None  # Not stored in XML but computed from name
-
-    def __init__(self, **data):
-        super().__init__(**data)
-        self.color = utils.get_channel_color(self.name)
-
-
-QMetaType.registerType(ChannelMode)
-
-
-class ChannelConfig(BaseXmlModel, tag='configurations'):
-    """Root configuration file model"""
-    modes: List[ChannelMode] = element(tag='mode')
 
 
 class ObjectiveStore:
@@ -2188,7 +2161,7 @@ class MultiPointController(QObject):
         self.microcontroller = microcontroller
         self.liveController = liveController
         self.autofocusController = autofocusController
-        self.objectiveStore = objectiveStore,
+        self.objectiveStore = objectiveStore
         self.channelConfigurationManager = channelConfigurationManager
         self.multiPointWorker: Optional[MultiPointWorker] = None
         self.thread: Optional[QThread] = None
@@ -3589,9 +3562,9 @@ class ConfigType(Enum):
 
 
 class ChannelConfigurationManager:
-    def __init__(self, config_root: Path):
+    def __init__(self):
         self._log = squid.logging.get_logger(self.__class__.__name__)
-        self.config_root = config_root
+        self.config_root = None
         self.all_configs: Dict[ConfigType, Dict[str, ChannelConfig]] = {
             ConfigType.CHANNEL: {},
             ConfigType.CONFOCAL: {},
@@ -3610,8 +3583,8 @@ class ChannelConfigurationManager:
         if not config_file.exists():
             utils_config.generate_default_configuration(str(config_file))
             
-        xml_content = config_file.read_text()
-        self.all_configs[config_type][objective] = ChannelConfig.model_validate_xml(xml_content)
+        xml_content = config_file.read_bytes()
+        self.all_configs[config_type][objective] = ChannelConfig.from_xml(xml_content)
 
     def load_configurations(self, objective: str) -> None:
         """Load available configurations for an objective"""
@@ -3668,13 +3641,13 @@ class ChannelConfigurationManager:
             return
 
         for mode in config.modes:
-            if mode.mode_id == config_id:
-                setattr(mode, attr_name.lower(), value)
+            if mode.id == config_id:
+                setattr(mode, utils_config.get_attr_name(attr_name), value)
                 break
 
         self.save_configurations(objective)
 
-    def write_configuration_selected(self, objective: str, selected_configurations: List[ChannelMode], filename: Path) -> None:
+    def write_configuration_selected(self, objective: str, selected_configurations: List[ChannelMode], filename: str) -> None:
         """Write selected configurations to a file"""
         config = self.all_configs[self.active_config_type].get(objective)
         if not config:
@@ -3682,12 +3655,13 @@ class ChannelConfigurationManager:
 
         # Update selected status
         for mode in config.modes:
-            mode.selected = any(conf.mode_id == mode.mode_id for conf in selected_configurations)
-            
+            mode.selected = any(conf.id == mode.id for conf in selected_configurations)
+
         # Save to specified file
         xml_str = config.to_xml(pretty_print=True, encoding='utf-8')
+        filename = Path(filename)
         filename.write_bytes(xml_str)
-        
+
         # Reset selected status
         for mode in config.modes:
             mode.selected = False
@@ -3723,9 +3697,10 @@ class LaserAFCacheManager:
         if objective not in self.autofocus_configurations:
             return
 
-        if not self.current_profile_path / objective.exists():
-            os.makedirs(self.current_profile_path / objective)
-        config_file = self.current_profile_path / objective / "laser_af_cache.json"
+        objective_path = self.current_profile_path / objective
+        if not objective_path.exists():
+            objective_path.mkdir(parents=True)
+        config_file = objective_path / "laser_af_cache.json"
         with open(config_file, 'w') as f:
             json.dump(self.autofocus_configurations[objective], f, indent=4)
 
@@ -3794,7 +3769,7 @@ class ConfigurationManager(QObject):
             raise ValueError(f"Profile {profile_name} already exists")
         os.makedirs(new_profile_path)
 
-        objectives = self.channel_manager.objective_configurations.keys()
+        objectives = OBJECTIVES
 
         self.current_profile = profile_name
         if self.channel_manager:
@@ -4602,6 +4577,7 @@ class LaserAutofocusController(QObject):
         self.microcontroller = microcontroller
         self.camera = camera
         self.stage = stage
+        self.liveController = liveController
         self.objectiveStore = objectiveStore
         self.laserAFCacheManager = laserAFCacheManager
 
@@ -4814,7 +4790,7 @@ class LaserAutofocusController(QObject):
 
     def on_objective_changed(self):
         self.is_initialized = False
-        self.load_cached_configurations()
+        self.load_cached_configuration()
 
     def _calculate_centroid(self, image):
         """Calculate the centroid of the laser spot."""
@@ -4893,7 +4869,7 @@ class LaserAutofocusController(QObject):
             if LASER_AF_DISPLAY_SPOT_IMAGE:
                 self.image_to_display.emit(image)
             # calculate centroid
-            x, y = self._caculate_centroid(image)
+            x, y = self._calculate_centroid(image)
             tmp_x = tmp_x + x
             tmp_y = tmp_y + y
         x = tmp_x / LASER_AF_AVERAGING_N
