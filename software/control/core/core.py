@@ -4607,8 +4607,8 @@ class LaserAutofocusController(QObject):
 
         # Move to first position and measure
         if self.piezo is not None:
-            self._move_z(-self.PIXEL_TO_UM_CALIBRATION_DISTANCE/2)
-            time.sleep(MULTIPOINT_PIEZO_DELAY_MS/1000)
+            self._move_z(-self.PIXEL_TO_UM_CALIBRATION_DISTANCE / 2)
+            time.sleep(MULTIPOINT_PIEZO_DELAY_MS / 1000)
         else:
             # TODO: change to _move_z after backlash correction is absorbed into firmware
             self.stage.move_z(-1.5 * self.PIXEL_TO_UM_CALIBRATION_DISTANCE / 1000)
@@ -4624,7 +4624,7 @@ class LaserAutofocusController(QObject):
 
         # Move to second position and measure
         self._move_z(self.PIXEL_TO_UM_CALIBRATION_DISTANCE)
-        time.sleep(MULTIPOINT_PIEZO_DELAY_MS/1000)
+        time.sleep(MULTIPOINT_PIEZO_DELAY_MS / 1000)
 
         result = self._get_laser_spot_centroid()
         if result is None:
@@ -4639,8 +4639,8 @@ class LaserAutofocusController(QObject):
 
         # move back to initial position
         if self.piezo is not None:
-            self._move_z(-self.PIXEL_TO_UM_CALIBRATION_DISTANCE/2)
-            time.sleep(MULTIPOINT_PIEZO_DELAY_MS/1000)
+            self._move_z(-self.PIXEL_TO_UM_CALIBRATION_DISTANCE / 2)
+            time.sleep(MULTIPOINT_PIEZO_DELAY_MS / 1000)
         else:
             # TODO: change to _move_z after backlash correction is absorbed into firmware
             self.stage.move_z(-1.5 * self.PIXEL_TO_UM_CALIBRATION_DISTANCE / 1000)
@@ -4803,10 +4803,10 @@ class LaserAutofocusController(QObject):
         self.microcontroller.wait_till_operation_is_completed()
 
         # TODO: create a function to get the current image (taking care of trigger mode checking and laser on/off switching)
-        '''
+        """
         self.camera.send_trigger()
         current_image = self.camera.read_frame()
-        '''
+        """
         self._get_laser_spot_centroid()
         current_image = self.image
 
