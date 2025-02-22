@@ -105,6 +105,9 @@ SINGLE_WINDOW = True  # set to False if use separate windows for display and con
 if USE_JUPYTER_CONSOLE:
     from control.console import JupyterWidget
 
+if RUN_FLUIDICS:
+    from control.run_fluidics import RunFluidics
+
 
 class MovementUpdater(QObject):
     position_after_move = Signal(squid.abc.Pos)
@@ -279,6 +282,7 @@ class HighContentScreeningGui(QMainWindow):
             self.autofocusController,
             self.configurationManager,
             scanCoordinates=self.scanCoordinates,
+            run_fluidics=self.fluidics,
             parent=self,
         )
 
@@ -354,6 +358,12 @@ class HighContentScreeningGui(QMainWindow):
         if USE_XERYON:
             self.objective_changer = ObjectiveChanger2PosController_Simulation(
                 sn=XERYON_SERIAL_NUMBER, stage=self.stage
+            )
+        if RUN_FLUIDICS:
+            self.fluidics = RunFluidics(
+                config_path=FLUIDICS_CONFIG_PATH,
+                sequence_path=FLUIDICS_SEQUENCE_PATH,
+                simulation=True,
             )
 
     def loadHardwareObjects(self):
@@ -470,6 +480,17 @@ class HighContentScreeningGui(QMainWindow):
                 self.objective_changer = ObjectiveChanger2PosController(sn=XERYON_SERIAL_NUMBER, stage=self.stage)
             except Exception:
                 self.log.error("Error initializing Xeryon objective switcher")
+                raise
+
+        if RUN_FLUIDICS:
+            try:
+                self.fluidics = RunFluidics(
+                    config_path=FLUIDICS_CONFIG_PATH,
+                    sequence_path=FLUIDICS_SEQUENCE_PATH,
+                    simulation=False,
+                )
+            except Exception:
+                self.log.error("Error initializing Fluidics")
                 raise
 
     def setupHardware(self):
@@ -1472,6 +1493,9 @@ class HighContentScreeningGui(QMainWindow):
             for channel in [1, 2, 3, 4]:
                 self.cellx.turn_off(channel)
             self.cellx.close()
+
+        if RUN_FLUIDICS:
+            self.fluidics.cleanup()
 
         self.imageSaver.close()
         self.imageDisplay.close()
