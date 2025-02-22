@@ -154,10 +154,6 @@ class RunFluidics:
         """Clean up hardware resources"""
         if self.syringe_pump:
             self.syringe_pump.close()
-        if self.controller:
-            self.controller.close()
-        if self.temperature_controller:
-            self.temperature_controller.close()
 
     def __enter__(self):
         return self

@@ -365,6 +365,8 @@ class HighContentScreeningGui(QMainWindow):
                 sequence_path=FLUIDICS_SEQUENCE_PATH,
                 simulation=True,
             )
+        else:
+            self.fluidics = None
 
     def loadHardwareObjects(self):
         # Initialize hardware objects
@@ -492,6 +494,8 @@ class HighContentScreeningGui(QMainWindow):
             except Exception:
                 self.log.error("Error initializing Fluidics")
                 raise
+        else:
+            self.fluidics = None
 
     def setupHardware(self):
         # Setup hardware components
