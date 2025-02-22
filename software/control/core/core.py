@@ -1477,14 +1477,14 @@ class MultiPointWorker(QObject):
                     probe_port =PORT_LIST[self.time_point]
                     self.run_fluidics.update_port(probe_port)  # use the port in PORT_LIST
                     # For MERFISH, before imaging, run the first 3 sequences (Add probe, wash buffer, imaging buffer)
-                    self.run_fluidics.run_sequences(section=[0, 3])
+                    self.run_fluidics.run_sequences(section=BEFORE_IMAGING_SEQUENCES)
                     self.run_fluidics.wait_for_completion()
 
                 self.run_single_time_point()
 
                 if self.run_fluidics:
                     # For MERFISH, after imaging, run the following 2 sequences (Cleavage buffer, SSC rinse)
-                    self.run_fluidics.run_sequences(section=[4, 6])
+                    self.run_fluidics.run_sequences(section=AFTER_IMAGING_SEQUENCES)
                     self.run_fluidics.wait_for_completion()
 
                 self.time_point = self.time_point + 1
