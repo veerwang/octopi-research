@@ -2,8 +2,7 @@ from pydantic import BaseModel
 from pydantic_xml import BaseXmlModel, element, attr
 from typing import List, Optional
 from pathlib import Path
-import control.utils as utils
-
+import control.utils_channel as utils_channel
 
 class LaserAFConfig(BaseModel):
     """Pydantic model for laser autofocus configuration"""
@@ -34,7 +33,7 @@ class ChannelMode(BaseXmlModel, tag='mode'):
 
     def __init__(self, **data):
         super().__init__(**data)
-        self.color = utils.get_channel_color(self.name)
+        self.color = utils_channel.get_channel_color(self.name)
 
 class ChannelConfig(BaseXmlModel, tag='modes'):
     """Root configuration file model"""

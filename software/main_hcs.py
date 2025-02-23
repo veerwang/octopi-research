@@ -58,8 +58,7 @@ if __name__ == "__main__":
         log.error("Couldn't setup logging to file!")
         sys.exit(1)
 
-    log.info(f"Squid Repository State: {
-.get_squid_repo_state_description()}")
+    log.info(f"Squid Repository State: {control.utils.get_squid_repo_state_description()}")
 
     legacy_config = False
     cf_editor_parser = ConfigParser()
