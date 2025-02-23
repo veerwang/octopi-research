@@ -66,7 +66,8 @@ class CollapsibleGroupBox(QGroupBox):
     def toggle_content(self, state):
         self.content_widget.setVisible(state)
 
-'''
+
+"""
 # Planning to replace this with a better design
 class ConfigEditorForAcquisitions(QDialog):
     def __init__(self, configManager, only_z_offset=True):
@@ -204,7 +205,8 @@ class ConfigEditorForAcquisitions(QDialog):
             self.scroll_area_widget.setLayout(self.scroll_area_layout)
             self.scroll_area.setWidget(self.scroll_area_widget)
             self.init_ui(only_z_offset)
-'''
+"""
+
 
 class ConfigEditor(QDialog):
     def __init__(self, config):
@@ -401,12 +403,12 @@ class FocusCameraControlWidget(QWidget):
 
         # Two interfaces checkbox
         self.has_two_interfaces_cb = QCheckBox("Has Two Interfaces")
-        
-        # Glass top checkbox  
+
+        # Glass top checkbox
         self.use_glass_top_cb = QCheckBox("Use Glass Top")
 
         # Range
-        '''
+        """
         range_layout = QHBoxLayout()
         range_layout.addWidget(QLabel("Laser AF Range (μm):"))
         self.range_spinbox = QDoubleSpinBox()
@@ -415,7 +417,7 @@ class FocusCameraControlWidget(QWidget):
         self.range_spinbox.setDecimals(1)
         range_layout.addWidget(self.range_spinbox)
         layout.addLayout(range_layout)
-        '''
+        """
 
         # Apply button
         self.apply_button = QPushButton("Apply and Initialize")
@@ -453,7 +455,7 @@ class FocusCameraControlWidget(QWidget):
     def apply_settings(self):
         self.laser_af_controller.set_laser_af_properties(
             has_two_interfaces=self.has_two_interfaces_cb.isChecked(),
-            use_glass_top=self.use_glass_top_cb.isChecked(), 
+            use_glass_top=self.use_glass_top_cb.isChecked(),
         )
         self.laser_af_controller.initialize_auto()
 
@@ -964,18 +966,13 @@ class ProfileWidget(QFrame):
 
     signal_profile_changed = Signal()
 
-    def __init__(
-        self,
-        configurationManager,
-        *args,
-        **kwargs
-    ):
+    def __init__(self, configurationManager, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.configurationManager = configurationManager
-        
+
         self.setFrameStyle(QFrame.Panel | QFrame.Raised)
         self.setup_ui()
-        
+
     def setup_ui(self):
         # Create widgets
         self.dropdown_profiles = QComboBox()
@@ -997,7 +994,7 @@ class ProfileWidget(QFrame):
         layout.addWidget(self.dropdown_profiles, 2)
         layout.addWidget(self.btn_loadProfile)
         layout.addWidget(self.btn_newProfile)
-        
+
         self.setLayout(layout)
 
     def load_profile(self):
@@ -1010,13 +1007,7 @@ class ProfileWidget(QFrame):
     def create_new_profile(self):
         """Create a new profile with current configurations."""
         dialog = QInputDialog()
-        profile_name, ok = dialog.getText(
-            self, 
-            "New Profile",
-            "Enter new profile name:",
-            QLineEdit.Normal,
-            ""
-        )
+        profile_name, ok = dialog.getText(self, "New Profile", "Enter new profile name:", QLineEdit.Normal, "")
 
         if ok and profile_name:
             try:
@@ -1066,7 +1057,9 @@ class LiveControlWidget(QFrame):
         self.streamHandler.set_display_fps(self.fps_display)
 
         self.triggerMode = TriggerMode.SOFTWARE
-        self.currentConfiguration = self.channelConfigurationManager.get_channel_configurations_for_objective(self.objectiveStore.current_objective)[0]
+        self.currentConfiguration = self.channelConfigurationManager.get_channel_configurations_for_objective(
+            self.objectiveStore.current_objective
+        )[0]
 
         self.add_components(show_trigger_options, show_display_options, show_autolevel, autolevel, stretch)
         self.setFrameStyle(QFrame.Panel | QFrame.Raised)
@@ -1092,7 +1085,9 @@ class LiveControlWidget(QFrame):
 
         # line 2: choose microscope mode / toggle live mode
         self.dropdown_modeSelection = QComboBox()
-        for microscope_configuration in self.channelConfigurationManager.get_channel_configurations_for_objective(self.objectiveStore.current_objective):
+        for microscope_configuration in self.channelConfigurationManager.get_channel_configurations_for_objective(
+            self.objectiveStore.current_objective
+        ):
             self.dropdown_modeSelection.addItems([microscope_configuration.name])
         self.dropdown_modeSelection.setCurrentText(self.currentConfiguration.name)
         self.dropdown_modeSelection.setSizePolicy(sizePolicy)
@@ -1266,7 +1261,9 @@ class LiveControlWidget(QFrame):
         # Update the mode selection dropdown
         self.dropdown_modeSelection.blockSignals(True)
         self.dropdown_modeSelection.clear()
-        for microscope_configuration in self.channelConfigurationManager.get_channel_configurations_for_objective(self.objectiveStore.current_objective):
+        for microscope_configuration in self.channelConfigurationManager.get_channel_configurations_for_objective(
+            self.objectiveStore.current_objective
+        ):
             self.dropdown_modeSelection.addItem(microscope_configuration.name)
         self.dropdown_modeSelection.blockSignals(False)
 
@@ -1280,10 +1277,12 @@ class LiveControlWidget(QFrame):
         self.currentConfiguration = next(
             (
                 config
-                for config in self.channelConfigurationManager.get_channel_configurations_for_objective(self.objectiveStore.current_objective)
+                for config in self.channelConfigurationManager.get_channel_configurations_for_objective(
+                    self.objectiveStore.current_objective
+                )
                 if config.name == current_microscope_mode_name
-        ),
-        None,
+            ),
+            None,
         )
         self.signal_live_configuration.emit(self.currentConfiguration)
         # update the microscope to the current configuration
@@ -1300,13 +1299,17 @@ class LiveControlWidget(QFrame):
     def update_config_exposure_time(self, new_value):
         if self.is_switching_mode == False:
             self.currentConfiguration.exposure_time = new_value
-            self.channelConfigurationManager.update_configuration(self.objectiveStore.current_objective, self.currentConfiguration.id, "ExposureTime", new_value)
+            self.channelConfigurationManager.update_configuration(
+                self.objectiveStore.current_objective, self.currentConfiguration.id, "ExposureTime", new_value
+            )
             self.signal_newExposureTime.emit(new_value)
 
     def update_config_analog_gain(self, new_value):
         if self.is_switching_mode == False:
             self.currentConfiguration.analog_gain = new_value
-            self.channelConfigurationManager.update_configuration(self.objectiveStore.current_objective, self.currentConfiguration.id, "AnalogGain", new_value)
+            self.channelConfigurationManager.update_configuration(
+                self.objectiveStore.current_objective, self.currentConfiguration.id, "AnalogGain", new_value
+            )
             self.signal_newAnalogGain.emit(new_value)
 
     def update_config_illumination_intensity(self, new_value):
@@ -2248,7 +2251,9 @@ class FlexibleMultiPointWidget(QFrame):
         self.entry_Nt.setFixedWidth(max_num_width)
 
         self.list_configurations = QListWidget()
-        for microscope_configuration in self.channelConfigurationManager.get_channel_configurations_for_objective(self.objectiveStore.current_objective):
+        for microscope_configuration in self.channelConfigurationManager.get_channel_configurations_for_objective(
+            self.objectiveStore.current_objective
+        ):
             self.list_configurations.addItems([microscope_configuration.name])
         self.list_configurations.setSelectionMode(
             QAbstractItemView.MultiSelection
@@ -3317,6 +3322,9 @@ class WellplateMultiPointWidget(QFrame):
         self.setFrameStyle(QFrame.Panel | QFrame.Raised)
         self.set_default_scan_size()
 
+        # Add state tracking for coordinates
+        self.has_loaded_coordinates = False
+
     def add_components(self):
         self.entry_well_coverage = QDoubleSpinBox()
         self.entry_well_coverage.setRange(1, 999.99)
@@ -3408,7 +3416,9 @@ class WellplateMultiPointWidget(QFrame):
         self.combobox_z_stack.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
 
         self.list_configurations = QListWidget()
-        for microscope_configuration in self.channelConfigurationManager.get_channel_configurations_for_objective(self.objectiveStore.current_objective):
+        for microscope_configuration in self.channelConfigurationManager.get_channel_configurations_for_objective(
+            self.objectiveStore.current_objective
+        ):
             self.list_configurations.addItems([microscope_configuration.name])
         self.list_configurations.setSelectionMode(QAbstractItemView.MultiSelection)
 
@@ -3603,6 +3613,10 @@ class WellplateMultiPointWidget(QFrame):
         self.entry_NZ.valueChanged.connect(self.signal_stitcher_z_levels.emit)
         # self.combobox_z_stack.currentIndexChanged.connect(self.signal_z_stacking.emit)
 
+        # Connect save/clear coordinates button
+        self.btn_save_scan_coordinates.clicked.connect(self.on_save_or_clear_coordinates_clicked)
+        self.btn_load_scan_coordinates.clicked.connect(self.on_load_coordinates_clicked)
+
     def enable_manual_ROI(self, enable):
         self.combobox_shape.model().item(3).setEnabled(enable)
         if not enable:
@@ -3729,7 +3743,9 @@ class WellplateMultiPointWidget(QFrame):
         self.set_default_shape()
 
         if "glass slide" in self.navigationViewer.sample:
-            self.entry_scan_size.setValue(0.1)  # init to 0.1mm when switching to 'glass slide' (for imaging a single FOV by default)
+            self.entry_scan_size.setValue(
+                0.1
+            )  # init to 0.1mm when switching to 'glass slide' (for imaging a single FOV by default)
             self.entry_scan_size.setEnabled(True)
             self.entry_well_coverage.setEnabled(False)
         else:
@@ -4046,6 +4062,139 @@ class WellplateMultiPointWidget(QFrame):
 
     def display_stitcher_widget(self, checked):
         self.signal_stitcher_widget.emit(checked)
+
+    def toggle_coordinate_controls(self, has_coordinates: bool):
+        """Toggle button text and control states based on whether coordinates are loaded"""
+        if has_coordinates:
+            self.btn_save_scan_coordinates.setText("Clear Coordinates")
+            # Disable scan controls when coordinates are loaded
+            self.combobox_shape.setEnabled(False)
+            self.entry_scan_size.setEnabled(False)
+            self.entry_well_coverage.setEnabled(False)
+            self.entry_overlap.setEnabled(False)
+            # Disable well selector
+            self.parent.wellSelectionWidget.setEnabled(False)
+        else:
+            self.btn_save_scan_coordinates.setText("Save Coordinates")
+            # Re-enable scan controls when coordinates are cleared
+            self.combobox_shape.setEnabled(True)
+            self.entry_scan_size.setEnabled(True)
+            if "glass slide" in self.navigationViewer.sample:
+                self.entry_well_coverage.setEnabled(False)
+            else:
+                self.entry_well_coverage.setEnabled(True)
+            self.entry_overlap.setEnabled(True)
+            # Re-enable well selector
+            self.parent.wellSelectionWidget.setEnabled(True)
+        
+        self.has_loaded_coordinates = has_coordinates
+
+    def on_save_or_clear_coordinates_clicked(self):
+        """Handle save/clear coordinates button click"""
+        if self.has_loaded_coordinates:
+            # Clear coordinates
+            self.scanCoordinates.clear_regions()
+            self.toggle_coordinate_controls(has_coordinates=False)
+            # Update display/coordinates as needed
+            self.update_coordinates()
+        else:
+            # Save coordinates (existing save functionality)
+            self.save_coordinates()
+
+    def on_load_coordinates_clicked(self):
+        """Open file dialog and load coordinates from selected CSV file"""
+        file_path, _ = QFileDialog.getOpenFileName(
+            self,
+            "Load Scan Coordinates",
+            "",  # Default directory
+            "CSV Files (*.csv);;All Files (*)"
+        )
+    
+        if file_path:
+            print("loading coordinates from", file_path)
+            self.load_coordinates(file_path)
+
+    def load_coordinates(self, file_path: str):
+        """Load scan coordinates from a CSV file.
+        
+        Args:
+            file_path: Path to CSV file containing coordinates
+        """
+        try:
+            # Read coordinates from CSV
+            import pandas as pd
+            df = pd.read_csv(file_path)
+            
+            # Validate CSV format
+            required_columns = ['Region', 'X_mm', 'Y_mm']
+            if not all(col in df.columns for col in required_columns):
+                raise ValueError("CSV file must contain 'Region', 'X_mm', and 'Y_mm' columns")
+                
+            # Clear existing coordinates
+            self.scanCoordinates.clear_regions()
+            
+            # Load coordinates into scanCoordinates
+            for region_id in df['Region'].unique():
+                region_points = df[df['Region'] == region_id]
+                coords = list(zip(region_points['X_mm'], region_points['Y_mm']))
+                self.scanCoordinates.region_fov_coordinates[region_id] = coords
+                
+                # Calculate and store region center (average of points)
+                center_x = region_points['X_mm'].mean()
+                center_y = region_points['Y_mm'].mean()
+                self.scanCoordinates.region_centers[region_id] = (center_x, center_y)
+                
+                # Register FOVs with navigation viewer
+                for x, y in coords:
+                    self.navigationViewer.register_fov_to_image(x, y)
+            
+            self._log.info(f"Loaded {len(df)} coordinates from {file_path}")
+            
+            # Update UI state
+            self.toggle_coordinate_controls(has_coordinates=True)
+            
+        except Exception as e:
+            self._log.error(f"Failed to load coordinates: {str(e)}")
+            QMessageBox.warning(
+                self,
+                "Load Error",
+                f"Failed to load coordinates from {file_path}\nError: {str(e)}"
+            )
+
+    def save_coordinates(self):
+        """Save scan coordinates to a CSV file.
+
+        Opens a file dialog for the user to choose save location and filename.
+        Coordinates are saved in CSV format with headers.
+        """
+        # Open file dialog for user to select save location and filename
+        file_path, _ = QFileDialog.getSaveFileName(
+            self, "Save Scan Coordinates", "", "CSV Files (*.csv);;All Files (*)"  # Default directory
+        )
+
+        if file_path:
+            # Add .csv extension if not present
+            if not file_path.lower().endswith(".csv"):
+                file_path += ".csv"
+
+            try:
+                # Get coordinates from scanCoordinates
+                coordinates = []
+                for region_id, fov_coords in self.scanCoordinates.region_fov_coordinates.items():
+                    for x, y in fov_coords:
+                        coordinates.append([region_id, x, y])
+
+                # Save to CSV with headers
+                import pandas as pd
+
+                df = pd.DataFrame(coordinates, columns=["Region", "X_mm", "Y_mm"])
+                df.to_csv(file_path, index=False)
+
+                self._log.info(f"Saved scan coordinates to {file_path}")
+
+            except Exception as e:
+                self._log.error(f"Failed to save coordinates: {str(e)}")
+                QMessageBox.warning(self, "Save Error", f"Failed to save coordinates to {file_path}\nError: {str(e)}")
 
 
 class FocusMapWidget(QFrame):
@@ -4648,7 +4797,9 @@ class NapariLiveWidget(QWidget):
 
         # Microscope Configuration
         self.dropdown_modeSelection = QComboBox()
-        for config in self.channelConfigurationManager.get_channel_configurations_for_objective(self.objectiveStore.current_objective):
+        for config in self.channelConfigurationManager.get_channel_configurations_for_objective(
+            self.objectiveStore.current_objective
+        ):
             self.dropdown_modeSelection.addItem(config.name)
         self.dropdown_modeSelection.setCurrentText(self.live_configuration.name)
         self.dropdown_modeSelection.currentTextChanged.connect(self.update_microscope_mode_by_name)
@@ -4907,7 +5058,9 @@ class NapariLiveWidget(QWidget):
         self.live_configuration = next(
             (
                 config
-                for config in self.channelConfigurationManager.get_channel_configurations_for_objective(self.objectiveStore.current_objective)
+                for config in self.channelConfigurationManager.get_channel_configurations_for_objective(
+                    self.objectiveStore.current_objective
+                )
                 if config.name == current_microscope_mode_name
             ),
             None,
@@ -4920,17 +5073,23 @@ class NapariLiveWidget(QWidget):
 
     def update_config_exposure_time(self, new_value):
         self.live_configuration.exposure_time = new_value
-        self.channelConfigurationManager.update_configuration(self.objectiveStore.current_objective, self.live_configuration.id, "ExposureTime", new_value)
+        self.channelConfigurationManager.update_configuration(
+            self.objectiveStore.current_objective, self.live_configuration.id, "ExposureTime", new_value
+        )
         self.signal_newExposureTime.emit(new_value)
 
     def update_config_analog_gain(self, new_value):
         self.live_configuration.analog_gain = new_value
-        self.channelConfigurationManager.update_configuration(self.objectiveStore.current_objective, self.live_configuration.id, "AnalogGain", new_value)
+        self.channelConfigurationManager.update_configuration(
+            self.objectiveStore.current_objective, self.live_configuration.id, "AnalogGain", new_value
+        )
         self.signal_newAnalogGain.emit(new_value)
 
     def update_config_illumination_intensity(self, new_value):
         self.live_configuration.illumination_intensity = new_value
-        self.channelConfigurationManager.update_configuration(self.objectiveStore.current_objective, self.live_configuration.id, "IlluminationIntensity", new_value)
+        self.channelConfigurationManager.update_configuration(
+            self.objectiveStore.current_objective, self.live_configuration.id, "IlluminationIntensity", new_value
+        )
         self.liveController.set_illumination(self.live_configuration.illumination_source, new_value)
 
     def update_resolution_scaling(self, value):
@@ -5727,7 +5886,9 @@ class TrackingControllerWidget(QFrame):
         self.entry_tracking_interval.setValue(0)
 
         self.list_configurations = QListWidget()
-        for microscope_configuration in self.channelConfigurationManager.get_channel_configurations_for_objective(self.objectiveStore.current_objective):
+        for microscope_configuration in self.channelConfigurationManager.get_channel_configurations_for_objective(
+            self.objectiveStore.current_objective
+        ):
             self.list_configurations.addItems([microscope_configuration.name])
         self.list_configurations.setSelectionMode(
             QAbstractItemView.MultiSelection
