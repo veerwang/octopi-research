@@ -35,16 +35,17 @@ try:
 except:
     pass
 
-from typing import List, Tuple, Optional
+from typing import List, Tuple, Optional, Dict, Any
 from queue import Queue
 from threading import Thread, Lock
 from pathlib import Path
 from datetime import datetime
+from enum import Enum
+from control.utils_config import ChannelConfig, ChannelMode, LaserAFConfig
 import time
 import subprocess
 import shutil
 import itertools
-from lxml import etree
 import json
 import math
 import random
@@ -444,46 +445,11 @@ class ImageDisplay(QObject):
         self.thread.join()
 
 
-class Configuration:
-    def __init__(
-        self,
-        mode_id=None,
-        name=None,
-        color=None,
-        camera_sn=None,
-        exposure_time=None,
-        analog_gain=None,
-        illumination_source=None,
-        illumination_intensity=None,
-        z_offset=None,
-        pixel_format=None,
-        _pixel_format_options=None,
-        emission_filter_position=None,
-    ):
-        self.id = mode_id
-        self.name = name
-        self.color = color
-        self.exposure_time = exposure_time
-        self.analog_gain = analog_gain
-        self.illumination_source = illumination_source
-        self.illumination_intensity = illumination_intensity
-        self.camera_sn = camera_sn
-        self.z_offset = z_offset
-        self.pixel_format = pixel_format
-        if self.pixel_format is None:
-            self.pixel_format = "default"
-        self._pixel_format_options = _pixel_format_options
-        if _pixel_format_options is None:
-            self._pixel_format_options = self.pixel_format
-        self.emission_filter_position = emission_filter_position
-
-
 class LiveController(QObject):
     def __init__(
         self,
         camera,
         microcontroller,
-        configurationManager,
         illuminationController,
         parent=None,
         control_illumination=True,
@@ -494,7 +460,6 @@ class LiveController(QObject):
         self.microscope = parent
         self.camera = camera
         self.microcontroller = microcontroller
-        self.configurationManager = configurationManager
         self.currentConfiguration = None
         self.trigger_mode = TriggerMode.SOFTWARE  # @@@ change to None
         self.is_live = False
@@ -534,7 +499,7 @@ class LiveController(QObject):
     def turn_on_illumination(self):
         if self.illuminationController is not None and not "LED matrix" in self.currentConfiguration.name:
             self.illuminationController.turn_on_illumination(
-                int(self.configurationManager.extract_wavelength(self.currentConfiguration.name))
+                int(utils.extract_wavelength_from_config_name(self.currentConfiguration.name))
             )
         elif SUPPORT_SCIMICROSCOPY_LED_ARRAY and "LED matrix" in self.currentConfiguration.name:
             self.led_array.turn_on_illumination()
@@ -545,7 +510,7 @@ class LiveController(QObject):
     def turn_off_illumination(self):
         if self.illuminationController is not None and not "LED matrix" in self.currentConfiguration.name:
             self.illuminationController.turn_off_illumination(
-                int(self.configurationManager.extract_wavelength(self.currentConfiguration.name))
+                int(utils.extract_wavelength_from_config_name(self.currentConfiguration.name))
             )
         elif SUPPORT_SCIMICROSCOPY_LED_ARRAY and "LED matrix" in self.currentConfiguration.name:
             self.led_array.turn_off_illumination()
@@ -598,7 +563,7 @@ class LiveController(QObject):
             # update illumination
             if self.illuminationController is not None:
                 self.illuminationController.set_intensity(
-                    int(self.configurationManager.extract_wavelength(self.currentConfiguration.name)), intensity
+                    int(utils.extract_wavelength_from_config_name(self.currentConfiguration.name)), intensity
                 )
             elif ENABLE_NL5 and NL5_USE_DOUT and "Fluorescence" in self.currentConfiguration.name:
                 wavelength = int(self.currentConfiguration.name[13:16])
@@ -1362,7 +1327,7 @@ class MultiPointWorker(QObject):
     image_to_display = Signal(np.ndarray)
     spectrum_to_display = Signal(np.ndarray)
     image_to_display_multi = Signal(np.ndarray, int)
-    signal_current_configuration = Signal(Configuration)
+    signal_current_configuration = Signal(ChannelMode)
     signal_register_current_fov = Signal(float, float)
     signal_detection_stats = Signal(object)
     signal_update_stats = Signal(object)
@@ -1388,7 +1353,8 @@ class MultiPointWorker(QObject):
         self.piezo: PiezoStage = self.multiPointController.piezo
         self.liveController = self.multiPointController.liveController
         self.autofocusController = self.multiPointController.autofocusController
-        self.configurationManager = self.multiPointController.configurationManager
+        self.objectiveStore = self.multiPointController.objectiveStore
+        self.channelConfigurationManager = self.multiPointController.channelConfigurationManager
         self.NX = self.multiPointController.NX
         self.NY = self.multiPointController.NY
         self.NZ = self.multiPointController.NZ
@@ -1764,7 +1730,7 @@ class MultiPointWorker(QObject):
                 config_AF = next(
                     (
                         config
-                        for config in self.configurationManager.configurations
+                        for config in self.channelConfigurationManager.get_channel_configurations_for_objective(self.objectiveStore.current_objective)
                         if config.name == configuration_name_AF
                     )
                 )
@@ -1786,7 +1752,7 @@ class MultiPointWorker(QObject):
                     config_AF = next(
                         (
                             config
-                            for config in self.configurationManager.configurations
+                            for config in self.channelConfigurationManager.get_channel_configurations_for_objective(self.objectiveStore.current_objective)
                             if config.name == configuration_name_AF
                         )
                     )
@@ -1900,7 +1866,7 @@ class MultiPointWorker(QObject):
         rgb_channels = ["BF LED matrix full_R", "BF LED matrix full_G", "BF LED matrix full_B"]
         images = {}
 
-        for config_ in self.configurationManager.configurations:
+        for config_ in self.channelConfigurationManager.get_channel_configurations_for_objective(self.objectiveStore.current_objective):
             if config_.name in rgb_channels:
                 # update the current configuration
                 self.signal_current_configuration.emit(config_)
@@ -2166,7 +2132,7 @@ class MultiPointController(QObject):
     image_to_display = Signal(np.ndarray)
     image_to_display_multi = Signal(np.ndarray, int)
     spectrum_to_display = Signal(np.ndarray)
-    signal_current_configuration = Signal(Configuration)
+    signal_current_configuration = Signal(ChannelMode)
     signal_register_current_fov = Signal(float, float)
     detection_stats = Signal(object)
     signal_stitcher = Signal(str)
@@ -2185,7 +2151,8 @@ class MultiPointController(QObject):
         microcontroller: Microcontroller,
         liveController,
         autofocusController,
-        configurationManager,
+        objectiveStore,
+        channelConfigurationManager,
         usb_spectrometer=None,
         scanCoordinates=None,
         parent=None,
@@ -2200,7 +2167,8 @@ class MultiPointController(QObject):
         self.microcontroller = microcontroller
         self.liveController = liveController
         self.autofocusController = autofocusController
-        self.configurationManager = configurationManager
+        self.objectiveStore = objectiveStore
+        self.channelConfigurationManager = channelConfigurationManager
         self.multiPointWorker: Optional[MultiPointWorker] = None
         self.thread: Optional[QThread] = None
         self.NX = 1
@@ -2330,10 +2298,8 @@ class MultiPointController(QObject):
         self.recording_start_time = time.time()
         # create a new folder
         utils.ensure_directory_exists(os.path.join(self.base_path, self.experiment_ID))
-        # TODO(imo): If the config has changed since boot, is this still the correct config?
-        configManagerThrowaway = ConfigurationManager(self.configurationManager.config_filename)
-        configManagerThrowaway.write_configuration_selected(
-            self.selected_configurations, os.path.join(self.base_path, self.experiment_ID) + "/configurations.xml"
+        self.channelConfigurationManager.write_configuration_selected(
+            self.objectiveStore.current_objective, self.selected_configurations, os.path.join(self.base_path, self.experiment_ID) + "/configurations.xml"
         )  # save the configuration for the experiment
         # Prepare acquisition parameters
         acquisition_parameters = {
@@ -2377,7 +2343,9 @@ class MultiPointController(QObject):
         for configuration_name in selected_configurations_name:
             self.selected_configurations.append(
                 next(
-                    (config for config in self.configurationManager.configurations if config.name == configuration_name)
+                    (config
+                    for config in self.channelConfigurationManager.get_channel_configurations_for_objective(self.objectiveStore.current_objective)
+                    if config.name == configuration_name)
                 )
             )
 
@@ -2642,14 +2610,15 @@ class TrackingController(QObject):
     signal_tracking_stopped = Signal()
     image_to_display = Signal(np.ndarray)
     image_to_display_multi = Signal(np.ndarray, int)
-    signal_current_configuration = Signal(Configuration)
+    signal_current_configuration = Signal(ChannelMode)
 
     def __init__(
         self,
         camera,
         microcontroller: Microcontroller,
         stage: AbstractStage,
-        configurationManager,
+        objectiveStore,
+        channelConfigurationManager,
         liveController: LiveController,
         autofocusController,
         imageDisplayWindow,
@@ -2658,7 +2627,8 @@ class TrackingController(QObject):
         self.camera = camera
         self.microcontroller = microcontroller
         self.stage = stage
-        self.configurationManager = configurationManager
+        self.objectiveStore = objectiveStore
+        self.channelConfigurationManager = channelConfigurationManager
         self.liveController = liveController
         self.autofocusController = autofocusController
         self.imageDisplayWindow = imageDisplayWindow
@@ -2764,7 +2734,8 @@ class TrackingController(QObject):
         # create a new folder
         try:
             utils.ensure_directory_exists(os.path.join(self.base_path, self.experiment_ID))
-            self.configurationManager.write_configuration(
+            self.channelConfigurationManager.save_current_configuration_to_path(
+                self.objectiveStore.current_objective,
                 os.path.join(self.base_path, self.experiment_ID) + "/configurations.xml"
             )  # save the configuration for the experiment
         except:
@@ -2775,8 +2746,10 @@ class TrackingController(QObject):
         self.selected_configurations = []
         for configuration_name in selected_configurations_name:
             self.selected_configurations.append(
-                next(
-                    (config for config in self.configurationManager.configurations if config.name == configuration_name)
+                next((
+                    config
+                    for config in self.channelConfigurationManager.get_channel_configurations_for_objective(self.objectiveStore.current_objective)
+                    if config.name == configuration_name)
                 )
             )
 
@@ -2865,7 +2838,7 @@ class TrackingWorker(QObject):
     finished = Signal()
     image_to_display = Signal(np.ndarray)
     image_to_display_multi = Signal(np.ndarray, int)
-    signal_current_configuration = Signal(Configuration)
+    signal_current_configuration = Signal(ChannelMode)
 
     def __init__(self, trackingController: TrackingController):
         QObject.__init__(self)
@@ -2876,7 +2849,7 @@ class TrackingWorker(QObject):
         self.microcontroller = self.trackingController.microcontroller
         self.liveController = self.trackingController.liveController
         self.autofocusController = self.trackingController.autofocusController
-        self.configurationManager = self.trackingController.configurationManager
+        self.channelConfigurationManager = self.trackingController.channelConfigurationManager
         self.imageDisplayWindow = self.trackingController.imageDisplayWindow
         self.crop_width = self.trackingController.crop_width
         self.crop_height = self.trackingController.crop_height
@@ -3595,88 +3568,245 @@ class ImageArrayDisplayWindow(QMainWindow):
             self.graphics_widget_4.img.setImage(image, autoLevels=False)
 
 
-class ConfigurationManager(QObject):
-    def __init__(self, filename="channel_configurations.xml"):
-        QObject.__init__(self)
+class ConfigType(Enum):
+    CHANNEL = "channel"
+    CONFOCAL = "confocal"
+    WIDEFIELD = "widefield"
+
+
+class ChannelConfigurationManager:
+    def __init__(self):
         self._log = squid.logging.get_logger(self.__class__.__name__)
-        self.config_filename = filename
-        self.configurations = []
-        self.read_configurations()
+        self.config_root = None
+        self.all_configs: Dict[ConfigType, Dict[str, ChannelConfig]] = {
+            ConfigType.CHANNEL: {},
+            ConfigType.CONFOCAL: {},
+            ConfigType.WIDEFIELD: {}
+        }
+        self.active_config_type = ConfigType.CHANNEL if not ENABLE_SPINNING_DISK_CONFOCAL else ConfigType.CONFOCAL
 
-    def save_configurations(self):
-        self.write_configuration(self.config_filename)
+    def set_profile_path(self, profile_path: Path) -> None:
+        """Set the root path for configurations"""
+        self.config_root = profile_path
 
-    def write_configuration(self, filename):
-        try:
-            self.config_xml_tree.write(filename, encoding="utf-8", xml_declaration=True, pretty_print=True)
-            return True
-        except IOError:
-            self._log.exception("Couldn't write configuration.")
-            return False
+    def _load_xml_config(self, objective: str, config_type: ConfigType) -> None:
+        """Load XML configuration for a specific config type, generating default if needed"""
+        config_file = self.config_root / objective / f"{config_type.value}_configurations.xml"
 
-    def read_configurations(self):
-        if os.path.isfile(self.config_filename) == False:
-            utils_config.generate_default_configuration(self.config_filename)
-            print("genenrate default config files")
-        self.config_xml_tree = etree.parse(self.config_filename)
-        self.config_xml_tree_root = self.config_xml_tree.getroot()
-        self.num_configurations = 0
-        for mode in self.config_xml_tree_root.iter("mode"):
-            self.num_configurations += 1
-            self.configurations.append(
-                Configuration(
-                    mode_id=mode.get("ID"),
-                    name=mode.get("Name"),
-                    color=self.get_channel_color(mode.get("Name")),
-                    exposure_time=float(mode.get("ExposureTime")),
-                    analog_gain=float(mode.get("AnalogGain")),
-                    illumination_source=int(mode.get("IlluminationSource")),
-                    illumination_intensity=float(mode.get("IlluminationIntensity")),
-                    camera_sn=mode.get("CameraSN"),
-                    z_offset=float(mode.get("ZOffset")),
-                    pixel_format=mode.get("PixelFormat"),
-                    _pixel_format_options=mode.get("_PixelFormat_options"),
-                    emission_filter_position=int(mode.get("EmissionFilterPosition", 1)),
-                )
-            )
+        if not config_file.exists():
+            utils_config.generate_default_configuration(str(config_file))
+            
+        xml_content = config_file.read_bytes()
+        self.all_configs[config_type][objective] = ChannelConfig.from_xml(xml_content)
 
-    def update_configuration(self, configuration_id, attribute_name, new_value):
-        conf_list = self.config_xml_tree_root.xpath("//mode[contains(@ID," + "'" + str(configuration_id) + "')]")
-        mode_to_update = conf_list[0]
-        mode_to_update.set(attribute_name, str(new_value))
-        self.save_configurations()
+    def load_configurations(self, objective: str) -> None:
+        """Load available configurations for an objective"""
+        if ENABLE_SPINNING_DISK_CONFOCAL:
+            # Load both confocal and widefield configurations
+            self._load_xml_config(objective, ConfigType.CONFOCAL)
+            self._load_xml_config(objective, ConfigType.WIDEFIELD)
+        else:
+            # Load only channel configurations
+            self._load_xml_config(objective, ConfigType.CHANNEL)
 
-    def update_configuration_without_writing(self, configuration_id, attribute_name, new_value):
-        conf_list = self.config_xml_tree_root.xpath("//mode[contains(@ID," + "'" + str(configuration_id) + "')]")
-        mode_to_update = conf_list[0]
-        mode_to_update.set(attribute_name, str(new_value))
+    def _save_xml_config(self, objective: str, config_type: ConfigType) -> None:
+        """Save XML configuration for a specific config type"""
+        if objective not in self.all_configs[config_type]:
+            return
 
-    def write_configuration_selected(
-        self, selected_configurations, filename
-    ):  # to be only used with a throwaway instance
-        for conf in self.configurations:
-            self.update_configuration_without_writing(conf.id, "Selected", 0)
-        for conf in selected_configurations:
-            self.update_configuration_without_writing(conf.id, "Selected", 1)
-        self.write_configuration(filename)
-        for conf in selected_configurations:
-            self.update_configuration_without_writing(conf.id, "Selected", 0)
+        config = self.all_configs[config_type][objective]
+        save_path = self.config_root / objective / f"{config_type.value}_configurations.xml"
 
-    def get_channel_color(self, channel):
-        channel_info = CHANNEL_COLORS_MAP.get(self.extract_wavelength(channel), {"hex": 0xFFFFFF, "name": "gray"})
-        return channel_info["hex"]
+        if not save_path.parent.exists():
+            save_path.parent.mkdir(parents=True)
 
-    def extract_wavelength(self, name):
-        # Split the string and find the wavelength number immediately after "Fluorescence"
-        parts = name.split()
-        if "Fluorescence" in parts:
-            index = parts.index("Fluorescence") + 1
-            if index < len(parts):
-                return parts[index].split()[0]  # Assuming 'Fluorescence 488 nm Ex' and taking '488'
-        for color in ["R", "G", "B"]:
-            if color in parts or "full_" + color in parts:
-                return color
-        return None
+        xml_str = config.to_xml(pretty_print=True, encoding='utf-8')
+        save_path.write_bytes(xml_str)
+
+    def save_configurations(self, objective: str) -> None:
+        """Save configurations based on spinning disk configuration"""
+        if ENABLE_SPINNING_DISK_CONFOCAL:
+            # Save both confocal and widefield configurations
+            self._save_xml_config(objective, ConfigType.CONFOCAL)
+            self._save_xml_config(objective, ConfigType.WIDEFIELD)
+        else:
+            # Save only channel configurations
+            self._save_xml_config(objective, ConfigType.CHANNEL)
+
+    def save_current_configuration_to_path(self, objective: str, path: Path) -> None:
+        """Only used in TrackingController. Might be temporary."""
+        config = self.all_configs[self.active_config_type][objective]
+        xml_str = config.to_xml(pretty_print=True, encoding='utf-8')
+        path.write_bytes(xml_str)
+
+    def get_configurations(self, objective: str) -> List[ChannelMode]:
+        """Get channel modes for current active type"""
+        config = self.all_configs[self.active_config_type].get(objective)
+        if not config:
+            return []
+        return config.modes
+
+    def update_configuration(self, objective: str, config_id: str, attr_name: str, value: Any) -> None:
+        """Update a specific configuration in current active type"""
+        config = self.all_configs[self.active_config_type].get(objective)
+        if not config:
+            self._log.error(f"Objective {objective} not found")
+            return
+
+        for mode in config.modes:
+            if mode.id == config_id:
+                setattr(mode, utils_config.get_attr_name(attr_name), value)
+                break
+
+        self.save_configurations(objective)
+
+    def write_configuration_selected(self, objective: str, selected_configurations: List[ChannelMode], filename: str) -> None:
+        """Write selected configurations to a file"""
+        config = self.all_configs[self.active_config_type].get(objective)
+        if not config:
+            raise ValueError(f"Objective {objective} not found")
+
+        # Update selected status
+        for mode in config.modes:
+            mode.selected = any(conf.id == mode.id for conf in selected_configurations)
+
+        # Save to specified file
+        xml_str = config.to_xml(pretty_print=True, encoding='utf-8')
+        filename = Path(filename)
+        filename.write_bytes(xml_str)
+
+        # Reset selected status
+        for mode in config.modes:
+            mode.selected = False
+        self.save_configurations(objective)
+
+    def get_channel_configurations_for_objective(self, objective: str) -> List[ChannelMode]:
+        """Get Configuration objects for current active type (alias for get_configurations)"""
+        return self.get_configurations(objective)
+
+    def toggle_confocal_widefield(self, confocal: bool) -> None:
+        """Toggle between confocal and widefield configurations"""
+        self.active_config_type = ConfigType.CONFOCAL if confocal else ConfigType.WIDEFIELD
+
+
+class LaserAFSettingManager:
+    """Manages JSON-based laser autofocus configurations."""
+    def __init__(self):
+        self.autofocus_configurations: Dict[str, LaserAFConfig] = {}  # Dict[str, Dict[str, Any]]
+        self.current_profile_path = None
+
+    def set_profile_path(self, profile_path: Path) -> None:
+        self.current_profile_path = profile_path
+
+    def load_configurations(self, objective: str) -> None:
+        """Load autofocus configurations for a specific objective."""
+        config_file = self.current_profile_path / objective / "laser_af_settings.json"
+        if config_file.exists():
+            with open(config_file, 'r') as f:
+                config_dict = json.load(f)
+                self.autofocus_configurations[objective] = LaserAFConfig(**config_dict)
+
+    def save_configurations(self, objective: str) -> None:
+        """Save autofocus configurations for a specific objective."""
+        if objective not in self.autofocus_configurations:
+            return
+
+        objective_path = self.current_profile_path / objective
+        if not objective_path.exists():
+            objective_path.mkdir(parents=True)
+        config_file = objective_path / "laser_af_settings.json"
+
+        config_dict = self.autofocus_configurations[objective].model_dump()
+        with open(config_file, 'w') as f:
+            json.dump(config_dict, f, indent=4)
+
+    def get_settings_for_objective(self, objective: str) -> Dict[str, Any]:
+        if objective not in self.autofocus_configurations:
+            raise ValueError(f"No configuration found for objective {objective}")
+        return self.autofocus_configurations[objective]
+
+    def get_laser_af_settings(self) -> Dict[str, Any]:
+        return self.autofocus_configurations
+
+    def update_laser_af_settings(self, objective: str, updates: Dict[str, Any]) -> None:
+        if objective not in self.autofocus_configurations:
+            self.autofocus_configurations[objective] = LaserAFConfig(**updates)
+        else:
+            config = self.autofocus_configurations[objective]
+            self.autofocus_configurations[objective] = config.model_copy(update=updates)
+
+class ConfigurationManager:
+    """Main configuration manager that coordinates channel and autofocus configurations."""
+    def __init__(self, 
+                 channel_manager: ChannelConfigurationManager,
+                 laser_af_manager: Optional[LaserAFSettingManager] = None,
+                 base_config_path: Path = Path("acquisition_configurations"), 
+                 profile: str = "default_profile"):
+        super().__init__()
+        self.base_config_path = Path(base_config_path)
+        self.current_profile = profile
+        self.available_profiles = self._get_available_profiles()
+        
+        self.channel_manager = channel_manager
+        self.laser_af_manager = laser_af_manager
+        
+        self.load_profile(profile)
+
+    def _get_available_profiles(self) -> List[str]:
+        """Get all available user profile names in the base config path. Use default profile if no other profiles exist."""
+        if not self.base_config_path.exists():
+            os.makedirs(self.base_config_path)
+            os.makedirs(self.base_config_path / "default_profile")
+            for objective in OBJECTIVES:
+                os.makedirs(self.base_config_path / "default_profile" / objective)
+        return [d.name for d in self.base_config_path.iterdir() if d.is_dir()]
+
+    def _get_available_objectives(self, profile_path: Path) -> List[str]:
+        """Get all available objective names in a profile."""
+        return [d.name for d in profile_path.iterdir() if d.is_dir()]
+
+    def load_profile(self, profile_name: str) -> None:
+        """Load all configurations from a specific profile."""
+        profile_path = self.base_config_path / profile_name
+        if not profile_path.exists():
+            raise ValueError(f"Profile {profile_name} does not exist")
+
+        self.current_profile = profile_name
+        if self.channel_manager:
+            self.channel_manager.set_profile_path(profile_path)
+        if self.laser_af_manager:
+            self.laser_af_manager.set_profile_path(profile_path)
+
+        # Load configurations for each objective
+        for objective in self._get_available_objectives(profile_path):
+            if self.channel_manager:
+                self.channel_manager.load_configurations(objective)
+            if self.laser_af_manager:
+                self.laser_af_manager.load_configurations(objective)
+
+    def create_new_profile(self, profile_name: str) -> None:
+        """Create a new profile using current configurations."""
+        new_profile_path = self.base_config_path / profile_name
+        if new_profile_path.exists():
+            raise ValueError(f"Profile {profile_name} already exists")
+        os.makedirs(new_profile_path)
+
+        objectives = OBJECTIVES
+
+        self.current_profile = profile_name
+        if self.channel_manager:
+            self.channel_manager.set_profile_path(new_profile_path)
+        if self.laser_af_manager:
+            self.laser_af_manager.set_profile_path(new_profile_path)
+
+        for objective in objectives:
+            os.makedirs(new_profile_path / objective)
+            if self.channel_manager:
+                self.channel_manager.save_configurations(objective)
+            if self.laser_af_manager:
+                self.laser_af_manager.save_configurations(objective)
+
+        self.available_profiles = self._get_available_profiles()
 
 
 class ContrastManager:

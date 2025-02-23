@@ -19,10 +19,12 @@ squid.logging.setup_uncaught_exception_logging()
 # app specific libraries
 import control.gui_hcs as gui
 from configparser import ConfigParser
-from control.widgets import ConfigEditorBackwardsCompatible, ConfigEditorForAcquisitions
+from control.widgets import ConfigEditorBackwardsCompatible
 from control._def import CACHED_CONFIG_FILE_PATH
 from control._def import USE_TERMINAL_CONSOLE
+from control._def import SUPPORT_LASER_AUTOFOCUS
 import control.utils
+
 
 if USE_TERMINAL_CONSOLE:
     from control.console import ConsoleThread
@@ -32,11 +34,12 @@ def show_config(cfp, configpath, main_gui):
     config_widget = ConfigEditorBackwardsCompatible(cfp, configpath, main_gui)
     config_widget.exec_()
 
-
+'''
+# Planning to replace this with a better design
 def show_acq_config(cfm):
     acq_config_widget = ConfigEditorForAcquisitions(cfm)
     acq_config_widget.exec_()
-
+'''
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
@@ -55,7 +58,8 @@ if __name__ == "__main__":
         log.error("Couldn't setup logging to file!")
         sys.exit(1)
 
-    log.info(f"Squid Repository State: {control.utils.get_squid_repo_state_description()}")
+    log.info(f"Squid Repository State: {
+.get_squid_repo_state_description()}")
 
     legacy_config = False
     cf_editor_parser = ConfigParser()
@@ -72,11 +76,14 @@ if __name__ == "__main__":
 
     win = gui.HighContentScreeningGui(is_simulation=args.simulation, live_only_mode=args.live_only)
 
+    '''
+    # Planning to replace this with a better design
     acq_config_action = QAction("Acquisition Settings", win)
     acq_config_action.triggered.connect(lambda: show_acq_config(win.configurationManager))
+    '''
 
     file_menu = QMenu("File", win)
-    file_menu.addAction(acq_config_action)
+    #file_menu.addAction(acq_config_action)
 
     if not legacy_config:
         config_action = QAction("Microscope Settings", win)
