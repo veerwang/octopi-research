@@ -4794,7 +4794,7 @@ class LaserAutofocusController(QObject):
         # Update config with new calibration values
         self.laser_af_properties = self.laser_af_properties.model_copy(update={
             'pixel_to_um': pixel_to_um,
-            'x_reference': x1
+            'x_reference': (x1 + x0) / 2
         })
 
         # Update cache
