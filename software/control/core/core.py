@@ -24,6 +24,7 @@ if DO_FLUORESCENCE_RTP:
     from control.multipoint_built_in_functionalities import malaria_rtp
 
 import control.utils as utils
+import control.utils_channel as utils_channel
 import control.utils_config as utils_config
 import control.tracking as tracking
 import control.serial_peripherals as serial_peripherals
@@ -499,7 +500,7 @@ class LiveController(QObject):
     def turn_on_illumination(self):
         if self.illuminationController is not None and not "LED matrix" in self.currentConfiguration.name:
             self.illuminationController.turn_on_illumination(
-                int(utils.extract_wavelength_from_config_name(self.currentConfiguration.name))
+                int(utils_channel.extract_wavelength_from_config_name(self.currentConfiguration.name))
             )
         elif SUPPORT_SCIMICROSCOPY_LED_ARRAY and "LED matrix" in self.currentConfiguration.name:
             self.led_array.turn_on_illumination()
@@ -510,7 +511,7 @@ class LiveController(QObject):
     def turn_off_illumination(self):
         if self.illuminationController is not None and not "LED matrix" in self.currentConfiguration.name:
             self.illuminationController.turn_off_illumination(
-                int(utils.extract_wavelength_from_config_name(self.currentConfiguration.name))
+                int(utils_channel.extract_wavelength_from_config_name(self.currentConfiguration.name))
             )
         elif SUPPORT_SCIMICROSCOPY_LED_ARRAY and "LED matrix" in self.currentConfiguration.name:
             self.led_array.turn_off_illumination()
@@ -563,7 +564,7 @@ class LiveController(QObject):
             # update illumination
             if self.illuminationController is not None:
                 self.illuminationController.set_intensity(
-                    int(utils.extract_wavelength_from_config_name(self.currentConfiguration.name)), intensity
+                    int(utils_channel.extract_wavelength_from_config_name(self.currentConfiguration.name)), intensity
                 )
             elif ENABLE_NL5 and NL5_USE_DOUT and "Fluorescence" in self.currentConfiguration.name:
                 wavelength = int(self.currentConfiguration.name[13:16])
