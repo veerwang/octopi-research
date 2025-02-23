@@ -4633,10 +4633,8 @@ class LaserAutofocusController(QObject):
         self.laserAFSettingManager = laserAFSettingManager
 
         self.is_initialized = False
-        self.x_reference = 0
-        self.pixel_to_um = 1
-        self.x_offset = 0
-        self.y_offset = 0
+
+        self.laser_af_properties = LaserAFConfig()
         self.x_width = 3088
         self.y_width = 2064
 
@@ -4650,59 +4648,33 @@ class LaserAutofocusController(QObject):
             self.load_cached_configuration()
 
     def initialize_manual(
-        self,
-        x_offset: float,
-        y_offset: float,
-        width: int,
-        height: int,
-        pixel_to_um: float,
-        x_reference: float,
-        has_two_interfaces: bool = False,
-        use_glass_top: bool = True,
-        focus_camera_exposure_time_ms: int = 2,
-        focus_camera_analog_gain: int = 0,
-    ) -> None:
-        """Initialize laser autofocus with manual parameters.
+        self, config: LaserAFConfig) -> None:
+        """Initialize laser autofocus with manual parameters."""
+        adjusted_config = config.model_copy(update={
+            'x_reference': config.x_reference - config.x_offset,  # self.x_reference is relative to the cropped region
+            'x_offset': int((config.x_offset // 8) * 8),
+            'y_offset': int((config.y_offset // 2) * 2),
+            'width': int((config.width // 8) * 8),
+            'height': int((config.height // 2) * 2),
+        })
 
-        Args:
-            x_offset: X offset for ROI in pixels
-            y_offset: Y offset for ROI in pixels
-            width: Width of ROI in pixels
-            height: Height of ROI in pixels
-            pixel_to_um: Conversion factor from pixels to micrometers
-            x_reference: Reference X position in pixels (relative to full sensor)
-            has_two_interfaces: Whether to use two interfaces
-            use_glass_top: Whether to use glass top
-            focus_camera_exposure_time_ms: Exposure time for focus camera
-            focus_camera_analog_gain: Analog gain for focus camera
-        """
-        self.pixel_to_um = pixel_to_um
-        self.x_offset = int((x_offset // 8) * 8)
-        self.y_offset = int((y_offset // 2) * 2)
-        self.width = int((width // 8) * 8)
-        self.height = int((height // 2) * 2)
-        self.x_reference = x_reference - self.x_offset  # self.x_reference is relative to the cropped region
-        self.has_two_interfaces = has_two_interfaces
-        self.use_glass_top = use_glass_top
+        self.laser_af_properties = adjusted_config
 
-        self.camera.set_ROI(self.x_offset, self.y_offset, self.width, self.height)
+        self.camera.set_ROI(
+            self.laser_af_properties.x_offset,
+            self.laser_af_properties.y_offset,
+            self.laser_af_properties.width,
+            self.laser_af_properties.height
+        )
 
         self.is_initialized = True
 
         # Update cache if objective store and laser_af_settings is available
         if self.objectiveStore and self.laserAFSettingManager and self.objectiveStore.current_objective:
-            self.laserAFSettingManager.update_laser_af_settings(self.objectiveStore.current_objective, {
-                'x_offset': x_offset,
-                'y_offset': y_offset,
-                'width': width,
-                'height': height,
-                'pixel_to_um': pixel_to_um,
-                'x_reference': x_reference,
-                'has_two_interfaces': has_two_interfaces,
-                'use_glass_top': use_glass_top,
-                'focus_camera_exposure_time_ms': focus_camera_exposure_time_ms,
-                'focus_camera_analog_gain': focus_camera_analog_gain
-            })
+            self.laserAFSettingManager.update_laser_af_settings(
+                self.objectiveStore.current_objective,
+                config.model_dump()
+            )
 
     def load_cached_configuration(self):
         """Load configuration from the cache if available."""
@@ -4710,23 +4682,12 @@ class LaserAutofocusController(QObject):
         if current_objective and current_objective in self.laser_af_settings:
             config = self.laserAFSettingManager.get_settings_for_objective(current_objective)
 
-            self.focus_camera_exposure_time_ms = config.focus_camera_exposure_time_ms
-            self.focus_camera_analog_gain = config.focus_camera_analog_gain
-            self.camera.set_exposure_time(self.focus_camera_exposure_time_ms)
-            self.camera.set_analog_gain(self.focus_camera_analog_gain)
+            # Update camera settings
+            self.camera.set_exposure_time(config.focus_camera_exposure_time_ms)
+            self.camera.set_analog_gain(config.focus_camera_analog_gain)
 
-            self.initialize_manual(
-                x_offset=config.x_offset,
-                y_offset=config.y_offset,
-                width=config.width,
-                height=config.height,
-                pixel_to_um=config.pixel_to_um,
-                x_reference=config.x_reference,
-                has_two_interfaces=config.has_two_interfaces,
-                use_glass_top=config.use_glass_top,
-                focus_camera_exposure_time_ms=config.focus_camera_exposure_time_ms,
-                focus_camera_analog_gain=config.focus_camera_analog_gain,
-            )
+            # Initialize with loaded config
+            self.initialize_manual(config)
 
     def initialize_auto(self) -> bool:
         """Automatically initialize laser autofocus by finding the spot and calibrating.
@@ -4745,8 +4706,8 @@ class LaserAutofocusController(QObject):
         self.camera.set_ROI(0, 0, 3088, 2064)
 
         # update camera settings
-        self.camera.set_exposure_time(self.focus_camera_exposure_time_ms)
-        self.camera.set_analog_gain(self.focus_camera_analog_gain)
+        self.camera.set_exposure_time(self.laser_af_properties.focus_camera_exposure_time_ms)
+        self.camera.set_analog_gain(self.laser_af_properties.focus_camera_analog_gain)
 
         # Find initial spot position
         self.microcontroller.turn_on_AF_laser()
@@ -4764,11 +4725,14 @@ class LaserAutofocusController(QObject):
         self.microcontroller.wait_till_operation_is_completed()
 
         # Set up ROI around spot
-        x_offset = x - LASER_AF_CROP_WIDTH / 2
-        y_offset = y - LASER_AF_CROP_HEIGHT / 2
+        config = self.laser_af_properties.model_copy(update={
+            'x_offset': x - self.laser_af_properties.width / 2,
+            'y_offset': y - self.laser_af_properties.height / 2,
+            'x_reference': x
+        })
         self._log.info(f"Laser spot location on the full sensor is ({int(x)}, {int(y)})")
 
-        self.initialize_manual(x_offset, y_offset, LASER_AF_CROP_WIDTH, LASER_AF_CROP_HEIGHT, 1, x)
+        self.initialize_manual(config)
 
         if not self._calibrate_pixel_to_um():
             self._log.error("Failed to calibrate pixel-to-um conversion")
@@ -4790,12 +4754,12 @@ class LaserAutofocusController(QObject):
 
         # Move to first position and measure
         if self.piezo is not None:
-            self._move_z(-self.PIXEL_TO_UM_CALIBRATION_DISTANCE / 2)
+            self._move_z(-self.laser_af_properties.pixel_to_um_calibration_distance / 2)
             time.sleep(MULTIPOINT_PIEZO_DELAY_MS / 1000)
         else:
             # TODO: change to _move_z after backlash correction is absorbed into firmware
-            self.stage.move_z(-1.5 * self.PIXEL_TO_UM_CALIBRATION_DISTANCE / 1000)
-            self.stage.move_z(self.PIXEL_TO_UM_CALIBRATION_DISTANCE / 1000)
+            self.stage.move_z(-1.5 * self.laser_af_properties.pixel_to_um_calibration_distance / 1000)
+            self.stage.move_z(self.laser_af_properties.pixel_to_um_calibration_distance / 1000)
 
         result = self._get_laser_spot_centroid()
         if result is None:
@@ -4806,7 +4770,7 @@ class LaserAutofocusController(QObject):
         x0, y0 = result
 
         # Move to second position and measure
-        self._move_z(self.PIXEL_TO_UM_CALIBRATION_DISTANCE)
+        self._move_z(self.laser_af_properties.pixel_to_um_calibration_distance)
         time.sleep(MULTIPOINT_PIEZO_DELAY_MS / 1000)
 
         result = self._get_laser_spot_centroid()
@@ -4822,39 +4786,39 @@ class LaserAutofocusController(QObject):
 
         # move back to initial position
         if self.piezo is not None:
-            self._move_z(-self.PIXEL_TO_UM_CALIBRATION_DISTANCE / 2)
+            self._move_z(-self.laser_af_properties.pixel_to_um_calibration_distance / 2)
             time.sleep(MULTIPOINT_PIEZO_DELAY_MS / 1000)
         else:
             # TODO: change to _move_z after backlash correction is absorbed into firmware
-            self.stage.move_z(-1.5 * self.PIXEL_TO_UM_CALIBRATION_DISTANCE / 1000)
-            self.stage.move_z(self.PIXEL_TO_UM_CALIBRATION_DISTANCE / 1000)
+            self.stage.move_z(-1.5 * self.laser_af_properties.pixel_to_um_calibration_distance / 1000)
+            self.stage.move_z(self.laser_af_properties.pixel_to_um_calibration_distance / 1000)
 
         # Calculate conversion factor
         if x1 - x0 == 0:
-            self.pixel_to_um = 0.4  # Simulation value
+            pixel_to_um = 0.4  # Simulation value
             self._log.warning("Using simulation value for pixel_to_um conversion")
         else:
-            self.pixel_to_um = self.PIXEL_TO_UM_CALIBRATION_DISTANCE / (x1 - x0)
-        self._log.info(f"Pixel to um conversion factor is {self.pixel_to_um:.3f} um/pixel")
+            pixel_to_um = self.laser_af_properties.pixel_to_um_calibration_distance / (x1 - x0)
+        self._log.info(f"Pixel to um conversion factor is {pixel_to_um:.3f} um/pixel")
 
-        # Set reference position
-        self.x_reference = x1
+        # Update config with new calibration values
+        self.laser_af_properties = self.laser_af_properties.model_copy(update={
+            'pixel_to_um': pixel_to_um,
+            'x_reference': x1
+        })
 
         # Update cache
-        self.laserAFSettingManager.update_laser_af_settings(self.objectiveStore.current_objective, {
-            'pixel_to_um': self.pixel_to_um,
-            'x_reference': self.x_reference
-        })
+        if self.objectiveStore and self.laserAFSettingManager:
+            self.laserAFSettingManager.update_laser_af_settings(
+                self.objectiveStore.current_objective,
+                self.laser_af_properties.model_dump()
+            )
 
         return True
 
-    def set_laser_af_properties(self, has_two_interfaces, use_glass_top, focus_camera_exposure_time_ms, focus_camera_analog_gain):
-        # These properties can be set from gui
-        self.has_two_interfaces = has_two_interfaces
-        self.use_glass_top = use_glass_top
-        self.focus_camera_exposure_time_ms = focus_camera_exposure_time_ms
-        self.focus_camera_analog_gain = focus_camera_analog_gain
-
+    def set_laser_af_properties(self, updates: dict) -> None:
+        """Update laser autofocus properties. Used for updating settings from GUI."""
+        self.laser_af_properties = self.laser_af_properties.model_copy(update=updates)
         self.is_initialized = False
 
     def measure_displacement(self) -> float:
@@ -4881,7 +4845,7 @@ class LaserAutofocusController(QObject):
 
         x, y = result
         # calculate displacement
-        displacement_um = (x - self.x_reference) * self.pixel_to_um
+        displacement_um = (x - self.laser_af_properties.x_reference) * self.laser_af_properties.pixel_to_um
         self.signal_displacement_um.emit(displacement_um)
         return displacement_um
 
@@ -4901,7 +4865,7 @@ class LaserAutofocusController(QObject):
             self._log.error("Cannot move to target: failed to measure current displacement")
             return False
 
-        if abs(current_displacement_um) > LASER_AF_RANGE:
+        if abs(current_displacement_um) > self.laser_af_properties.laser_af_range:
             self._log.warning(
                 f"Measured displacement ({current_displacement_um:.1f} μm) is unreasonably large, using previous z position"
             )
@@ -4971,7 +4935,9 @@ class LaserAutofocusController(QObject):
             return False
 
         x, y = result
-        self.x_reference = x
+        self.laser_af_properties = self.laser_af_properties.model_copy(update={
+            'x_reference': x
+        })
 
         # Store cropped and normalized reference image
         center_y = int(reference_image.shape[0] / 2)
@@ -4988,7 +4954,7 @@ class LaserAutofocusController(QObject):
 
         # Update cache
         self.laserAFSettingManager.update_laser_af_settings(self.objectiveStore.current_objective, {
-            'x_reference': x + self.x_offset
+            'x_reference': x + self.laser_af_properties.x_offset
         })
         self.laserAFSettingManager.save_configurations(self.objectiveStore.current_objective)
 
@@ -5033,13 +4999,13 @@ class LaserAutofocusController(QObject):
             return False
 
         # Crop and normalize current image
-        center_x = int(self.x_reference)
+        center_x = int(self.laser_af_properties.x_reference)
         center_y = int(current_image.shape[0] / 2)
 
-        x_start = max(0, center_x - self.SPOT_CROP_SIZE // 2)
-        x_end = min(current_image.shape[1], center_x + self.SPOT_CROP_SIZE // 2)
-        y_start = max(0, center_y - self.SPOT_CROP_SIZE // 2)
-        y_end = min(current_image.shape[0], center_y + self.SPOT_CROP_SIZE // 2)
+        x_start = max(0, center_x - self.laser_af_properties.spot_crop_size // 2)
+        x_end = min(current_image.shape[1], center_x + self.laser_af_properties.spot_crop_size // 2)
+        y_start = max(0, center_y - self.laser_af_properties.spot_crop_size // 2)
+        y_end = min(current_image.shape[0], center_y + self.laser_af_properties.spot_crop_size // 2)
 
         current_crop = current_image[y_start:y_end, x_start:x_end].astype(np.float32)
         current_norm = (current_crop - np.mean(current_crop)) / np.max(current_crop)
@@ -5050,7 +5016,7 @@ class LaserAutofocusController(QObject):
         self._log.info(f"Cross correlation with reference: {correlation:.3f}")
 
         # Check if correlation exceeds threshold
-        if correlation < self.CORRELATION_THRESHOLD:
+        if correlation < self.laser_af_properties.correlation_threshold:
             self._log.warning("Cross correlation check failed - spots not well aligned")
             return False
 
@@ -5072,7 +5038,7 @@ class LaserAutofocusController(QObject):
         tmp_x = 0
         tmp_y = 0
 
-        for i in range(LASER_AF_AVERAGING_N):
+        for i in range(self.laser_af_properties.laser_af_averaging_n):
             try:
                 # send camera trigger
                 if self.liveController.trigger_mode == TriggerMode.SOFTWARE:
@@ -5084,15 +5050,15 @@ class LaserAutofocusController(QObject):
                 # read camera frame
                 image = self.camera.read_frame()
                 if image is None:
-                    self._log.warning(f"Failed to read frame {i+1}/{LASER_AF_AVERAGING_N}")
+                    self._log.warning(f"Failed to read frame {i+1}/{self.laser_af_properties.laser_af_averaging_n}")
                     continue
 
                 self.image = image  # store for debugging # TODO: add to return instead of storing
 
                 # calculate centroid
-                result = utils.find_spot_location(image, mode=LASER_AF_SPOT_DETECTION_MODE)
+                result = utils.find_spot_location(image, mode=self.laser_af_properties.spot_detection_mode)
                 if result is None:
-                    self._log.warning(f"No spot detected in frame {i+1}/{LASER_AF_AVERAGING_N}")
+                    self._log.warning(f"No spot detected in frame {i+1}/{self.laser_af_properties.laser_af_averaging_n}")
                     continue
 
                 x, y = result
@@ -5101,7 +5067,7 @@ class LaserAutofocusController(QObject):
                 successful_detections += 1
 
             except Exception as e:
-                self._log.error(f"Error processing frame {i+1}/{LASER_AF_AVERAGING_N}: {str(e)}")
+                self._log.error(f"Error processing frame {i+1}/{self.laser_af_properties.laser_af_averaging_n}: {str(e)}")
                 continue
 
         # optionally display the image

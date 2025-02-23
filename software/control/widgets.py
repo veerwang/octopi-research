@@ -349,11 +349,11 @@ class FocusCameraControlWidget(QWidget):
     signal_newExposureTime = Signal(float)
     signal_start_live = Signal()
 
-    def __init__(self, streamHandler, liveController, laser_af_controller, stretch=True):
+    def __init__(self, streamHandler, liveController, laserAutofocusController, stretch=True):
         super().__init__()
         self.streamHandler = streamHandler
         self.liveController = liveController
-        self.laser_af_controller = laser_af_controller
+        self.laserAutofocusController = laserAutofocusController
         self.stretch = stretch
 
         # Enable background filling
@@ -385,7 +385,7 @@ class FocusCameraControlWidget(QWidget):
         exposure_layout.addWidget(QLabel("Focus Camera Exposure (ms):"))
         self.exposure_spinbox = QDoubleSpinBox()
         self.exposure_spinbox.setRange(0, 1000)
-        self.exposure_spinbox.setValue(2)
+        self.exposure_spinbox.setValue(self.laserAutofocusController.laser_af_properties.focus_camera_exposure_time_ms)
         self.exposure_spinbox.setDecimals(1)
         exposure_layout.addWidget(self.exposure_spinbox)
 
@@ -399,23 +399,52 @@ class FocusCameraControlWidget(QWidget):
         settings_group.setFrameStyle(QFrame.Panel | QFrame.Raised)
         settings_layout = QVBoxLayout()
 
+        # Create spinboxes for numerical parameters
+        self.spinboxes = {}
+
+        # Averaging
+        self._add_spinbox(settings_layout, "Laser AF Averaging N:",
+                         'laser_af_averaging_n', 1, 100, 0)
+
+        # Displacement window
+        self._add_spinbox(settings_layout, "Displacement Success Window (μm):",
+                         'displacement_success_window_um', 0.1, 10.0, 2)
+
+        # Spot crop size
+        self._add_spinbox(settings_layout, "Spot Crop Size (pixels):",
+                         'spot_crop_size', 10, 500, 0)
+
+        # Correlation threshold
+        self._add_spinbox(settings_layout, "Correlation Threshold:",
+                         'correlation_threshold', 0.1, 1.0, 2)
+
+        # Calibration distance
+        self._add_spinbox(settings_layout, "Calibration Distance (μm):",
+                         'pixel_to_um_calibration_distance', 0.1, 20.0, 2)
+
+        # AF Range
+        self._add_spinbox(settings_layout, "Laser AF Range (μm):",
+                         'laser_af_range', 1, 1000, 1)
+
         # Two interfaces checkbox
         self.has_two_interfaces_cb = QCheckBox("Has Two Interfaces")
+        self.has_two_interfaces_cb.setChecked(
+            self.laserAutofocusController.laser_af_properties.has_two_interfaces)
         
-        # Glass top checkbox  
+        # Glass top checkbox
         self.use_glass_top_cb = QCheckBox("Use Glass Top")
+        self.use_glass_top_cb.setChecked(
+            self.laserAutofocusController.laser_af_properties.use_glass_top)
 
-        # Range
-        '''
-        range_layout = QHBoxLayout()
-        range_layout.addWidget(QLabel("Laser AF Range (μm):"))
-        self.range_spinbox = QDoubleSpinBox()
-        self.range_spinbox.setRange(0, 1000)
-        self.range_spinbox.setValue(100)
-        self.range_spinbox.setDecimals(1)
-        range_layout.addWidget(self.range_spinbox)
-        layout.addLayout(range_layout)
-        '''
+        # Spot detection mode combo box
+        self.spot_mode_combo = QComboBox("Spot Detection Mode:")
+        for mode in SpotDetectionMode:
+            self.spot_mode_combo.addItem(mode.value, mode)
+        current_index = self.spot_mode_combo.findData(
+            self.laserAutofocusController.laser_af_properties.spot_detection_mode
+        )
+        self.spot_mode_combo.setCurrentIndex(current_index)
+        settings_layout.addWidget(self.spot_mode_combo)
 
         # Apply button
         self.apply_button = QPushButton("Apply and Initialize")
@@ -423,6 +452,7 @@ class FocusCameraControlWidget(QWidget):
         # Add settings controls
         settings_layout.addWidget(self.has_two_interfaces_cb)
         settings_layout.addWidget(self.use_glass_top_cb)
+        settings_layout.addWidget(self.spot_mode_combo)
         settings_layout.addWidget(self.apply_button)
         settings_group.setLayout(settings_layout)
 
@@ -439,6 +469,25 @@ class FocusCameraControlWidget(QWidget):
         self.exposure_spinbox.valueChanged.connect(self.update_exposure_time)
         self.apply_button.clicked.connect(self.apply_settings)
 
+    def _add_spinbox(self, layout, label: str, property_name: str, 
+                    min_val: float, max_val: float, decimals: int) -> None:
+        """Helper method to add a labeled spinbox to the layout."""
+        box_layout = QHBoxLayout()
+        box_layout.addWidget(QLabel(label))
+
+        spinbox = QDoubleSpinBox()
+        spinbox.setRange(min_val, max_val)
+        spinbox.setDecimals(decimals)
+        # Get initial value from laser_af_properties
+        current_value = getattr(self.laserAutofocusController.laser_af_properties, property_name)
+        spinbox.setValue(current_value)
+
+        box_layout.addWidget(spinbox)
+        layout.addLayout(box_layout)
+
+        # Store spinbox reference
+        self.spinboxes[property_name] = spinbox
+
     def toggle_live(self, pressed):
         if pressed:
             self.liveController.start_live()
@@ -451,11 +500,20 @@ class FocusCameraControlWidget(QWidget):
         self.signal_newExposureTime.emit(value)
 
     def apply_settings(self):
-        self.laser_af_controller.set_laser_af_properties(
-            has_two_interfaces=self.has_two_interfaces_cb.isChecked(),
-            use_glass_top=self.use_glass_top_cb.isChecked(), 
-        )
-        self.laser_af_controller.initialize_auto()
+        updates={
+            'laser_af_averaging_n': int(self.spinboxes['laser_af_averaging_n'].value()),
+            'displacement_success_window_um': self.spinboxes['displacement_success_window_um'].value(),
+            'spot_crop_size': int(self.spinboxes['spot_crop_size'].value()),
+            'correlation_threshold': self.spinboxes['correlation_threshold'].value(),
+            'pixel_to_um_calibration_distance': self.spinboxes['pixel_to_um_calibration_distance'].value(),
+            'laser_af_range': self.spinboxes['laser_af_range'].value(),
+            'has_two_interfaces': self.has_two_interfaces_cb.isChecked(),
+            'use_glass_top': self.use_glass_top_cb.isChecked(),
+            'spot_detection_mode': self.spot_mode_combo.currentData(),
+            'focus_camera_exposure_time_ms': self.exposure_spinbox.value(),
+        }
+        self.laserAutofocusController.set_laser_af_properties(updates)
+        self.laserAutofocusController.initialize_auto()
 
 
 class SpinningDiskConfocalWidget(QWidget):

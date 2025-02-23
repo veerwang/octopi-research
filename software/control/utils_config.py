@@ -26,7 +26,7 @@ class LaserAFConfig(BaseModel):
     laser_af_range: float = LASER_AF_RANGE  # Maximum reasonable displacement in um
     has_two_interfaces: bool = HAS_TWO_INTERFACES
     use_glass_top: bool = USE_GLASS_TOP
-    focus_camera_exposure_time_ms: int = FOCUS_CAMERA_EXPOSURE_TIME_MS
+    focus_camera_exposure_time_ms: float = FOCUS_CAMERA_EXPOSURE_TIME_MS
     focus_camera_analog_gain: int = FOCUS_CAMERA_ANALOG_GAIN
     spot_detection_mode: SpotDetectionMode = LASER_AF_SPOT_DETECTION_MODE
 
