@@ -1250,9 +1250,12 @@ class LiveControlWidget(QFrame):
 
     def refresh_mode_list(self):
         # Update the mode selection dropdown
+        self.dropdown_modeSelection.blockSignals(True)
         self.dropdown_modeSelection.clear()
         for microscope_configuration in self.channelConfigurationManager.get_channel_configurations_for_objective(self.objectiveStore.current_objective):
             self.dropdown_modeSelection.addItem(microscope_configuration.name)
+        self.dropdown_modeSelection.blockSignals(False)
+
         # Update to first configuration
         if self.dropdown_modeSelection.count() > 0:
             self.update_microscope_mode_by_name(self.dropdown_modeSelection.currentText())

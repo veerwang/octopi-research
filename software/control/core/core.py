@@ -3722,7 +3722,7 @@ class LaserAFCacheManager:
             config = self.autofocus_configurations[objective]
             self.autofocus_configurations[objective] = config.model_copy(update=updates)
 
-class ConfigurationManager(QObject):
+class ConfigurationManager:
     """Main configuration manager that coordinates channel and autofocus configurations."""
     def __init__(self, 
                  channel_manager: ChannelConfigurationManager,
