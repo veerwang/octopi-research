@@ -4086,7 +4086,7 @@ class WellplateMultiPointWidget(QFrame):
             self.entry_overlap.setEnabled(True)
             # Re-enable well selector
             self.parent.wellSelectionWidget.setEnabled(True)
-        
+
         self.has_loaded_coordinates = has_coordinates
 
     def on_save_or_clear_coordinates_clicked(self):
@@ -4104,62 +4104,56 @@ class WellplateMultiPointWidget(QFrame):
     def on_load_coordinates_clicked(self):
         """Open file dialog and load coordinates from selected CSV file"""
         file_path, _ = QFileDialog.getOpenFileName(
-            self,
-            "Load Scan Coordinates",
-            "",  # Default directory
-            "CSV Files (*.csv);;All Files (*)"
+            self, "Load Scan Coordinates", "", "CSV Files (*.csv);;All Files (*)"  # Default directory
         )
-    
+
         if file_path:
             print("loading coordinates from", file_path)
             self.load_coordinates(file_path)
 
     def load_coordinates(self, file_path: str):
         """Load scan coordinates from a CSV file.
-        
+
         Args:
             file_path: Path to CSV file containing coordinates
         """
         try:
             # Read coordinates from CSV
             import pandas as pd
+
             df = pd.read_csv(file_path)
-            
+
             # Validate CSV format
-            required_columns = ['Region', 'X_mm', 'Y_mm']
+            required_columns = ["Region", "X_mm", "Y_mm"]
             if not all(col in df.columns for col in required_columns):
                 raise ValueError("CSV file must contain 'Region', 'X_mm', and 'Y_mm' columns")
-                
+
             # Clear existing coordinates
             self.scanCoordinates.clear_regions()
-            
+
             # Load coordinates into scanCoordinates
-            for region_id in df['Region'].unique():
-                region_points = df[df['Region'] == region_id]
-                coords = list(zip(region_points['X_mm'], region_points['Y_mm']))
+            for region_id in df["Region"].unique():
+                region_points = df[df["Region"] == region_id]
+                coords = list(zip(region_points["X_mm"], region_points["Y_mm"]))
                 self.scanCoordinates.region_fov_coordinates[region_id] = coords
-                
+
                 # Calculate and store region center (average of points)
-                center_x = region_points['X_mm'].mean()
-                center_y = region_points['Y_mm'].mean()
+                center_x = region_points["X_mm"].mean()
+                center_y = region_points["Y_mm"].mean()
                 self.scanCoordinates.region_centers[region_id] = (center_x, center_y)
-                
+
                 # Register FOVs with navigation viewer
                 for x, y in coords:
                     self.navigationViewer.register_fov_to_image(x, y)
-            
+
             self._log.info(f"Loaded {len(df)} coordinates from {file_path}")
-            
+
             # Update UI state
             self.toggle_coordinate_controls(has_coordinates=True)
-            
+
         except Exception as e:
             self._log.error(f"Failed to load coordinates: {str(e)}")
-            QMessageBox.warning(
-                self,
-                "Load Error",
-                f"Failed to load coordinates from {file_path}\nError: {str(e)}"
-            )
+            QMessageBox.warning(self, "Load Error", f"Failed to load coordinates from {file_path}\nError: {str(e)}")
 
     def save_coordinates(self):
         """Save scan coordinates to a CSV file.
