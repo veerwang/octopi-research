@@ -3687,7 +3687,7 @@ class LaserAFCacheManager:
 
     def load_configurations(self, objective: str) -> None:
         """Load autofocus configurations for a specific objective."""
-        config_file = self.current_profile_path / objective / "laser_af_cache.json"
+        config_file = self.current_profile_path / objective / "laser_af_settings.json"
         if config_file.exists():
             with open(config_file, 'r') as f:
                 config_dict = json.load(f)
@@ -3701,21 +3701,21 @@ class LaserAFCacheManager:
         objective_path = self.current_profile_path / objective
         if not objective_path.exists():
             objective_path.mkdir(parents=True)
-        config_file = objective_path / "laser_af_cache.json"
+        config_file = objective_path / "laser_af_settings.json"
 
         config_dict = self.autofocus_configurations[objective].model_dump()
         with open(config_file, 'w') as f:
             json.dump(config_dict, f, indent=4)
 
-    def get_cache_for_objective(self, objective: str) -> Dict[str, Any]:
+    def get_settings_for_objective(self, objective: str) -> Dict[str, Any]:
         if objective not in self.autofocus_configurations:
             raise ValueError(f"No configuration found for objective {objective}")
         return self.autofocus_configurations[objective]
 
-    def get_laser_af_cache(self) -> Dict[str, Any]:
+    def get_laser_af_settings(self) -> Dict[str, Any]:
         return self.autofocus_configurations
-    
-    def update_laser_af_cache(self, objective: str, updates: Dict[str, Any]) -> None:
+
+    def update_laser_af_settings(self, objective: str, updates: Dict[str, Any]) -> None:
         if objective not in self.autofocus_configurations:
             self.autofocus_configurations[objective] = LaserAFConfig(**updates)
         else:
@@ -4605,7 +4605,7 @@ class LaserAutofocusController(QObject):
 
         # Load configurations if provided
         if self.laserAFCacheManager:
-            self.laser_af_cache = self.laserAFCacheManager.get_laser_af_cache()
+            self.laser_af_settings = self.laserAFCacheManager.get_laser_af_settings()
             self.load_cached_configuration()
 
     def initialize_manual(self, x_offset, y_offset, width, height, pixel_to_um, x_reference,
@@ -4624,9 +4624,9 @@ class LaserAutofocusController(QObject):
 
         self.is_initialized = True
 
-        # Update cache if objective store and laser_af_cache is available
+        # Update cache if objective store and laser_af_settings is available
         if self.objectiveStore and self.laserAFCacheManager and self.objectiveStore.current_objective:
-            self.laserAFCacheManager.update_laser_af_cache(self.objectiveStore.current_objective, {
+            self.laserAFCacheManager.update_laser_af_settings(self.objectiveStore.current_objective, {
                 'x_offset': x_offset,
                 'y_offset': y_offset,
                 'width': width,
@@ -4642,8 +4642,8 @@ class LaserAutofocusController(QObject):
     def load_cached_configuration(self):
         """Load configuration from the cache if available."""
         current_objective = self.objectiveStore.current_objective if self.objectiveStore else None
-        if current_objective and current_objective in self.laser_af_cache:
-            config = self.laserAFCacheManager.get_cache_for_objective(current_objective)
+        if current_objective and current_objective in self.laser_af_settings:
+            config = self.laserAFCacheManager.get_settings_for_objective(current_objective)
 
             self.focus_camera_exposure_time_ms = config.focus_camera_exposure_time_ms
             self.focus_camera_analog_gain = config.focus_camera_analog_gain
@@ -4733,7 +4733,7 @@ class LaserAutofocusController(QObject):
         self.x_reference = x1
 
         # Update cache
-        self.laserAFCacheManager.update_laser_af_cache(self.objectiveStore.current_objective, {
+        self.laserAFCacheManager.update_laser_af_settings(self.objectiveStore.current_objective, {
             'pixel_to_um': self.pixel_to_um
         })
 
@@ -4790,7 +4790,7 @@ class LaserAutofocusController(QObject):
         self.signal_displacement_um.emit(0)
 
         # Update cache
-        self.laserAFCacheManager.update_laser_af_cache(self.objectiveStore.current_objective, {
+        self.laserAFCacheManager.update_laser_af_settings(self.objectiveStore.current_objective, {
             'x_reference': x + self.x_offset
         })
         self.laserAFCacheManager.save_configurations(self.objectiveStore.current_objective)
