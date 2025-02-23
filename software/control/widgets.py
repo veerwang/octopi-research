@@ -3322,6 +3322,7 @@ class WellplateMultiPointWidget(QFrame):
         self.entry_well_coverage.setRange(1, 999.99)
         self.entry_well_coverage.setValue(100)
         self.entry_well_coverage.setSuffix("%")
+        self.entry_well_coverage.setDecimals(0)
         btn_width = self.entry_well_coverage.sizeHint().width()
 
         self.btn_setSavingDir = QPushButton("Browse")
@@ -3421,6 +3422,9 @@ class WellplateMultiPointWidget(QFrame):
         self.combobox_shape.setFixedWidth(btn_width)
         # self.combobox_shape.currentTextChanged.connect(self.on_shape_changed)
 
+        self.btn_save_scan_coordinates = QPushButton("Save Coordinates")
+        self.btn_load_scan_coordinates = QPushButton("Load Coordinates")
+
         self.checkbox_genAFMap = QCheckBox("Generate Focus Map")
         self.checkbox_genAFMap.setChecked(False)
 
@@ -3469,25 +3473,25 @@ class WellplateMultiPointWidget(QFrame):
         saving_path_layout.addWidget(self.btn_setSavingDir)
         main_layout.addLayout(saving_path_layout)
 
-        # Experiment ID and Scan Shape
+        # Experiment ID
         row_1_layout = QHBoxLayout()
         row_1_layout.addWidget(QLabel("Experiment ID"))
         row_1_layout.addWidget(self.lineEdit_experimentID)
-        row_1_layout.addWidget(QLabel("Well Shape"))
-        row_1_layout.addWidget(self.combobox_shape)
         main_layout.addLayout(row_1_layout)
 
-        # Well Coverage, Scan Size, and Overlap
-        row_4_layout = QHBoxLayout()
-        row_4_layout.addWidget(QLabel("Size"))
-        row_4_layout.addWidget(self.entry_scan_size)
-        # row_4_layout.addStretch(1)
-        row_4_layout.addWidget(QLabel("FOV Overlap"))
-        row_4_layout.addWidget(self.entry_overlap)
-        # row_4_layout.addStretch(1)
-        row_4_layout.addWidget(QLabel("Well Coverage"))
-        row_4_layout.addWidget(self.entry_well_coverage)
-        main_layout.addLayout(row_4_layout)
+        # Scan Shape, FOV overlap, and Save / Load Scan Coordinates
+        row_2_layout = QGridLayout()
+        row_2_layout.addWidget(QLabel("Scan Shape"), 0, 0)
+        row_2_layout.addWidget(self.combobox_shape, 0, 1)
+        row_2_layout.addWidget(QLabel("Scan Size"), 0, 2)
+        row_2_layout.addWidget(self.entry_scan_size, 0, 3)
+        row_2_layout.addWidget(QLabel("Coverage"), 0, 4)
+        row_2_layout.addWidget(self.entry_well_coverage, 0, 5)
+        row_2_layout.addWidget(QLabel("FOV Overlap"), 1, 0)
+        row_2_layout.addWidget(self.entry_overlap, 1, 1)
+        row_2_layout.addWidget(self.btn_save_scan_coordinates, 1, 2, 1, 2)
+        row_2_layout.addWidget(self.btn_load_scan_coordinates, 1, 4, 1, 2)
+        main_layout.addLayout(row_2_layout)
 
         grid = QGridLayout()
 
@@ -3725,7 +3729,7 @@ class WellplateMultiPointWidget(QFrame):
         self.set_default_shape()
 
         if "glass slide" in self.navigationViewer.sample:
-            self.entry_scan_size.setValue(1.0)  # init to 1mm when switching to 'glass slide'
+            self.entry_scan_size.setValue(0.1)  # init to 0.1mm when switching to 'glass slide' (for imaging a single FOV by default)
             self.entry_scan_size.setEnabled(True)
             self.entry_well_coverage.setEnabled(False)
         else:
