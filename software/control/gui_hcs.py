@@ -308,7 +308,8 @@ class HighContentScreeningGui(QMainWindow):
                 self.liveController_focus_camera,
                 self.stage,
                 self.piezo,
-                look_for_cache=False,
+                self.objectiveStore,
+                self.laserAFSettingManager
             )
 
         if USE_SQUID_FILTERWHEEL:

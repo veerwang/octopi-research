@@ -36,6 +36,14 @@ class LaserAFConfig(BaseModel):
         }
     }
 
+    def model_dump(self, **kwargs):
+        """Override model_dump to ensure enums are serialized properly"""
+        data = super().model_dump(**kwargs)
+        # Convert enum to string value for JSON serialization only if it's still an enum
+        if 'spot_detection_mode' in data and isinstance(data['spot_detection_mode'], SpotDetectionMode):
+            data['spot_detection_mode'] = data['spot_detection_mode'].value
+        return data
+
 class ChannelMode(BaseXmlModel, tag='mode'):
     """Channel configuration model"""
     id: str = attr(name='ID')

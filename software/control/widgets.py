@@ -437,14 +437,16 @@ class FocusCameraControlWidget(QWidget):
             self.laserAutofocusController.laser_af_properties.use_glass_top)
 
         # Spot detection mode combo box
-        self.spot_mode_combo = QComboBox("Spot Detection Mode:")
+        spot_mode_layout = QHBoxLayout()
+        spot_mode_layout.addWidget(QLabel("Spot Detection Mode:"))
+        self.spot_mode_combo = QComboBox()
         for mode in SpotDetectionMode:
             self.spot_mode_combo.addItem(mode.value, mode)
         current_index = self.spot_mode_combo.findData(
             self.laserAutofocusController.laser_af_properties.spot_detection_mode
         )
         self.spot_mode_combo.setCurrentIndex(current_index)
-        settings_layout.addWidget(self.spot_mode_combo)
+        spot_mode_layout.addWidget(self.spot_mode_combo)
 
         # Apply button
         self.apply_button = QPushButton("Apply and Initialize")
@@ -452,7 +454,7 @@ class FocusCameraControlWidget(QWidget):
         # Add settings controls
         settings_layout.addWidget(self.has_two_interfaces_cb)
         settings_layout.addWidget(self.use_glass_top_cb)
-        settings_layout.addWidget(self.spot_mode_combo)
+        settings_layout.addLayout(spot_mode_layout)
         settings_layout.addWidget(self.apply_button)
         settings_group.setLayout(settings_layout)
 
