@@ -3676,7 +3676,7 @@ class ChannelConfigurationManager:
         self.active_config_type = ConfigType.CONFOCAL if confocal else ConfigType.WIDEFIELD
 
 
-class LaserAFCacheManager:
+class LaserAFSettingManager:
     """Manages JSON-based laser autofocus configurations."""
     def __init__(self):
         self.autofocus_configurations: Dict[str, LaserAFConfig] = {}  # Dict[str, Dict[str, Any]]
@@ -3726,7 +3726,7 @@ class ConfigurationManager:
     """Main configuration manager that coordinates channel and autofocus configurations."""
     def __init__(self, 
                  channel_manager: ChannelConfigurationManager,
-                 laser_af_manager: Optional[LaserAFCacheManager] = None,
+                 laser_af_manager: Optional[LaserAFSettingManager] = None,
                  base_config_path: Path = Path("acquisition_configurations"), 
                  profile: str = "default_profile"):
         super().__init__()
@@ -4577,7 +4577,7 @@ class LaserAutofocusController(QObject):
         liveController,
         stage: AbstractStage,
         objectiveStore: Optional[ObjectiveStore] = None,
-        laserAFCacheManager: Optional[LaserAFCacheManager] = None
+        laserAFSettingManager: Optional[LaserAFSettingManager] = None
     ):
         QObject.__init__(self)
         self._log = squid.logging.get_logger(self.__class__.__name__)
@@ -4586,7 +4586,7 @@ class LaserAutofocusController(QObject):
         self.stage = stage
         self.liveController = liveController
         self.objectiveStore = objectiveStore
-        self.laserAFCacheManager = laserAFCacheManager
+        self.laserAFSettingManager = laserAFSettingManager
 
         self.is_initialized = False
         self.x_reference = 0
@@ -4604,8 +4604,8 @@ class LaserAutofocusController(QObject):
         self.image = None  # for saving the focus camera image for debugging when centroid cannot be found
 
         # Load configurations if provided
-        if self.laserAFCacheManager:
-            self.laser_af_settings = self.laserAFCacheManager.get_laser_af_settings()
+        if self.laserAFSettingManager:
+            self.laser_af_settings = self.laserAFSettingManager.get_laser_af_settings()
             self.load_cached_configuration()
 
     def initialize_manual(self, x_offset, y_offset, width, height, pixel_to_um, x_reference,
@@ -4625,8 +4625,8 @@ class LaserAutofocusController(QObject):
         self.is_initialized = True
 
         # Update cache if objective store and laser_af_settings is available
-        if self.objectiveStore and self.laserAFCacheManager and self.objectiveStore.current_objective:
-            self.laserAFCacheManager.update_laser_af_settings(self.objectiveStore.current_objective, {
+        if self.objectiveStore and self.laserAFSettingManager and self.objectiveStore.current_objective:
+            self.laserAFSettingManager.update_laser_af_settings(self.objectiveStore.current_objective, {
                 'x_offset': x_offset,
                 'y_offset': y_offset,
                 'width': width,
@@ -4643,7 +4643,7 @@ class LaserAutofocusController(QObject):
         """Load configuration from the cache if available."""
         current_objective = self.objectiveStore.current_objective if self.objectiveStore else None
         if current_objective and current_objective in self.laser_af_settings:
-            config = self.laserAFCacheManager.get_settings_for_objective(current_objective)
+            config = self.laserAFSettingManager.get_settings_for_objective(current_objective)
 
             self.focus_camera_exposure_time_ms = config.focus_camera_exposure_time_ms
             self.focus_camera_analog_gain = config.focus_camera_analog_gain
@@ -4695,7 +4695,7 @@ class LaserAutofocusController(QObject):
         # Calibrate pixel to um conversion
         self._calibrate_pixel_to_um()
 
-        self.laserAFCacheManager.save_configurations(self.objectiveStore.current_objective)
+        self.laserAFSettingManager.save_configurations(self.objectiveStore.current_objective)
 
     def _calibrate_pixel_to_um(self):
         """Calibrate the pixel to micrometer conversion factor."""
@@ -4733,7 +4733,7 @@ class LaserAutofocusController(QObject):
         self.x_reference = x1
 
         # Update cache
-        self.laserAFCacheManager.update_laser_af_settings(self.objectiveStore.current_objective, {
+        self.laserAFSettingManager.update_laser_af_settings(self.objectiveStore.current_objective, {
             'pixel_to_um': self.pixel_to_um
         })
 
@@ -4790,10 +4790,10 @@ class LaserAutofocusController(QObject):
         self.signal_displacement_um.emit(0)
 
         # Update cache
-        self.laserAFCacheManager.update_laser_af_settings(self.objectiveStore.current_objective, {
+        self.laserAFSettingManager.update_laser_af_settings(self.objectiveStore.current_objective, {
             'x_reference': x + self.x_offset
         })
-        self.laserAFCacheManager.save_configurations(self.objectiveStore.current_objective)
+        self.laserAFSettingManager.save_configurations(self.objectiveStore.current_objective)
 
     def on_objective_changed(self):
         self.is_initialized = False

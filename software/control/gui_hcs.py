@@ -214,10 +214,10 @@ class HighContentScreeningGui(QMainWindow):
         self.objectiveStore = core.ObjectiveStore(parent=self)
         self.channelConfigurationManager = core.ChannelConfigurationManager()
         if SUPPORT_LASER_AUTOFOCUS:
-            self.laserAFCacheManager = core.LaserAFCacheManager()
+            self.laserAFSettingManager = core.LaserAFSettingManager()
         else:
-            self.laserAFCacheManager = None
-        self.configurationManager = core.ConfigurationManager(channel_manager=self.channelConfigurationManager, laser_af_manager=self.laserAFCacheManager)
+            self.laserAFSettingManager = None
+        self.configurationManager = core.ConfigurationManager(channel_manager=self.channelConfigurationManager, laser_af_manager=self.laserAFSettingManager)
         self.contrastManager = core.ContrastManager()
         self.streamHandler = core.StreamHandler(display_resolution_scaling=DEFAULT_DISPLAY_CROP / 100)
         self.liveController = core.LiveController(
@@ -306,7 +306,7 @@ class HighContentScreeningGui(QMainWindow):
                 self.liveController_focus_camera,
                 self.stage,
                 self.objectiveStore,
-                self.laserAFCacheManager
+                self.laserAFSettingManager
             )
 
         if USE_SQUID_FILTERWHEEL:
