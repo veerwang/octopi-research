@@ -4599,16 +4599,6 @@ class FocusMap:
 
 class LaserAutofocusController(QObject):
 
-    DISPLACEMENT_SUCCESS_WINDOW_UM = 1.0  # if the displacement is within this window, we consider the move successful
-    SPOT_CROP_SIZE = 100  # Size of region to crop around spot for correlation
-    CORRELATION_THRESHOLD = 0.9  # Minimum correlation coefficient for valid alignment
-    PIXEL_TO_UM_CALIBRATION_DISTANCE = 6.0  # Distance moved in um during calibration
-    LASER_AF_RANGE = 100  # Maximum reasonable displacement in um
-    HAS_TWO_INTERFACES = False  # e.g. air-glass and glass water, set to false when (1) using oil immersion (2) using 1 mm thick slide (3) using metal coated slide or Si wafer
-    USE_GLASS_TOP = True
-    FOCUS_CAMERA_EXPOSURE_TIME_MS = 2
-    FOCUS_CAMERA_ANALOG_GAIN = 0
-
     image_to_display = Signal(np.ndarray)
     signal_displacement_um = Signal(float)
 

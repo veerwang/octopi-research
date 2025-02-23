@@ -24,10 +24,10 @@ class LaserAFConfig(BaseModel):
     correlation_threshold: float = CORRELATION_THRESHOLD  # Minimum correlation coefficient for valid alignment
     pixel_to_um_calibration_distance: float = PIXEL_TO_UM_CALIBRATION_DISTANCE  # Distance moved in um during calibration
     laser_af_range: float = LASER_AF_RANGE  # Maximum reasonable displacement in um
-    has_two_interfaces: bool = HAS_TWO_INTERFACES
+    has_two_interfaces: bool = HAS_TWO_INTERFACES  # e.g. air-glass and glass water, set to false when (1) using oil immersion (2) using 1 mm thick slide (3) using metal coated slide or Si wafer
     use_glass_top: bool = USE_GLASS_TOP
     focus_camera_exposure_time_ms: float = FOCUS_CAMERA_EXPOSURE_TIME_MS
-    focus_camera_analog_gain: int = FOCUS_CAMERA_ANALOG_GAIN
+    focus_camera_analog_gain: float = FOCUS_CAMERA_ANALOG_GAIN
     spot_detection_mode: SpotDetectionMode = LASER_AF_SPOT_DETECTION_MODE
 
     model_config = {

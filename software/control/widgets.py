@@ -347,6 +347,7 @@ class ConfigEditorBackwardsCompatible(ConfigEditor):
 class FocusCameraControlWidget(QWidget):
 
     signal_newExposureTime = Signal(float)
+    signal_newAnalogGain = Signal(float)
     signal_start_live = Signal()
 
     def __init__(self, streamHandler, liveController, laserAutofocusController, stretch=True):
@@ -389,9 +390,18 @@ class FocusCameraControlWidget(QWidget):
         self.exposure_spinbox.setDecimals(1)
         exposure_layout.addWidget(self.exposure_spinbox)
 
+        # Analog gain control
+        analog_gain_layout = QHBoxLayout()
+        analog_gain_layout.addWidget(QLabel("Focus Camera Analog Gain:"))
+        self.analog_gain_spinbox = QSpinBox()
+        self.analog_gain_spinbox.setRange(0, 20)
+        self.analog_gain_spinbox.setValue(self.laserAutofocusController.laser_af_properties.focus_camera_analog_gain)
+        analog_gain_layout.addWidget(self.analog_gain_spinbox)
+
         # Add to live group
         live_layout.addWidget(self.btn_live)
         live_layout.addLayout(exposure_layout)
+        live_layout.addLayout(analog_gain_layout)
         live_group.setLayout(live_layout)
 
         # Settings group
@@ -500,6 +510,9 @@ class FocusCameraControlWidget(QWidget):
 
     def update_exposure_time(self, value):
         self.signal_newExposureTime.emit(value)
+    
+    def update_analog_gain(self, value):
+        self.signal_newAnalogGain.emit(value)
 
     def apply_settings(self):
         updates={
