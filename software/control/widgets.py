@@ -344,7 +344,7 @@ class ConfigEditorBackwardsCompatible(ConfigEditor):
         self.close()
 
 
-class FocusCameraControlWidget(QWidget):
+class LaserAutofocusSettingWidget(QWidget):
 
     signal_newExposureTime = Signal(float)
     signal_newAnalogGain = Signal(float)
