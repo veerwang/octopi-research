@@ -5,10 +5,12 @@ from pathlib import Path
 import control.utils_channel as utils_channel
 from control._def import (FOCUS_CAMERA_EXPOSURE_TIME_MS, FOCUS_CAMERA_ANALOG_GAIN, LASER_AF_RANGE, 
                           LASER_AF_AVERAGING_N, LASER_AF_CROP_WIDTH, LASER_AF_CROP_HEIGHT, 
-                          HAS_TWO_INTERFACES, USE_GLASS_TOP, LASER_AF_SPOT_DETECTION_MODE, 
-                          DISPLACEMENT_SUCCESS_WINDOW_UM, SPOT_CROP_SIZE, CORRELATION_THRESHOLD, 
-                          PIXEL_TO_UM_CALIBRATION_DISTANCE)
+                          LASER_AF_SPOT_DETECTION_MODE, DISPLACEMENT_SUCCESS_WINDOW_UM,
+                          SPOT_CROP_SIZE, CORRELATION_THRESHOLD, PIXEL_TO_UM_CALIBRATION_DISTANCE,
+                          LASER_AF_Y_WINDOW, LASER_AF_X_WINDOW, LASER_AF_MIN_PEAK_WIDTH, LASER_AF_MIN_PEAK_DISTANCE,
+                          LASER_AF_MIN_PEAK_PROMINENCE, LASER_AF_SPOT_SPACING)
 from control.utils import SpotDetectionMode
+
 
 class LaserAFConfig(BaseModel):
     """Pydantic model for laser autofocus configuration"""
@@ -24,11 +26,15 @@ class LaserAFConfig(BaseModel):
     correlation_threshold: float = CORRELATION_THRESHOLD  # Minimum correlation coefficient for valid alignment
     pixel_to_um_calibration_distance: float = PIXEL_TO_UM_CALIBRATION_DISTANCE  # Distance moved in um during calibration
     laser_af_range: float = LASER_AF_RANGE  # Maximum reasonable displacement in um
-    has_two_interfaces: bool = HAS_TWO_INTERFACES  # e.g. air-glass and glass water, set to false when (1) using oil immersion (2) using 1 mm thick slide (3) using metal coated slide or Si wafer
-    use_glass_top: bool = USE_GLASS_TOP
     focus_camera_exposure_time_ms: float = FOCUS_CAMERA_EXPOSURE_TIME_MS
     focus_camera_analog_gain: float = FOCUS_CAMERA_ANALOG_GAIN
     spot_detection_mode: SpotDetectionMode = LASER_AF_SPOT_DETECTION_MODE
+    y_window: int = LASER_AF_Y_WINDOW  # Half-height of y-axis crop
+    x_window: int = LASER_AF_X_WINDOW  # Half-width of centroid window
+    min_peak_width: float = LASER_AF_MIN_PEAK_WIDTH  # Minimum width of peaks
+    min_peak_distance: float = LASER_AF_MIN_PEAK_DISTANCE  # Minimum distance between peaks
+    min_peak_prominence: float = LASER_AF_MIN_PEAK_PROMINENCE  # Minimum peak prominence
+    spot_spacing: float = LASER_AF_SPOT_SPACING  # Expected spacing between spots
 
     model_config = {
         "json_encoders": {

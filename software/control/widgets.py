@@ -435,16 +435,30 @@ class FocusCameraControlWidget(QWidget):
         # AF Range
         self._add_spinbox(settings_layout, "Laser AF Range (μm):",
                          'laser_af_range', 1, 1000, 1)
-
-        # Two interfaces checkbox
-        self.has_two_interfaces_cb = QCheckBox("Has Two Interfaces")
-        self.has_two_interfaces_cb.setChecked(
-            self.laserAutofocusController.laser_af_properties.has_two_interfaces)
         
-        # Glass top checkbox
-        self.use_glass_top_cb = QCheckBox("Use Glass Top")
-        self.use_glass_top_cb.setChecked(
-            self.laserAutofocusController.laser_af_properties.use_glass_top)
+        # Y window
+        self._add_spinbox(settings_layout, "Y Window (pixels):",
+                         'y_window', 1, 500, 0)
+
+        # X window
+        self._add_spinbox(settings_layout, "X Window (pixels):",
+                         'x_window', 1, 500, 0)
+
+        # Min peak width
+        self._add_spinbox(settings_layout, "Min Peak Width:",
+                         'min_peak_width', 1, 100, 1)
+
+        # Min peak distance
+        self._add_spinbox(settings_layout, "Min Peak Distance:",
+                         'min_peak_distance', 1, 100, 1)
+
+        # Min peak prominence
+        self._add_spinbox(settings_layout, "Min Peak Prominence:",
+                         'min_peak_prominence', 0.01, 1.0, 2)
+
+        # Spot spacing
+        self._add_spinbox(settings_layout, "Spot Spacing (pixels):",
+                         'spot_spacing', 1, 1000, 1)
 
         # Spot detection mode combo box
         spot_mode_layout = QHBoxLayout()
@@ -462,8 +476,6 @@ class FocusCameraControlWidget(QWidget):
         self.apply_button = QPushButton("Apply and Initialize")
 
         # Add settings controls
-        settings_layout.addWidget(self.has_two_interfaces_cb)
-        settings_layout.addWidget(self.use_glass_top_cb)
         settings_layout.addLayout(spot_mode_layout)
         settings_layout.addWidget(self.apply_button)
         settings_group.setLayout(settings_layout)
@@ -522,10 +534,15 @@ class FocusCameraControlWidget(QWidget):
             'correlation_threshold': self.spinboxes['correlation_threshold'].value(),
             'pixel_to_um_calibration_distance': self.spinboxes['pixel_to_um_calibration_distance'].value(),
             'laser_af_range': self.spinboxes['laser_af_range'].value(),
-            'has_two_interfaces': self.has_two_interfaces_cb.isChecked(),
-            'use_glass_top': self.use_glass_top_cb.isChecked(),
             'spot_detection_mode': self.spot_mode_combo.currentData(),
+            'y_window': int(self.spinboxes['y_window'].value()),
+            'x_window': int(self.spinboxes['x_window'].value()),
+            'min_peak_width': self.spinboxes['min_peak_width'].value(),
+            'min_peak_distance': self.spinboxes['min_peak_distance'].value(),
+            'min_peak_prominence': self.spinboxes['min_peak_prominence'].value(),
+            'spot_spacing': self.spinboxes['spot_spacing'].value(),
             'focus_camera_exposure_time_ms': self.exposure_spinbox.value(),
+            'focus_camera_analog_gain': self.analog_gain_spinbox.value(),
         }
         self.laserAutofocusController.set_laser_af_properties(updates)
         self.laserAutofocusController.initialize_auto()

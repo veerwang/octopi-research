@@ -4634,7 +4634,6 @@ class LaserAutofocusController(QObject):
 
         # Load configurations if provided
         if self.laserAFSettingManager:
-            self.laser_af_settings = self.laserAFSettingManager.get_laser_af_settings()
             self.load_cached_configuration()
 
     def initialize_manual(
@@ -4668,8 +4667,9 @@ class LaserAutofocusController(QObject):
 
     def load_cached_configuration(self):
         """Load configuration from the cache if available."""
+        laser_af_settings = self.laserAFSettingManager.get_laser_af_settings()
         current_objective = self.objectiveStore.current_objective if self.objectiveStore else None
-        if current_objective and current_objective in self.laser_af_settings:
+        if current_objective and current_objective in laser_af_settings:
             config = self.laserAFSettingManager.get_settings_for_objective(current_objective)
 
             # Update camera settings
