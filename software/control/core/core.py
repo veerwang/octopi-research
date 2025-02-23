@@ -3740,6 +3740,7 @@ class ConfigurationManager:
         self.load_profile(profile)
 
     def _get_available_profiles(self) -> List[str]:
+        """Get all available user profile names in the base config path. Use default profile if no other profiles exist."""
         if not self.base_config_path.exists():
             os.makedirs(self.base_config_path)
             os.makedirs(self.base_config_path / "default_profile")
@@ -3748,6 +3749,7 @@ class ConfigurationManager:
         return [d.name for d in self.base_config_path.iterdir() if d.is_dir()]
 
     def _get_available_objectives(self, profile_path: Path) -> List[str]:
+        """Get all available objective names in a profile."""
         return [d.name for d in profile_path.iterdir() if d.is_dir()]
 
     def load_profile(self, profile_name: str) -> None:
