@@ -184,11 +184,11 @@ class SpotDetectionMode(Enum):
     MULTI_SECOND_RIGHT: In multi-spot case, use spot immediately left of rightmost spot
     """
 
-    SINGLE = auto()
-    DUAL_RIGHT = auto()
-    DUAL_LEFT = auto()
-    MULTI_RIGHT = auto()
-    MULTI_SECOND_RIGHT = auto()
+    SINGLE = "single"
+    DUAL_RIGHT = "dual_right"
+    DUAL_LEFT = "dual_left"
+    MULTI_RIGHT = "multi_right"
+    MULTI_SECOND_RIGHT = "multi_second_right"
 
 
 def find_spot_location(

@@ -4603,6 +4603,11 @@ class LaserAutofocusController(QObject):
     SPOT_CROP_SIZE = 100  # Size of region to crop around spot for correlation
     CORRELATION_THRESHOLD = 0.9  # Minimum correlation coefficient for valid alignment
     PIXEL_TO_UM_CALIBRATION_DISTANCE = 6.0  # Distance moved in um during calibration
+    LASER_AF_RANGE = 100  # Maximum reasonable displacement in um
+    HAS_TWO_INTERFACES = False  # e.g. air-glass and glass water, set to false when (1) using oil immersion (2) using 1 mm thick slide (3) using metal coated slide or Si wafer
+    USE_GLASS_TOP = True
+    FOCUS_CAMERA_EXPOSURE_TIME_MS = 2
+    FOCUS_CAMERA_ANALOG_GAIN = 0
 
     image_to_display = Signal(np.ndarray)
     signal_displacement_um = Signal(float)
@@ -4614,7 +4619,8 @@ class LaserAutofocusController(QObject):
         liveController,
         stage: AbstractStage,
         piezo: Optional[PiezoStage] = None,
-        look_for_cache=True,
+        objectiveStore: Optional[ObjectiveStore] = None,
+        laserAFSettingManager: Optional[LaserAFSettingManager] = None
     ):
         QObject.__init__(self)
         self._log = squid.logging.get_logger(__class__.__name__)
@@ -4623,6 +4629,8 @@ class LaserAutofocusController(QObject):
         self.liveController = liveController
         self.stage = stage
         self.piezo = piezo
+        self.objectiveStore = objectiveStore
+        self.laserAFSettingManager = laserAFSettingManager
 
         self.is_initialized = False
         self.x_reference = 0
@@ -4634,28 +4642,12 @@ class LaserAutofocusController(QObject):
 
         self.spot_spacing_pixels = None  # spacing between the spots from the two interfaces (unit: pixel)
 
-        self.look_for_cache = look_for_cache
-
         self.image = None  # for saving the focus camera image for debugging when centroid cannot be found
 
-        if look_for_cache:
-            cache_path = "cache/laser_af_reference_plane.txt"
-            try:
-                with open(cache_path, "r") as cache_file:
-                    for line in cache_file:
-                        value_list = line.split(",")
-                        x_offset = float(value_list[0])
-                        y_offset = float(value_list[1])
-                        width = int(value_list[2])
-                        height = int(value_list[3])
-                        pixel_to_um = float(value_list[4])
-                        x_reference = float(value_list[5])
-                        self.initialize_manual(x_offset, y_offset, width, height, pixel_to_um, x_reference)
-                        break
-            except (FileNotFoundError, ValueError, IndexError) as e:
-                print("Unable to read laser AF state cache, exception below:")
-                print(e)
-                pass
+        # Load configurations if provided
+        if self.laserAFSettingManager:
+            self.laser_af_settings = self.laserAFSettingManager.get_laser_af_settings()
+            self.load_cached_configuration()
 
     def initialize_manual(
         self,
@@ -4665,7 +4657,10 @@ class LaserAutofocusController(QObject):
         height: int,
         pixel_to_um: float,
         x_reference: float,
-        write_to_cache: bool = True,
+        has_two_interfaces: bool = False,
+        use_glass_top: bool = True,
+        focus_camera_exposure_time_ms: int = 2,
+        focus_camera_analog_gain: int = 0,
     ) -> None:
         """Initialize laser autofocus with manual parameters.
 
@@ -4676,25 +4671,62 @@ class LaserAutofocusController(QObject):
             height: Height of ROI in pixels
             pixel_to_um: Conversion factor from pixels to micrometers
             x_reference: Reference X position in pixels (relative to full sensor)
-            write_to_cache: Whether to save parameters to cache file
+            has_two_interfaces: Whether to use two interfaces
+            use_glass_top: Whether to use glass top
+            focus_camera_exposure_time_ms: Exposure time for focus camera
+            focus_camera_analog_gain: Analog gain for focus camera
         """
-        cache_string = ",".join(
-            [str(x_offset), str(y_offset), str(width), str(height), str(pixel_to_um), str(x_reference)]
-        )
-        if write_to_cache:
-            cache_path = Path("cache/laser_af_reference_plane.txt")
-            cache_path.parent.mkdir(parents=True, exist_ok=True)
-            cache_path.write_text(cache_string)
-
-        # x_reference is relative to the full sensor
         self.pixel_to_um = pixel_to_um
-        self.x_offset = int((x_offset // 8) * 8)  # Round to multiple of 8
-        self.y_offset = int((y_offset // 2) * 2)  # Round to multiple of 2
+        self.x_offset = int((x_offset // 8) * 8)
+        self.y_offset = int((y_offset // 2) * 2)
         self.width = int((width // 8) * 8)
         self.height = int((height // 2) * 2)
         self.x_reference = x_reference - self.x_offset  # self.x_reference is relative to the cropped region
+        self.has_two_interfaces = has_two_interfaces
+        self.use_glass_top = use_glass_top
+
         self.camera.set_ROI(self.x_offset, self.y_offset, self.width, self.height)
+
         self.is_initialized = True
+
+        # Update cache if objective store and laser_af_settings is available
+        if self.objectiveStore and self.laserAFSettingManager and self.objectiveStore.current_objective:
+            self.laserAFSettingManager.update_laser_af_settings(self.objectiveStore.current_objective, {
+                'x_offset': x_offset,
+                'y_offset': y_offset,
+                'width': width,
+                'height': height,
+                'pixel_to_um': pixel_to_um,
+                'x_reference': x_reference,
+                'has_two_interfaces': has_two_interfaces,
+                'use_glass_top': use_glass_top,
+                'focus_camera_exposure_time_ms': focus_camera_exposure_time_ms,
+                'focus_camera_analog_gain': focus_camera_analog_gain
+            })
+
+    def load_cached_configuration(self):
+        """Load configuration from the cache if available."""
+        current_objective = self.objectiveStore.current_objective if self.objectiveStore else None
+        if current_objective and current_objective in self.laser_af_settings:
+            config = self.laserAFSettingManager.get_settings_for_objective(current_objective)
+
+            self.focus_camera_exposure_time_ms = config.focus_camera_exposure_time_ms
+            self.focus_camera_analog_gain = config.focus_camera_analog_gain
+            self.camera.set_exposure_time(self.focus_camera_exposure_time_ms)
+            self.camera.set_analog_gain(self.focus_camera_analog_gain)
+
+            self.initialize_manual(
+                x_offset=config.x_offset,
+                y_offset=config.y_offset,
+                width=config.width,
+                height=config.height,
+                pixel_to_um=config.pixel_to_um,
+                x_reference=config.x_reference,
+                has_two_interfaces=config.has_two_interfaces,
+                use_glass_top=config.use_glass_top,
+                focus_camera_exposure_time_ms=config.focus_camera_exposure_time_ms,
+                focus_camera_analog_gain=config.focus_camera_analog_gain,
+            )
 
     def initialize_auto(self) -> bool:
         """Automatically initialize laser autofocus by finding the spot and calibrating.
@@ -4713,8 +4745,8 @@ class LaserAutofocusController(QObject):
         self.camera.set_ROI(0, 0, 3088, 2064)
 
         # update camera settings
-        self.camera.set_exposure_time(FOCUS_CAMERA_EXPOSURE_TIME_MS)
-        self.camera.set_analog_gain(FOCUS_CAMERA_ANALOG_GAIN)
+        self.camera.set_exposure_time(self.focus_camera_exposure_time_ms)
+        self.camera.set_analog_gain(self.focus_camera_analog_gain)
 
         # Find initial spot position
         self.microcontroller.turn_on_AF_laser()
@@ -4738,6 +4770,20 @@ class LaserAutofocusController(QObject):
 
         self.initialize_manual(x_offset, y_offset, LASER_AF_CROP_WIDTH, LASER_AF_CROP_HEIGHT, 1, x)
 
+        if not self._calibrate_pixel_to_um():
+            self._log.error("Failed to calibrate pixel-to-um conversion")
+            return False
+
+        self.laserAFSettingManager.save_configurations(self.objectiveStore.current_objective)
+
+        return True
+
+    def _calibrate_pixel_to_um(self) -> bool:
+        """Calibrate pixel-to-um conversion.
+
+        Returns:
+            bool: True if calibration successful, False otherwise
+        """
         # Calibrate pixel-to-um conversion
         self.microcontroller.turn_on_AF_laser()
         self.microcontroller.wait_till_operation_is_completed()
@@ -4793,7 +4839,23 @@ class LaserAutofocusController(QObject):
 
         # Set reference position
         self.x_reference = x1
+
+        # Update cache
+        self.laserAFSettingManager.update_laser_af_settings(self.objectiveStore.current_objective, {
+            'pixel_to_um': self.pixel_to_um,
+            'x_reference': self.x_reference
+        })
+
         return True
+
+    def set_laser_af_properties(self, has_two_interfaces, use_glass_top, focus_camera_exposure_time_ms, focus_camera_analog_gain):
+        # These properties can be set from gui
+        self.has_two_interfaces = has_two_interfaces
+        self.use_glass_top = use_glass_top
+        self.focus_camera_exposure_time_ms = focus_camera_exposure_time_ms
+        self.focus_camera_analog_gain = focus_camera_analog_gain
+
+        self.is_initialized = False
 
     def measure_displacement(self) -> float:
         """Measure the displacement of the laser spot from the reference position.
@@ -4923,7 +4985,23 @@ class LaserAutofocusController(QObject):
 
         self.signal_displacement_um.emit(0)
         self._log.info(f"Set reference position to ({x:.1f}, {y:.1f})")
+
+        # Update cache
+        self.laserAFSettingManager.update_laser_af_settings(self.objectiveStore.current_objective, {
+            'x_reference': x + self.x_offset
+        })
+        self.laserAFSettingManager.save_configurations(self.objectiveStore.current_objective)
+
         return True
+
+    def on_objective_changed(self) -> None:
+        """Handle objective change event.
+
+        This method is called when the objective changes. It resets the initialization
+        status and loads the cached configuration for the new objective.
+        """
+        self.is_initialized = False
+        self.load_cached_configuration()
 
     def _verify_spot_alignment(self) -> bool:
         """Verify laser spot alignment using cross-correlation with reference image.

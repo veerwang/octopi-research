@@ -3,19 +3,38 @@ from pydantic_xml import BaseXmlModel, element, attr
 from typing import List, Optional
 from pathlib import Path
 import control.utils_channel as utils_channel
+from control._def import (FOCUS_CAMERA_EXPOSURE_TIME_MS, FOCUS_CAMERA_ANALOG_GAIN, LASER_AF_RANGE, 
+                          LASER_AF_AVERAGING_N, LASER_AF_CROP_WIDTH, LASER_AF_CROP_HEIGHT, 
+                          HAS_TWO_INTERFACES, USE_GLASS_TOP, LASER_AF_SPOT_DETECTION_MODE, 
+                          DISPLACEMENT_SUCCESS_WINDOW_UM, SPOT_CROP_SIZE, CORRELATION_THRESHOLD, 
+                          PIXEL_TO_UM_CALIBRATION_DISTANCE)
+from control.utils import SpotDetectionMode
 
 class LaserAFConfig(BaseModel):
     """Pydantic model for laser autofocus configuration"""
     x_offset: float = 0.0
     y_offset: float = 0.0
-    width: int = 1536
-    height: int = 256
-    pixel_to_um: float = 0.4
+    width: int = LASER_AF_CROP_WIDTH
+    height: int = LASER_AF_CROP_HEIGHT
+    pixel_to_um: float = 1
     x_reference: float = 0.0
-    has_two_interfaces: bool = False
-    use_glass_top: bool = True
-    focus_camera_exposure_time_ms: int = 2
-    focus_camera_analog_gain: int = 0
+    laser_af_averaging_n: int = LASER_AF_AVERAGING_N
+    displacement_success_window_um: float = DISPLACEMENT_SUCCESS_WINDOW_UM  # if the displacement is within this window, we consider the move successful
+    spot_crop_size: int = SPOT_CROP_SIZE  # Size of region to crop around spot for correlation
+    correlation_threshold: float = CORRELATION_THRESHOLD  # Minimum correlation coefficient for valid alignment
+    pixel_to_um_calibration_distance: float = PIXEL_TO_UM_CALIBRATION_DISTANCE  # Distance moved in um during calibration
+    laser_af_range: float = LASER_AF_RANGE  # Maximum reasonable displacement in um
+    has_two_interfaces: bool = HAS_TWO_INTERFACES
+    use_glass_top: bool = USE_GLASS_TOP
+    focus_camera_exposure_time_ms: int = FOCUS_CAMERA_EXPOSURE_TIME_MS
+    focus_camera_analog_gain: int = FOCUS_CAMERA_ANALOG_GAIN
+    spot_detection_mode: SpotDetectionMode = LASER_AF_SPOT_DETECTION_MODE
+
+    model_config = {
+        "json_encoders": {
+            SpotDetectionMode: lambda v: v.value
+        }
+    }
 
 class ChannelMode(BaseXmlModel, tag='mode'):
     """Channel configuration model"""
