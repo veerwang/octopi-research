@@ -1,8 +1,22 @@
+from pydantic import BaseModel
 from pydantic_xml import BaseXmlModel, element, attr
 from typing import List, Optional
 from pathlib import Path
 import control.utils as utils
 
+
+class LaserAFConfig(BaseModel):
+    """Pydantic model for laser autofocus configuration"""
+    x_offset: float = 0.0
+    y_offset: float = 0.0
+    width: int = 1536
+    height: int = 256
+    pixel_to_um: float = 0.4
+    x_reference: float = 0.0
+    has_two_interfaces: bool = False
+    use_glass_top: bool = True
+    focus_camera_exposure_time_ms: int = 2
+    focus_camera_analog_gain: int = 0
 
 class ChannelMode(BaseXmlModel, tag='mode'):
     """Channel configuration model"""

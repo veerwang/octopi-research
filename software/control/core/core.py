@@ -40,7 +40,7 @@ from threading import Thread, Lock
 from pathlib import Path
 from datetime import datetime
 from enum import Enum
-from control.utils_config import ChannelConfig, ChannelMode
+from control.utils_config import ChannelConfig, ChannelMode, LaserAFConfig
 import time
 import subprocess
 import shutil
@@ -3679,7 +3679,7 @@ class ChannelConfigurationManager:
 class LaserAFCacheManager:
     """Manages JSON-based laser autofocus configurations."""
     def __init__(self):
-        self.autofocus_configurations = {}  # Dict[str, Dict[str, Any]]
+        self.autofocus_configurations: Dict[str, LaserAFConfig] = {}  # Dict[str, Dict[str, Any]]
         self.current_profile_path = None
 
     def set_profile_path(self, profile_path: Path) -> None:
@@ -3690,7 +3690,8 @@ class LaserAFCacheManager:
         config_file = self.current_profile_path / objective / "laser_af_cache.json"
         if config_file.exists():
             with open(config_file, 'r') as f:
-                self.autofocus_configurations[objective] = json.load(f)
+                config_dict = json.load(f)
+                self.autofocus_configurations[objective] = LaserAFConfig(**config_dict)
 
     def save_configurations(self, objective: str) -> None:
         """Save autofocus configurations for a specific objective."""
@@ -3701,19 +3702,25 @@ class LaserAFCacheManager:
         if not objective_path.exists():
             objective_path.mkdir(parents=True)
         config_file = objective_path / "laser_af_cache.json"
+
+        config_dict = self.autofocus_configurations[objective].model_dump()
         with open(config_file, 'w') as f:
-            json.dump(self.autofocus_configurations[objective], f, indent=4)
+            json.dump(config_dict, f, indent=4)
 
     def get_cache_for_objective(self, objective: str) -> Dict[str, Any]:
-        return self.autofocus_configurations.get(objective, {})
-    
+        if objective not in self.autofocus_configurations:
+            raise ValueError(f"No configuration found for objective {objective}")
+        return self.autofocus_configurations[objective]
+
     def get_laser_af_cache(self) -> Dict[str, Any]:
         return self.autofocus_configurations
     
     def update_laser_af_cache(self, objective: str, updates: Dict[str, Any]) -> None:
         if objective not in self.autofocus_configurations:
-            self.autofocus_configurations[objective] = {}
-        self.autofocus_configurations[objective].update(updates)
+            self.autofocus_configurations[objective] = LaserAFConfig(**updates)
+        else:
+            config = self.autofocus_configurations[objective]
+            self.autofocus_configurations[objective] = config.model_copy(update=updates)
 
 class ConfigurationManager(QObject):
     """Main configuration manager that coordinates channel and autofocus configurations."""
@@ -4638,22 +4645,22 @@ class LaserAutofocusController(QObject):
         if current_objective and current_objective in self.laser_af_cache:
             config = self.laserAFCacheManager.get_cache_for_objective(current_objective)
 
-            self.focus_camera_exposure_time_ms = config.get('focus_camera_exposure_time_ms', 2),
-            self.focus_camera_analog_gain = config.get('focus_camera_analog_gain', 0)
+            self.focus_camera_exposure_time_ms = config.focus_camera_exposure_time_ms
+            self.focus_camera_analog_gain = config.focus_camera_analog_gain
             self.camera.set_exposure_time(self.focus_camera_exposure_time_ms)
             self.camera.set_analog_gain(self.focus_camera_analog_gain)
 
             self.initialize_manual(
-                x_offset=config.get('x_offset', 0),
-                y_offset=config.get('y_offset', 0),
-                width=config.get('width', LASER_AF_CROP_WIDTH),
-                height=config.get('height', LASER_AF_CROP_HEIGHT),
-                pixel_to_um=config.get('pixel_to_um', 1.0),
-                x_reference=config.get('x_reference', 0),
-                has_two_interfaces=config.get('has_two_interfaces', False),
-                use_glass_top=config.get('use_glass_top', True),
-                focus_camera_exposure_time_ms=config.get('focus_camera_exposure_time_ms', 2),
-                focus_camera_analog_gain=config.get('focus_camera_analog_gain', 0),
+                x_offset=config.x_offset,
+                y_offset=config.y_offset,
+                width=config.width,
+                height=config.height,
+                pixel_to_um=config.pixel_to_um,
+                x_reference=config.x_reference,
+                has_two_interfaces=config.has_two_interfaces,
+                use_glass_top=config.use_glass_top,
+                focus_camera_exposure_time_ms=config.focus_camera_exposure_time_ms,
+                focus_camera_analog_gain=config.focus_camera_analog_gain,
             )
 
     def initialize_auto(self):
