@@ -23,8 +23,12 @@ from control.widgets import ConfigEditorBackwardsCompatible
 from control._def import CACHED_CONFIG_FILE_PATH
 from control._def import USE_TERMINAL_CONSOLE
 from control._def import SUPPORT_LASER_AUTOFOCUS
+import control.utils
+
+
 if USE_TERMINAL_CONSOLE:
     from control.console import ConsoleThread
+
 
 def show_config(cfp, configpath, main_gui):
     config_widget = ConfigEditorBackwardsCompatible(cfp, configpath, main_gui)
@@ -53,6 +57,9 @@ if __name__ == "__main__":
     if not squid.logging.add_file_logging(f"{squid.logging.get_default_log_directory()}/main_hcs.log"):
         log.error("Couldn't setup logging to file!")
         sys.exit(1)
+
+    log.info(f"Squid Repository State: {
+.get_squid_repo_state_description()}")
 
     legacy_config = False
     cf_editor_parser = ConfigParser()
