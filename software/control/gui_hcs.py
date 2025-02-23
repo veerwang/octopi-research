@@ -541,11 +541,12 @@ class HighContentScreeningGui(QMainWindow):
                 include_camera_temperature_setting=False,
                 include_camera_auto_wb_setting=True,
             )
+        self.profileWidget = widgets.ProfileWidget(self.configurationManager)
         self.liveControlWidget = widgets.LiveControlWidget(
             self.streamHandler,
             self.liveController,
             self.objectiveStore,
-            self.configurationManager,
+            self.channelConfigurationManager,
             show_display_options=True,
             show_autolevel=True,
             autolevel=True,
@@ -778,6 +779,7 @@ class HighContentScreeningGui(QMainWindow):
         if USE_NAPARI_FOR_LIVE_CONTROL and not self.live_only_mode:
             layout.addWidget(self.navigationWidget)
         else:
+            layout.addWidget(self.profileWidget)
             layout.addWidget(self.liveControlWidget)
 
         layout.addWidget(self.cameraTabWidget)
@@ -880,6 +882,8 @@ class HighContentScreeningGui(QMainWindow):
                 self.wellplateMultiPointWidget.signal_stitcher_z_levels.connect(
                     self.stitcherWidget.updateRegistrationZLevels
                 )
+
+        self.profileWidget.signal_profile_changed.connect(self.liveControlWidget.refresh_mode_list)
 
         self.liveControlWidget.signal_newExposureTime.connect(self.cameraSettingWidget.set_exposure_time)
         self.liveControlWidget.signal_newAnalogGain.connect(self.cameraSettingWidget.set_analog_gain)

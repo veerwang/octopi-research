@@ -946,6 +946,78 @@ class CameraSettingsWidget(QFrame):
             pass
 
 
+class ProfileWidget(QFrame):
+
+    signal_profile_changed = Signal()
+
+    def __init__(
+        self,
+        configurationManager,
+        *args,
+        **kwargs
+    ):
+        super().__init__(*args, **kwargs)
+        self.configurationManager = configurationManager
+        
+        self.setFrameStyle(QFrame.Panel | QFrame.Raised)
+        self.setup_ui()
+        
+    def setup_ui(self):
+        # Create widgets
+        self.dropdown_profiles = QComboBox()
+        self.dropdown_profiles.addItems(self.configurationManager.available_profiles)
+        self.dropdown_profiles.setCurrentText(self.configurationManager.current_profile)
+        sizePolicy = QSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        self.dropdown_profiles.setSizePolicy(sizePolicy)
+
+        self.btn_loadProfile = QPushButton("Load")
+        self.btn_newProfile = QPushButton("Save As")
+
+        # Connect signals
+        self.btn_loadProfile.clicked.connect(self.load_profile)
+        self.btn_newProfile.clicked.connect(self.create_new_profile)
+
+        # Layout
+        layout = QHBoxLayout()
+        layout.addWidget(QLabel("Configuration Profile"))
+        layout.addWidget(self.dropdown_profiles, 2)
+        layout.addWidget(self.btn_loadProfile)
+        layout.addWidget(self.btn_newProfile)
+        
+        self.setLayout(layout)
+
+    def load_profile(self):
+        """Load the selected profile."""
+        profile_name = self.dropdown_profiles.currentText()
+        # Load the profile
+        self.configurationManager.load_profile(profile_name)
+        self.signal_profile_changed.emit()
+
+    def create_new_profile(self):
+        """Create a new profile with current configurations."""
+        dialog = QInputDialog()
+        profile_name, ok = dialog.getText(
+            self, 
+            "New Profile",
+            "Enter new profile name:",
+            QLineEdit.Normal,
+            ""
+        )
+
+        if ok and profile_name:
+            try:
+                self.configurationManager.create_new_profile(profile_name)
+                # Update profile dropdown
+                self.dropdown_profiles.addItem(profile_name)
+                self.dropdown_profiles.setCurrentText(profile_name)
+            except ValueError as e:
+                QMessageBox.warning(self, "Error", str(e))
+
+    def get_current_profile(self):
+        """Return the currently selected profile name."""
+        return self.dropdown_profiles.currentText()
+
+
 class LiveControlWidget(QFrame):
 
     signal_newExposureTime = Signal(float)
@@ -959,7 +1031,7 @@ class LiveControlWidget(QFrame):
         streamHandler,
         liveController,
         objectiveStore,
-        configurationManager,
+        channelConfigurationManager,
         show_trigger_options=True,
         show_display_options=False,
         show_autolevel=False,
@@ -973,8 +1045,7 @@ class LiveControlWidget(QFrame):
         self.liveController = liveController
         self.streamHandler = streamHandler
         self.objectiveStore = objectiveStore
-        self.configurationManager = configurationManager
-        self.channelConfigurationManager = self.configurationManager.channel_manager
+        self.channelConfigurationManager = channelConfigurationManager
         self.fps_trigger = 10
         self.fps_display = 10
         self.liveController.set_trigger_fps(self.fps_trigger)
@@ -982,31 +1053,22 @@ class LiveControlWidget(QFrame):
 
         self.triggerMode = TriggerMode.SOFTWARE
         self.currentConfiguration = self.channelConfigurationManager.get_channel_configurations_for_objective(self.objectiveStore.current_objective)[0]
+
         self.add_components(show_trigger_options, show_display_options, show_autolevel, autolevel, stretch)
-        self.setFrameStyle(QFrame.NoFrame)
+        self.setFrameStyle(QFrame.Panel | QFrame.Raised)
         self.update_microscope_mode_by_name(self.currentConfiguration.name)
 
         self.is_switching_mode = False  # flag used to prevent from settings being set by twice - from both mode change slot and value change slot; another way is to use blockSignals(True)
 
     def add_components(self, show_trigger_options, show_display_options, show_autolevel, autolevel, stretch):
-        # line 0: acquisition configuration profile management
-        self.dropdown_profiles = QComboBox()
-        self.dropdown_profiles.addItems(self.configurationManager.available_profiles)
-        self.dropdown_profiles.setCurrentText(self.configurationManager.current_profile)
-        sizePolicy = QSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-        self.dropdown_profiles.setSizePolicy(sizePolicy)
-
-        self.btn_loadProfile = QPushButton("Load")
-        self.btn_newProfile = QPushButton("Save As")
-
-        # line 1: trigger mode
+        # line 0: trigger mode
         self.triggerMode = None
         self.dropdown_triggerManu = QComboBox()
         self.dropdown_triggerManu.addItems([TriggerMode.SOFTWARE, TriggerMode.HARDWARE, TriggerMode.CONTINUOUS])
         sizePolicy = QSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         self.dropdown_triggerManu.setSizePolicy(sizePolicy)
 
-        # line 2: fps
+        # line 1: fps
         self.entry_triggerFPS = QDoubleSpinBox()
         self.entry_triggerFPS.setMinimum(0.02)
         self.entry_triggerFPS.setMaximum(1000)
@@ -1014,7 +1076,7 @@ class LiveControlWidget(QFrame):
         self.entry_triggerFPS.setValue(self.fps_trigger)
         self.entry_triggerFPS.setDecimals(0)
 
-        # line 3: choose microscope mode / toggle live mode
+        # line 2: choose microscope mode / toggle live mode
         self.dropdown_modeSelection = QComboBox()
         for microscope_configuration in self.channelConfigurationManager.get_channel_configurations_for_objective(self.objectiveStore.current_objective):
             self.dropdown_modeSelection.addItems([microscope_configuration.name])
@@ -1028,7 +1090,7 @@ class LiveControlWidget(QFrame):
         self.btn_live.setStyleSheet("background-color: #C2C2FF")
         self.btn_live.setSizePolicy(sizePolicy)
 
-        # line 4: exposure time and analog gain associated with the current mode
+        # line 3: exposure time and analog gain associated with the current mode
         self.entry_exposureTime = QDoubleSpinBox()
         self.entry_exposureTime.setMinimum(self.liveController.camera.EXPOSURE_TIME_MS_MIN)
         self.entry_exposureTime.setMaximum(self.liveController.camera.EXPOSURE_TIME_MS_MAX)
@@ -1060,7 +1122,7 @@ class LiveControlWidget(QFrame):
         self.entry_illuminationIntensity.setSuffix("%")
         self.entry_illuminationIntensity.setValue(100)
 
-        # line 5: display fps and resolution scaling
+        # line 4: display fps and resolution scaling
         self.entry_displayFPS = QDoubleSpinBox()
         self.entry_displayFPS.setMinimum(1)
         self.entry_displayFPS.setMaximum(240)
@@ -1101,9 +1163,6 @@ class LiveControlWidget(QFrame):
         self.btn_autolevel.setFixedWidth(max_width)
 
         # connections
-        self.btn_loadProfile.clicked.connect(self.load_profile)
-        self.btn_newProfile.clicked.connect(self.create_new_profile)
-
         self.entry_triggerFPS.valueChanged.connect(self.liveController.set_trigger_fps)
         self.entry_displayFPS.valueChanged.connect(self.streamHandler.set_display_fps)
         self.slider_resolutionScaling.valueChanged.connect(self.streamHandler.set_display_resolution_scaling)
@@ -1121,14 +1180,6 @@ class LiveControlWidget(QFrame):
         self.btn_autolevel.toggled.connect(self.signal_autoLevelSetting.emit)
 
         # layout
-        # Profile management layout
-        grid_line_profile = QHBoxLayout()
-        grid_line_profile.addWidget(QLabel("Configuration Profile"))
-        grid_line_profile.addWidget(self.dropdown_profiles, 2)
-        grid_line_profile.addWidget(self.btn_loadProfile)
-
-        grid_line_profile.addWidget(self.btn_newProfile)
-
         grid_line1 = QHBoxLayout()
         grid_line1.addWidget(QLabel("Live Configuration"))
         grid_line1.addWidget(self.dropdown_modeSelection, 2)
@@ -1169,20 +1220,6 @@ class LiveControlWidget(QFrame):
             else:
                 grid_line05.addWidget(self.label_resolutionScaling)
 
-         # Create separate frames for each section
-        self.profile_frame = QFrame()
-        self.profile_frame.setFrameStyle(QFrame.Panel | QFrame.Raised)
-        self.control_frame = QFrame()
-        self.control_frame.setFrameStyle(QFrame.Panel | QFrame.Raised)
-
-        # First section layout
-        self.grid0 = QVBoxLayout()
-        self.grid0.addLayout(grid_line_profile)
-        if not stretch:
-            self.grid0.addStretch()
-        self.profile_frame.setLayout(self.grid0)
-
-        # Second section layout
         self.grid = QVBoxLayout()
         if show_trigger_options:
             self.grid.addLayout(grid_line0)
@@ -1193,47 +1230,7 @@ class LiveControlWidget(QFrame):
             self.grid.addLayout(grid_line05)
         if not stretch:
             self.grid.addStretch()
-        self.control_frame.setLayout(self.grid)
-
-        # Main layout to hold both frames
-        main_layout = QVBoxLayout()
-        main_layout.setContentsMargins(0, 0, 0, 0) 
-        main_layout.addWidget(self.profile_frame)
-        main_layout.addWidget(self.control_frame)
-        self.setLayout(main_layout)
-
-    def load_profile(self):
-        """Load the selected profile."""
-        profile_name = self.dropdown_profiles.currentText()
-        # Load the profile
-        self.configurationManager.load_profile(profile_name)
-        # Update the mode selection dropdown
-        self.dropdown_modeSelection.clear()
-        for microscope_configuration in self.channelConfigurationManager.get_channel_configurations_for_objective(self.objectiveStore.current_objective):
-            self.dropdown_modeSelection.addItem(microscope_configuration.name)
-        # Update to first configuration
-        if self.dropdown_modeSelection.count() > 0:
-            self.update_microscope_mode_by_name(self.dropdown_modeSelection.currentText())
-
-    def create_new_profile(self):
-        """Create a new profile with current configurations."""
-        dialog = QInputDialog()
-        profile_name, ok = dialog.getText(
-            self, 
-            "New Profile",
-            "Enter new profile name:",
-            QLineEdit.Normal,
-            ""
-        )
-
-        if ok and profile_name:
-            try:
-                self.configurationManager.create_new_profile(profile_name)
-                # Update profile dropdown
-                self.dropdown_profiles.addItem(profile_name)
-                self.dropdown_profiles.setCurrentText(profile_name)
-            except ValueError as e:
-                QMessageBox.warning(self, "Error", str(e))
+        self.setLayout(self.grid)
 
     def toggle_live(self, pressed):
         if pressed:
@@ -1250,6 +1247,15 @@ class LiveControlWidget(QFrame):
     def update_camera_settings(self):
         self.signal_newAnalogGain.emit(self.entry_analogGain.value())
         self.signal_newExposureTime.emit(self.entry_exposureTime.value())
+
+    def refresh_mode_list(self):
+        # Update the mode selection dropdown
+        self.dropdown_modeSelection.clear()
+        for microscope_configuration in self.channelConfigurationManager.get_channel_configurations_for_objective(self.objectiveStore.current_objective):
+            self.dropdown_modeSelection.addItem(microscope_configuration.name)
+        # Update to first configuration
+        if self.dropdown_modeSelection.count() > 0:
+            self.update_microscope_mode_by_name(self.dropdown_modeSelection.currentText())
 
     def update_microscope_mode_by_name(self, current_microscope_mode_name):
         self.is_switching_mode = True
