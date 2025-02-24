@@ -4683,7 +4683,6 @@ class LaserAutofocusController(QObject):
         1. Finds the laser spot on full sensor
         2. Sets up ROI around the spot
         3. Calibrates pixel-to-um conversion using two z positions
-        4. Sets initial reference position
 
         Returns:
             bool: True if initialization successful, False if any step fails
@@ -4711,12 +4710,16 @@ class LaserAutofocusController(QObject):
         self.microcontroller.turn_off_AF_laser()
         self.microcontroller.wait_till_operation_is_completed()
 
+        # Clear reference
+        self.has_reference = False
+        self.reference_crop = None
+
         # Set up ROI around spot
         config = self.laser_af_properties.model_copy(
             update={
                 "x_offset": x - self.laser_af_properties.width / 2,
                 "y_offset": y - self.laser_af_properties.height / 2,
-                "x_reference": x,
+                "has_reference": False,
             }
         )
         self._log.info(f"Laser spot location on the full sensor is ({int(x)}, {int(y)})")
