@@ -5,6 +5,7 @@ from typing import Optional
 import squid.logging
 from control.core.core import TrackingController
 from control.microcontroller import Microcontroller
+from control.piezo import PiezoStage
 import control.utils as utils
 from squid.abc import AbstractStage
 
