@@ -300,9 +300,7 @@ class HighContentScreeningGui(QMainWindow):
                 control_illumination=False,
                 for_displacement_measurement=True,
             )
-            self.imageDisplayWindow_focus = core.ImageDisplayWindow(
-                show_LUT=False, autoLevels=False
-            )
+            self.imageDisplayWindow_focus = core.ImageDisplayWindow(show_LUT=False, autoLevels=False)
             self.displacementMeasurementController = core_displacement_measurement.DisplacementMeasurementController()
             self.laserAutofocusController = core.LaserAutofocusController(
                 self.microcontroller,
@@ -649,9 +647,7 @@ class HighContentScreeningGui(QMainWindow):
         self.imageDisplayTabs = QTabWidget()
         if self.live_only_mode:
             if ENABLE_TRACKING:
-                self.imageDisplayWindow = core.ImageDisplayWindow(
-                    self.liveController, self.contrastManager
-                )
+                self.imageDisplayWindow = core.ImageDisplayWindow(self.liveController, self.contrastManager)
                 self.imageDisplayWindow.show_ROI_selector()
             else:
                 self.imageDisplayWindow = core.ImageDisplayWindow(
@@ -715,9 +711,7 @@ class HighContentScreeningGui(QMainWindow):
             self.imageDisplayTabs.addTab(self.napariLiveWidget, "Live View")
         else:
             if ENABLE_TRACKING:
-                self.imageDisplayWindow = core.ImageDisplayWindow(
-                    self.liveController, self.contrastManager
-                )
+                self.imageDisplayWindow = core.ImageDisplayWindow(self.liveController, self.contrastManager)
                 self.imageDisplayWindow.show_ROI_selector()
             else:
                 self.imageDisplayWindow = core.ImageDisplayWindow(
@@ -1011,9 +1005,7 @@ class HighContentScreeningGui(QMainWindow):
             self.laserAutofocusSettingWidget.signal_apply_settings.connect(
                 self.laserAutofocusControlWidget.update_init_state
             )
-            self.laserAutofocusSettingWidget.signal_laser_spot_location.connect(
-                self.imageDisplayWindow_focus.mark_spot
-            )
+            self.laserAutofocusSettingWidget.signal_laser_spot_location.connect(self.imageDisplayWindow_focus.mark_spot)
             self.laserAutofocusSettingWidget.update_exposure_time(
                 self.laserAutofocusSettingWidget.exposure_spinbox.value()
             )

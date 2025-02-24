@@ -3179,18 +3179,10 @@ class ImageDisplayWindow(QMainWindow):
         marked_image = cv2.cvtColor(image, cv2.COLOR_GRAY2BGR)
 
         # Draw horizontal line
-        cv2.line(marked_image, 
-                 (x - crosshair_size, y),
-                 (x + crosshair_size, y),
-                 crosshair_color,
-                 crosshair_thickness)
+        cv2.line(marked_image, (x - crosshair_size, y), (x + crosshair_size, y), crosshair_color, crosshair_thickness)
 
-        # Draw vertical line  
-        cv2.line(marked_image,
-                 (x, y - crosshair_size),
-                 (x, y + crosshair_size),
-                 crosshair_color,
-                 crosshair_thickness)
+        # Draw vertical line
+        cv2.line(marked_image, (x, y - crosshair_size), (x, y + crosshair_size), crosshair_color, crosshair_thickness)
 
         self.display_image(marked_image)
 
@@ -5105,11 +5097,15 @@ class LaserAutofocusController(QObject):
                     "peak_width": self.laser_af_properties.min_peak_width,
                     "peak_distance": self.laser_af_properties.min_peak_distance,
                     "peak_prominence": self.laser_af_properties.min_peak_prominence,
-                    "spot_spacing": self.laser_af_properties.spot_spacing
+                    "spot_spacing": self.laser_af_properties.spot_spacing,
                 }
-                result = utils.find_spot_location(image, mode=self.laser_af_properties.spot_detection_mode, params=spot_detection_params)
+                result = utils.find_spot_location(
+                    image, mode=self.laser_af_properties.spot_detection_mode, params=spot_detection_params
+                )
                 if result is None:
-                    self._log.warning(f"No spot detected in frame {i+1}/{self.laser_af_properties.laser_af_averaging_n}")
+                    self._log.warning(
+                        f"No spot detected in frame {i+1}/{self.laser_af_properties.laser_af_averaging_n}"
+                    )
                     continue
 
                 x, y = result
@@ -5118,7 +5114,9 @@ class LaserAutofocusController(QObject):
                 successful_detections += 1
 
             except Exception as e:
-                self._log.error(f"Error processing frame {i+1}/{self.laser_af_properties.laser_af_averaging_n}: {str(e)}")
+                self._log.error(
+                    f"Error processing frame {i+1}/{self.laser_af_properties.laser_af_averaging_n}: {str(e)}"
+                )
                 continue
 
         # optionally display the image
