@@ -622,6 +622,17 @@ class LaserAutofocusSettingWidget(QWidget):
                 # Create and add new error label
                 self.spot_detection_error_label = QLabel("Spot detection failed!")
                 self.layout().addWidget(self.spot_detection_error_label)
+    
+    def show_cross_correlation_result(self, value):
+        """Show cross-correlation value from validating laser af images"""
+        # Clear previous correlation label if it exists
+        if hasattr(self, "correlation_label"):
+            self.correlation_label.deleteLater()
+
+        # Create and add new correlation label
+        self.correlation_label = QLabel()
+        self.correlation_label.setText(f"Cross-correlation: {value:.3f}")
+        self.layout().addWidget(self.correlation_label)
 
 
 class SpinningDiskConfocalWidget(QWidget):

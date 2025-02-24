@@ -4632,6 +4632,7 @@ class LaserAutofocusController(QObject):
 
     image_to_display = Signal(np.ndarray)
     signal_displacement_um = Signal(float)
+    signal_cross_correlation = Signal(float)
 
     def __init__(
         self,
@@ -4897,7 +4898,9 @@ class LaserAutofocusController(QObject):
         self._move_z(um_to_move)
 
         # Verify using cross-correlation that spot is in same location as reference
-        if not self._verify_spot_alignment():
+        cc_result, correlation = self._verify_spot_alignment()
+        self.signal_cross_correlation.emit(correlation)
+        if not cc_result:
             self._log.warning("Cross correlation check failed - spots not well aligned")
             # move back to the current position
             self._move_z(-um_to_move)
@@ -4989,7 +4992,7 @@ class LaserAutofocusController(QObject):
         self.is_initialized = False
         self.load_cached_configuration()
 
-    def _verify_spot_alignment(self) -> bool:
+    def _verify_spot_alignment(self) -> Tuple[bool, float]:
         """Verify laser spot alignment using cross-correlation with reference image.
 
         Captures current laser spot image and compares it with the reference image
@@ -5040,7 +5043,7 @@ class LaserAutofocusController(QObject):
             self._log.warning("Cross correlation check failed - spots not well aligned")
             return False
 
-        return True
+        return True, correlation
 
     def _get_laser_spot_centroid(self) -> Optional[Tuple[float, float]]:
         """Get the centroid location of the laser spot.
