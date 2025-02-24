@@ -351,6 +351,7 @@ class LaserAutofocusSettingWidget(QWidget):
     signal_newExposureTime = Signal(float)
     signal_newAnalogGain = Signal(float)
     signal_apply_settings = Signal()
+    signal_laser_spot_location = Signal(np.ndarray, float, float)
 
     def __init__(self, streamHandler, liveController, laserAutofocusController, stretch=True):
         super().__init__()
@@ -418,45 +419,34 @@ class LaserAutofocusSettingWidget(QWidget):
         # Create spinboxes for numerical parameters
         self.spinboxes = {}
 
-        # Averaging
+        # Add non-spot detection related spinboxes
         self._add_spinbox(settings_layout, "Laser AF Averaging N:", "laser_af_averaging_n", 1, 100, 0)
-
-        # Displacement window
         self._add_spinbox(
             settings_layout, "Displacement Success Window (μm):", "displacement_success_window_um", 0.1, 10.0, 2
         )
-
-        # Spot crop size
         self._add_spinbox(settings_layout, "Spot Crop Size (pixels):", "spot_crop_size", 1, 500, 0)
-
-        # Correlation threshold
         self._add_spinbox(settings_layout, "Correlation Threshold:", "correlation_threshold", 0.1, 1.0, 2)
-
-        # Calibration distance
         self._add_spinbox(
             settings_layout, "Calibration Distance (μm):", "pixel_to_um_calibration_distance", 0.1, 20.0, 2
         )
-
-        # AF Range
         self._add_spinbox(settings_layout, "Laser AF Range (μm):", "laser_af_range", 1, 1000, 1)
 
-        # Y window
-        self._add_spinbox(settings_layout, "Y Window (pixels):", "y_window", 1, 500, 0)
-
-        # X window
-        self._add_spinbox(settings_layout, "X Window (pixels):", "x_window", 1, 500, 0)
-
-        # Min peak width
-        self._add_spinbox(settings_layout, "Min Peak Width:", "min_peak_width", 1, 100, 1)
-
-        # Min peak distance
-        self._add_spinbox(settings_layout, "Min Peak Distance:", "min_peak_distance", 1, 100, 1)
-
-        # Min peak prominence
-        self._add_spinbox(settings_layout, "Min Peak Prominence:", "min_peak_prominence", 0.01, 1.0, 2)
-
-        # Spot spacing
-        self._add_spinbox(settings_layout, "Spot Spacing (pixels):", "spot_spacing", 1, 1000, 1)
+        # Create spot detection group
+        spot_detection_group = QFrame()
+        spot_detection_group.setFrameStyle(QFrame.StyledPanel | QFrame.Plain)
+        spot_detection_group.setAutoFillBackground(True)
+        palette = spot_detection_group.palette()
+        palette.setColor(spot_detection_group.backgroundRole(), QColor("#ffffff"))
+        spot_detection_group.setPalette(palette)
+        spot_detection_layout = QVBoxLayout()
+        
+        # Add spot detection related spinboxes
+        self._add_spinbox(spot_detection_layout, "Y Window (pixels):", "y_window", 1, 500, 0)
+        self._add_spinbox(spot_detection_layout, "X Window (pixels):", "x_window", 1, 500, 0)
+        self._add_spinbox(spot_detection_layout, "Min Peak Width:", "min_peak_width", 1, 100, 1)
+        self._add_spinbox(spot_detection_layout, "Min Peak Distance:", "min_peak_distance", 1, 100, 1)
+        self._add_spinbox(spot_detection_layout, "Min Peak Prominence:", "min_peak_prominence", 0.01, 1.0, 2)
+        self._add_spinbox(spot_detection_layout, "Spot Spacing (pixels):", "spot_spacing", 1, 1000, 1)
 
         # Spot detection mode combo box
         spot_mode_layout = QHBoxLayout()
@@ -469,12 +459,18 @@ class LaserAutofocusSettingWidget(QWidget):
         )
         self.spot_mode_combo.setCurrentIndex(current_index)
         spot_mode_layout.addWidget(self.spot_mode_combo)
+        spot_detection_layout.addLayout(spot_mode_layout)
+
+        # Add Run Spot Detection button
+        self.run_spot_detection_button = QPushButton("Run Spot Detection")
+        self.run_spot_detection_button.setEnabled(False)  # Disabled by default
+        spot_detection_layout.addWidget(self.run_spot_detection_button)
+
+        spot_detection_group.setLayout(spot_detection_layout)
+        settings_layout.addWidget(spot_detection_group)
 
         # Apply button
         self.apply_button = QPushButton("Apply and Initialize")
-
-        # Add settings controls
-        settings_layout.addLayout(spot_mode_layout)
         settings_layout.addWidget(self.apply_button)
         settings_group.setLayout(settings_layout)
 
@@ -491,6 +487,7 @@ class LaserAutofocusSettingWidget(QWidget):
         self.exposure_spinbox.valueChanged.connect(self.update_exposure_time)
         self.analog_gain_spinbox.valueChanged.connect(self.update_analog_gain)
         self.apply_button.clicked.connect(self.apply_settings)
+        self.run_spot_detection_button.clicked.connect(self.run_spot_detection)
 
     def _add_spinbox(
         self, layout, label: str, property_name: str, min_val: float, max_val: float, decimals: int
@@ -516,9 +513,11 @@ class LaserAutofocusSettingWidget(QWidget):
         if pressed:
             self.liveController.start_live()
             self.btn_live.setText("Stop Live")
+            self.run_spot_detection_button.setEnabled(False)
         else:
             self.liveController.stop_live()
             self.btn_live.setText("Start Live")
+            self.run_spot_detection_button.setEnabled(True)
 
     def update_exposure_time(self, value):
         self.signal_newExposureTime.emit(value)
@@ -564,9 +563,8 @@ class LaserAutofocusSettingWidget(QWidget):
         self.laserAutofocusController.set_laser_af_properties(updates)
         self.laserAutofocusController.initialize_auto()
         self.signal_apply_settings.emit()
-        self.update_calibration_label()
 
-    def update_calibration_label(self):
+        # Show calibration result
         # Clear previous calibration label if it exists
         if hasattr(self, "calibration_label"):
             self.calibration_label.deleteLater()
@@ -577,6 +575,39 @@ class LaserAutofocusSettingWidget(QWidget):
             f"Calibration Result: {self.laserAutofocusController.laser_af_properties.pixel_to_um:.3f} pixels/um"
         )
         self.layout().addWidget(self.calibration_label)
+
+    def run_spot_detection(self):
+        """Run spot detection with current settings and emit results"""
+        params = {
+            'y_window': int(self.spinboxes['y_window'].value()),
+            'x_window': int(self.spinboxes['x_window'].value()),
+            'min_peak_width': self.spinboxes['min_peak_width'].value(),
+            'min_peak_distance': self.spinboxes['min_peak_distance'].value(),
+            'min_peak_prominence': self.spinboxes['min_peak_prominence'].value(),
+            'spot_spacing': self.spinboxes['spot_spacing'].value()
+        }
+        mode = self.spot_mode_combo.currentData()
+        
+        # Get current frame from live controller
+        frame = self.liveController.camera.current_frame
+        if frame is not None:
+            result = utils.find_spot_location(
+                frame, 
+                mode=mode,
+                params=params
+            )
+            if result is not None:
+                x, y = result
+                self.signal_laser_spot_location.emit(frame, x, y)
+            else:
+                # Show error message
+                # Clear previous error label if it exists
+                if hasattr(self, "spot_detection_error_label"):
+                    self.spot_detection_error_label.deleteLater()
+
+                # Create and add new error label
+                self.spot_detection_error_label = QLabel("Spot detection failed!")
+                self.layout().addWidget(self.spot_detection_error_label)
 
 
 class SpinningDiskConfocalWidget(QWidget):

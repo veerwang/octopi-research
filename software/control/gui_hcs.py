@@ -1007,7 +1007,9 @@ class HighContentScreeningGui(QMainWindow):
             self.laserAutofocusSettingWidget.signal_apply_settings.connect(
                 self.laserAutofocusControlWidget.update_init_state
             )
-
+            self.laserAutofocusSettingWidget.signal_laser_spot_location.connect(
+                self.imageDisplayWindow_focus.mark_spot
+            )
             self.laserAutofocusSettingWidget.update_exposure_time(
                 self.laserAutofocusSettingWidget.exposure_spinbox.value()
             )
