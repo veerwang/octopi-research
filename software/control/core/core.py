@@ -1714,48 +1714,25 @@ class MultiPointWorker(QObject):
                     self.autofocusController.autofocus()
                     self.autofocusController.wait_till_autofocus_has_completed()
         else:
-            # initialize laser autofocus if it has not been done
-            if not self.microscope.laserAutofocusController.is_initialized:
-                self._log.info("init reflection af")
-                # initialize the reflection AF
-                self.microscope.laserAutofocusController.initialize_auto()
-                # do contrast AF for the first FOV (if contrast AF box is checked)
-                if self.do_autofocus and ((self.NZ == 1) or self.z_stacking_config == "FROM CENTER"):
-                    configuration_name_AF = MULTIPOINT_AUTOFOCUS_CHANNEL
-                    config_AF = next(
-                        (
-                            config
-                            for config in self.channelConfigurationManager.get_channel_configurations_for_objective(
-                                self.objectiveStore.current_objective
-                            )
-                            if config.name == configuration_name_AF
-                        )
-                    )
-                    self.signal_current_configuration.emit(config_AF)
-                    self.autofocusController.autofocus()
-                    self.autofocusController.wait_till_autofocus_has_completed()
-                # set the current plane as reference
-                self.microscope.laserAutofocusController.set_reference()
-            else:
-                self._log.info("laser reflection af")
-                try:
-                    if HAS_OBJECTIVE_PIEZO:  # when piezo is available, one move is sufficient as piezo is closed loop
-                        self.microscope.laserAutofocusController.move_to_target(0)
-                    else:
-                        # TODO(imo): We used to have a case here to try to fix backlash by double commanding a position.  Now, just double command it whether or not we are using PID since we don't expose that now.  But in the future, backlash handing shouldb e done at a lower level (and we can remove the double here)
-                        self.microscope.laserAutofocusController.move_to_target(0)
-                        self.microscope.laserAutofocusController.move_to_target(
-                            0
-                        )  # for stepper in open loop mode, repeat the operation to counter backlash.  It's harmless if any other case.
-                except Exception as e:
-                    file_ID = f"{region_id}_focus_camera.bmp"
-                    saving_path = os.path.join(self.base_path, self.experiment_ID, str(self.time_point), file_ID)
-                    iio.imwrite(saving_path, self.microscope.laserAutofocusController.image)
-                    self._log.error(
-                        "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! laser AF failed !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!",
-                        exc_info=e,
-                    )
-                    return False
+            self._log.info("laser reflection af")
+            try:
+                if HAS_OBJECTIVE_PIEZO:  # when piezo is available, one move is sufficient as piezo is closed loop
+                    self.microscope.laserAutofocusController.move_to_target(0)
+                else:
+                    # TODO(imo): We used to have a case here to try to fix backlash by double commanding a position.  Now, just double command it whether or not we are using PID since we don't expose that now.  But in the future, backlash handing shouldb e done at a lower level (and we can remove the double here)
+                    self.microscope.laserAutofocusController.move_to_target(0)
+                    self.microscope.laserAutofocusController.move_to_target(
+                        0
+                    )  # for stepper in open loop mode, repeat the operation to counter backlash.  It's harmless if any other case.
+            except Exception as e:
+                file_ID = f"{region_id}_focus_camera.bmp"
+                saving_path = os.path.join(self.base_path, self.experiment_ID, str(self.time_point), file_ID)
+                iio.imwrite(saving_path, self.microscope.laserAutofocusController.image)
+                self._log.error(
+                    "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! laser AF failed !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!",
+                    exc_info=e,
+                )
+                return False
         return True
 
     def prepare_z_stack(self):
@@ -2334,6 +2311,12 @@ class MultiPointController(QObject):
             )
 
     def run_acquisition(self):
+
+        if not self.validate_acquisition_settings():
+            # emit acquisition finished signal to re-enable the UI
+            self.acquisitionFinished.emit()
+            return
+
         print("start multipoint")
 
         self.scan_region_coords_mm = list(self.scanCoordinates.region_centers.values())
@@ -2587,6 +2570,17 @@ class MultiPointController(QObject):
 
     def slot_region_progress(self, current_fov, total_fovs):
         self.signal_region_progress.emit(current_fov, total_fovs)
+
+    def validate_acquisition_settings(self) -> bool:
+        """Validate settings before starting acquisition"""
+        if self.do_reflection_af and not self.parent.laserAutofocusController.has_reference:
+            QMessageBox.warning(
+                None,
+                "Laser Autofocus Not Ready",
+                "Please set the laser autofocus reference position before starting acquisition with laser AF enabled.",
+            )
+            return False
+        return True
 
 
 class TrackingController(QObject):
@@ -4627,6 +4621,9 @@ class LaserAutofocusController(QObject):
 
         self.image = None  # for saving the focus camera image for debugging when centroid cannot be found
 
+        self.has_reference = False  # Track if reference has been set
+        self.reference_crop = None  # for saving the reference image for cross-correlation check
+
         # Load configurations if provided
         if self.laserAFSettingManager:
             self.load_cached_configuration()
@@ -4675,6 +4672,10 @@ class LaserAutofocusController(QObject):
             # Initialize with loaded config
             self.initialize_manual(config)
 
+            # read self.has_reference
+            self.has_reference = config.has_reference
+            # TODO: update self.reference_crop
+
     def initialize_auto(self) -> bool:
         """Automatically initialize laser autofocus by finding the spot and calibrating.
 
@@ -4682,7 +4683,6 @@ class LaserAutofocusController(QObject):
         1. Finds the laser spot on full sensor
         2. Sets up ROI around the spot
         3. Calibrates pixel-to-um conversion using two z positions
-        4. Sets initial reference position
 
         Returns:
             bool: True if initialization successful, False if any step fails
@@ -4710,12 +4710,16 @@ class LaserAutofocusController(QObject):
         self.microcontroller.turn_off_AF_laser()
         self.microcontroller.wait_till_operation_is_completed()
 
+        # Clear reference
+        self.has_reference = False
+        self.reference_crop = None
+
         # Set up ROI around spot
         config = self.laser_af_properties.model_copy(
             update={
                 "x_offset": x - self.laser_af_properties.width / 2,
                 "y_offset": y - self.laser_af_properties.height / 2,
-                "x_reference": x,
+                "has_reference": False,
             }
         )
         self._log.info(f"Laser spot location on the full sensor is ({int(x)}, {int(y)})")
@@ -4844,6 +4848,10 @@ class LaserAutofocusController(QObject):
         Returns:
             bool: True if move was successful, False if measurement failed or displacement was out of range
         """
+        if not self.has_reference:
+            self._log.warning("Cannot move to target - reference not set")
+            return False
+
         current_displacement_um = self.measure_displacement()
         self._log.info(f"Current laser AF displacement: {current_displacement_um:.1f} μm")
 
@@ -4922,7 +4930,9 @@ class LaserAutofocusController(QObject):
             return False
 
         x, y = result
-        self.laser_af_properties = self.laser_af_properties.model_copy(update={"x_reference": x})
+        self.laser_af_properties = self.laser_af_properties.model_copy(
+            update={"x_reference": x, "has_reference": self.has_reference}
+        )
 
         # Store cropped and normalized reference image
         center_y = int(reference_image.shape[0] / 2)
@@ -4937,11 +4947,16 @@ class LaserAutofocusController(QObject):
         self.signal_displacement_um.emit(0)
         self._log.info(f"Set reference position to ({x:.1f}, {y:.1f})")
 
+        self.has_reference = True
+
         # Update cache
         self.laserAFSettingManager.update_laser_af_settings(
-            self.objectiveStore.current_objective, {"x_reference": x + self.laser_af_properties.x_offset}
+            self.objectiveStore.current_objective,
+            {"x_reference": x + self.laser_af_properties.x_offset, "has_reference": self.has_reference},
         )
         self.laserAFSettingManager.save_configurations(self.objectiveStore.current_objective)
+
+        self._log.info("Reference spot position set")
 
         return True
 
@@ -4952,6 +4967,7 @@ class LaserAutofocusController(QObject):
         status and loads the cached configuration for the new objective.
         """
         self.is_initialized = False
+        self.has_reference = False
         self.load_cached_configuration()
 
     def _verify_spot_alignment(self) -> bool:
@@ -4979,7 +4995,11 @@ class LaserAutofocusController(QObject):
         self.microcontroller.turn_off_AF_laser()
         self.microcontroller.wait_till_operation_is_completed()
 
-        if current_image is None or not hasattr(self, "reference_crop"):
+        if self.reference_crop is None:
+            self._log.warning("No reference crop stored")
+            return False
+
+        if current_image is None:
             self._log.error("Failed to get images for cross-correlation check")
             return False
 
@@ -5107,3 +5127,9 @@ class LaserAutofocusController(QObject):
             # turn off the laser
             self.microcontroller.turn_off_AF_laser()
             self.microcontroller.wait_till_operation_is_completed()
+
+    def clear_reference(self):
+        """Clear reference position"""
+        self.has_reference = False
+        self.reference_crop = None
+        self._log.info("Reference spot position cleared")
