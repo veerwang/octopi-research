@@ -2334,6 +2334,12 @@ class MultiPointController(QObject):
             )
 
     def run_acquisition(self):
+
+        if not self.validate_acquisition_settings():
+            # emit acquisition finished signal to re-enable the UI
+            self.acquisitionFinished.emit()
+            return
+
         print("start multipoint")
 
         self.scan_region_coords_mm = list(self.scanCoordinates.region_centers.values())
@@ -2587,6 +2593,17 @@ class MultiPointController(QObject):
 
     def slot_region_progress(self, current_fov, total_fovs):
         self.signal_region_progress.emit(current_fov, total_fovs)
+
+    def validate_acquisition_settings(self) -> bool:
+        """Validate settings before starting acquisition"""
+        if self.do_reflection_af and not self.parent.laserAutofocusController.has_reference:
+            QMessageBox.warning(
+                None,
+                "Laser Autofocus Not Ready",
+                "Please set the laser autofocus reference position before starting acquisition with laser AF enabled.",
+            )
+            return False
+        return True
 
 
 class TrackingController(QObject):
@@ -4631,6 +4648,9 @@ class LaserAutofocusController(QObject):
         if self.laserAFSettingManager:
             self.load_cached_configuration()
 
+        self.has_reference = False  # Track if reference has been set
+        # TODO: saved settings can have reference with saved reference image in the future
+
     def initialize_manual(self, config: LaserAFConfig) -> None:
         """Initialize laser autofocus with manual parameters."""
         adjusted_config = config.model_copy(
@@ -4844,6 +4864,10 @@ class LaserAutofocusController(QObject):
         Returns:
             bool: True if move was successful, False if measurement failed or displacement was out of range
         """
+        if not self.has_reference:
+            self._log.warning("Cannot move to target - reference not set")
+            return False
+
         current_displacement_um = self.measure_displacement()
         self._log.info(f"Current laser AF displacement: {current_displacement_um:.1f} μm")
 
@@ -4942,6 +4966,9 @@ class LaserAutofocusController(QObject):
             self.objectiveStore.current_objective, {"x_reference": x + self.laser_af_properties.x_offset}
         )
         self.laserAFSettingManager.save_configurations(self.objectiveStore.current_objective)
+
+        self.has_reference = True
+        self._log.info("Reference spot position set")
 
         return True
 
@@ -5107,3 +5134,9 @@ class LaserAutofocusController(QObject):
             # turn off the laser
             self.microcontroller.turn_off_AF_laser()
             self.microcontroller.wait_till_operation_is_completed()
+
+    def clear_reference(self):
+        """Clear reference position"""
+        self.has_reference = False
+        self.reference_crop = None
+        self._log.info("Reference spot position cleared")
