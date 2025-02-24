@@ -440,7 +440,7 @@ class LaserAutofocusSettingWidget(QWidget):
         palette.setColor(spot_detection_group.backgroundRole(), QColor("#ffffff"))
         spot_detection_group.setPalette(palette)
         spot_detection_layout = QVBoxLayout()
-        
+
         # Add spot detection related spinboxes
         self._add_spinbox(spot_detection_layout, "Y Window (pixels):", "y_window", 1, 500, 0)
         self._add_spinbox(spot_detection_layout, "X Window (pixels):", "x_window", 1, 500, 0)
@@ -529,7 +529,7 @@ class LaserAutofocusSettingWidget(QWidget):
             self.liveController.stop_live()
             self.btn_live.setText("Start Live")
             self.run_spot_detection_button.setEnabled(True)
-    
+
     def toggle_characterization_mode(self, state):
         global LASER_AF_CHARACTERIZATION_MODE
         LASER_AF_CHARACTERIZATION_MODE = state
@@ -594,23 +594,19 @@ class LaserAutofocusSettingWidget(QWidget):
     def run_spot_detection(self):
         """Run spot detection with current settings and emit results"""
         params = {
-            'y_window': int(self.spinboxes['y_window'].value()),
-            'x_window': int(self.spinboxes['x_window'].value()),
-            'min_peak_width': self.spinboxes['min_peak_width'].value(),
-            'min_peak_distance': self.spinboxes['min_peak_distance'].value(),
-            'min_peak_prominence': self.spinboxes['min_peak_prominence'].value(),
-            'spot_spacing': self.spinboxes['spot_spacing'].value()
+            "y_window": int(self.spinboxes["y_window"].value()),
+            "x_window": int(self.spinboxes["x_window"].value()),
+            "min_peak_width": self.spinboxes["min_peak_width"].value(),
+            "min_peak_distance": self.spinboxes["min_peak_distance"].value(),
+            "min_peak_prominence": self.spinboxes["min_peak_prominence"].value(),
+            "spot_spacing": self.spinboxes["spot_spacing"].value(),
         }
         mode = self.spot_mode_combo.currentData()
-        
+
         # Get current frame from live controller
         frame = self.liveController.camera.current_frame
         if frame is not None:
-            result = utils.find_spot_location(
-                frame, 
-                mode=mode,
-                params=params
-            )
+            result = utils.find_spot_location(frame, mode=mode, params=params)
             if result is not None:
                 x, y = result
                 self.signal_laser_spot_location.emit(frame, x, y)
@@ -623,7 +619,7 @@ class LaserAutofocusSettingWidget(QWidget):
                 # Create and add new error label
                 self.spot_detection_error_label = QLabel("Spot detection failed!")
                 self.layout().addWidget(self.spot_detection_error_label)
-    
+
     def show_cross_correlation_result(self, value):
         """Show cross-correlation value from validating laser af images"""
         # Clear previous correlation label if it exists
