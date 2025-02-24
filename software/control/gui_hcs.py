@@ -240,7 +240,7 @@ class HighContentScreeningGui(QMainWindow):
             channel_manager=self.channelConfigurationManager, laser_af_manager=self.laserAFSettingManager
         )
         self.contrastManager = core.ContrastManager()
-        self.streamHandler = core.StreamHandler(display_resolution_scaling=DEFAULT_DISPLAY_CROP / 100)
+        self.streamHandler = core.StreamHandler()
 
         self.liveController = core.LiveController(
             self.camera, self.microcontroller, self.illuminationController, parent=self
@@ -310,7 +310,8 @@ class HighContentScreeningGui(QMainWindow):
                 self.liveController_focus_camera,
                 self.stage,
                 self.piezo,
-                look_for_cache=False,
+                self.objectiveStore,
+                self.laserAFSettingManager,
             )
 
         if USE_SQUID_FILTERWHEEL:
@@ -576,7 +577,7 @@ class HighContentScreeningGui(QMainWindow):
             self.liveController,
             self.objectiveStore,
             self.channelConfigurationManager,
-            show_display_options=True,
+            show_display_options=False,
             show_autolevel=True,
             autolevel=True,
         )
@@ -627,7 +628,7 @@ class HighContentScreeningGui(QMainWindow):
                     include_camera_temperature_setting=False,
                     include_camera_auto_wb_setting=True,
                 )
-            self.focusCameraControlWidget = widgets.FocusCameraControlWidget(
+            self.laserAutofocusSettingWidget = widgets.LaserAutofocusSettingWidget(
                 self.streamHandler_focus_camera,
                 self.liveController_focus_camera,
                 self.laserAutofocusController,
@@ -743,11 +744,11 @@ class HighContentScreeningGui(QMainWindow):
             dock_laserfocus_image_display.addWidget(self.imageDisplayWindow_focus.widget)
             dock_laserfocus_image_display.setStretch(x=100, y=100)
 
-            dock_laserfocus_liveController = dock.Dock("Focus Camera Controller", autoOrientation=False)
+            dock_laserfocus_liveController = dock.Dock("Laser Autofocus Settings", autoOrientation=False)
             dock_laserfocus_liveController.showTitleBar()
-            dock_laserfocus_liveController.addWidget(self.focusCameraControlWidget)
+            dock_laserfocus_liveController.addWidget(self.laserAutofocusSettingWidget)
             dock_laserfocus_liveController.setStretch(x=100, y=100)
-            dock_laserfocus_liveController.setFixedWidth(self.focusCameraControlWidget.minimumSizeHint().width())
+            dock_laserfocus_liveController.setFixedWidth(self.laserAutofocusSettingWidget.minimumSizeHint().width())
 
             dock_waveform = dock.Dock("Displacement Measurement", autoOrientation=False)
             dock_waveform.showTitleBar()
@@ -994,13 +995,25 @@ class HighContentScreeningGui(QMainWindow):
             def connect_objective_changed_laser_af():
                 self.laserAutofocusController.on_objective_changed()
                 self.laserAutofocusControlWidget.update_init_state()
+                self.laserAutofocusSettingWidget.update_values()
 
             self.objectivesWidget.signal_objective_changed.connect(connect_objective_changed_laser_af)
-            self.focusCameraControlWidget.signal_newExposureTime.connect(
+            self.laserAutofocusSettingWidget.signal_newExposureTime.connect(
                 self.cameraSettingWidget_focus_camera.set_exposure_time
             )
+            self.laserAutofocusSettingWidget.signal_newAnalogGain.connect(
+                self.cameraSettingWidget_focus_camera.set_analog_gain
+            )
+            self.laserAutofocusSettingWidget.signal_apply_settings.connect(
+                self.laserAutofocusControlWidget.update_init_state
+            )
 
-            self.focusCameraControlWidget.update_exposure_time(self.focusCameraControlWidget.exposure_spinbox.value())
+            self.laserAutofocusSettingWidget.update_exposure_time(
+                self.laserAutofocusSettingWidget.exposure_spinbox.value()
+            )
+            self.laserAutofocusSettingWidget.update_analog_gain(
+                self.laserAutofocusSettingWidget.analog_gain_spinbox.value()
+            )
 
             self.streamHandler_focus_camera.signal_new_frame_received.connect(
                 self.liveController_focus_camera.on_new_frame
