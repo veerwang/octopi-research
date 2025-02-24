@@ -1701,7 +1701,9 @@ class MultiPointWorker(QObject):
                 config_AF = next(
                     (
                         config
-                        for config in self.channelConfigurationManager.get_channel_configurations_for_objective(self.objectiveStore.current_objective)
+                        for config in self.channelConfigurationManager.get_channel_configurations_for_objective(
+                            self.objectiveStore.current_objective
+                        )
                         if config.name == configuration_name_AF
                     )
                 )
@@ -1723,7 +1725,9 @@ class MultiPointWorker(QObject):
                     config_AF = next(
                         (
                             config
-                            for config in self.channelConfigurationManager.get_channel_configurations_for_objective(self.objectiveStore.current_objective)
+                            for config in self.channelConfigurationManager.get_channel_configurations_for_objective(
+                                self.objectiveStore.current_objective
+                            )
                             if config.name == configuration_name_AF
                         )
                     )
@@ -1837,7 +1841,9 @@ class MultiPointWorker(QObject):
         rgb_channels = ["BF LED matrix full_R", "BF LED matrix full_G", "BF LED matrix full_B"]
         images = {}
 
-        for config_ in self.channelConfigurationManager.get_channel_configurations_for_objective(self.objectiveStore.current_objective):
+        for config_ in self.channelConfigurationManager.get_channel_configurations_for_objective(
+            self.objectiveStore.current_objective
+        ):
             if config_.name in rgb_channels:
                 # update the current configuration
                 self.signal_current_configuration.emit(config_)
@@ -2271,7 +2277,9 @@ class MultiPointController(QObject):
         # create a new folder
         utils.ensure_directory_exists(os.path.join(self.base_path, self.experiment_ID))
         self.channelConfigurationManager.write_configuration_selected(
-            self.objectiveStore.current_objective, self.selected_configurations, os.path.join(self.base_path, self.experiment_ID) + "/configurations.xml"
+            self.objectiveStore.current_objective,
+            self.selected_configurations,
+            os.path.join(self.base_path, self.experiment_ID) + "/configurations.xml",
         )  # save the configuration for the experiment
         # Prepare acquisition parameters
         acquisition_parameters = {
@@ -2315,9 +2323,13 @@ class MultiPointController(QObject):
         for configuration_name in selected_configurations_name:
             self.selected_configurations.append(
                 next(
-                    (config
-                    for config in self.channelConfigurationManager.get_channel_configurations_for_objective(self.objectiveStore.current_objective)
-                    if config.name == configuration_name)
+                    (
+                        config
+                        for config in self.channelConfigurationManager.get_channel_configurations_for_objective(
+                            self.objectiveStore.current_objective
+                        )
+                        if config.name == configuration_name
+                    )
                 )
             )
 
@@ -2708,7 +2720,7 @@ class TrackingController(QObject):
             utils.ensure_directory_exists(os.path.join(self.base_path, self.experiment_ID))
             self.channelConfigurationManager.save_current_configuration_to_path(
                 self.objectiveStore.current_objective,
-                os.path.join(self.base_path, self.experiment_ID) + "/configurations.xml"
+                os.path.join(self.base_path, self.experiment_ID) + "/configurations.xml",
             )  # save the configuration for the experiment
         except:
             print("error in making a new folder")
@@ -2718,10 +2730,14 @@ class TrackingController(QObject):
         self.selected_configurations = []
         for configuration_name in selected_configurations_name:
             self.selected_configurations.append(
-                next((
-                    config
-                    for config in self.channelConfigurationManager.get_channel_configurations_for_objective(self.objectiveStore.current_objective)
-                    if config.name == configuration_name)
+                next(
+                    (
+                        config
+                        for config in self.channelConfigurationManager.get_channel_configurations_for_objective(
+                            self.objectiveStore.current_objective
+                        )
+                        if config.name == configuration_name
+                    )
                 )
             )
 
@@ -3553,7 +3569,7 @@ class ChannelConfigurationManager:
         self.all_configs: Dict[ConfigType, Dict[str, ChannelConfig]] = {
             ConfigType.CHANNEL: {},
             ConfigType.CONFOCAL: {},
-            ConfigType.WIDEFIELD: {}
+            ConfigType.WIDEFIELD: {},
         }
         self.active_config_type = ConfigType.CHANNEL if not ENABLE_SPINNING_DISK_CONFOCAL else ConfigType.CONFOCAL
 
@@ -3567,7 +3583,7 @@ class ChannelConfigurationManager:
 
         if not config_file.exists():
             utils_config.generate_default_configuration(str(config_file))
-            
+
         xml_content = config_file.read_bytes()
         self.all_configs[config_type][objective] = ChannelConfig.from_xml(xml_content)
 
@@ -3592,7 +3608,7 @@ class ChannelConfigurationManager:
         if not save_path.parent.exists():
             save_path.parent.mkdir(parents=True)
 
-        xml_str = config.to_xml(pretty_print=True, encoding='utf-8')
+        xml_str = config.to_xml(pretty_print=True, encoding="utf-8")
         save_path.write_bytes(xml_str)
 
     def save_configurations(self, objective: str) -> None:
@@ -3608,7 +3624,7 @@ class ChannelConfigurationManager:
     def save_current_configuration_to_path(self, objective: str, path: Path) -> None:
         """Only used in TrackingController. Might be temporary."""
         config = self.all_configs[self.active_config_type][objective]
-        xml_str = config.to_xml(pretty_print=True, encoding='utf-8')
+        xml_str = config.to_xml(pretty_print=True, encoding="utf-8")
         path.write_bytes(xml_str)
 
     def get_configurations(self, objective: str) -> List[ChannelMode]:
@@ -3632,7 +3648,9 @@ class ChannelConfigurationManager:
 
         self.save_configurations(objective)
 
-    def write_configuration_selected(self, objective: str, selected_configurations: List[ChannelMode], filename: str) -> None:
+    def write_configuration_selected(
+        self, objective: str, selected_configurations: List[ChannelMode], filename: str
+    ) -> None:
         """Write selected configurations to a file"""
         config = self.all_configs[self.active_config_type].get(objective)
         if not config:
@@ -3643,7 +3661,7 @@ class ChannelConfigurationManager:
             mode.selected = any(conf.id == mode.id for conf in selected_configurations)
 
         # Save to specified file
-        xml_str = config.to_xml(pretty_print=True, encoding='utf-8')
+        xml_str = config.to_xml(pretty_print=True, encoding="utf-8")
         filename = Path(filename)
         filename.write_bytes(xml_str)
 
@@ -3663,6 +3681,7 @@ class ChannelConfigurationManager:
 
 class LaserAFSettingManager:
     """Manages JSON-based laser autofocus configurations."""
+
     def __init__(self):
         self.autofocus_configurations: Dict[str, LaserAFConfig] = {}  # Dict[str, Dict[str, Any]]
         self.current_profile_path = None
@@ -3674,7 +3693,7 @@ class LaserAFSettingManager:
         """Load autofocus configurations for a specific objective."""
         config_file = self.current_profile_path / objective / "laser_af_settings.json"
         if config_file.exists():
-            with open(config_file, 'r') as f:
+            with open(config_file, "r") as f:
                 config_dict = json.load(f)
                 self.autofocus_configurations[objective] = LaserAFConfig(**config_dict)
 
@@ -3689,7 +3708,7 @@ class LaserAFSettingManager:
         config_file = objective_path / "laser_af_settings.json"
 
         config_dict = self.autofocus_configurations[objective].model_dump(serialize=True)
-        with open(config_file, 'w') as f:
+        with open(config_file, "w") as f:
             json.dump(config_dict, f, indent=4)
 
     def get_settings_for_objective(self, objective: str) -> Dict[str, Any]:
@@ -3707,21 +3726,25 @@ class LaserAFSettingManager:
             config = self.autofocus_configurations[objective]
             self.autofocus_configurations[objective] = config.model_copy(update=updates)
 
+
 class ConfigurationManager:
     """Main configuration manager that coordinates channel and autofocus configurations."""
-    def __init__(self, 
-                 channel_manager: ChannelConfigurationManager,
-                 laser_af_manager: Optional[LaserAFSettingManager] = None,
-                 base_config_path: Path = Path("acquisition_configurations"), 
-                 profile: str = "default_profile"):
+
+    def __init__(
+        self,
+        channel_manager: ChannelConfigurationManager,
+        laser_af_manager: Optional[LaserAFSettingManager] = None,
+        base_config_path: Path = Path("acquisition_configurations"),
+        profile: str = "default_profile",
+    ):
         super().__init__()
         self.base_config_path = Path(base_config_path)
         self.current_profile = profile
         self.available_profiles = self._get_available_profiles()
-        
+
         self.channel_manager = channel_manager
         self.laser_af_manager = laser_af_manager
-        
+
         self.load_profile(profile)
 
     def _get_available_profiles(self) -> List[str]:
@@ -4581,7 +4604,7 @@ class LaserAutofocusController(QObject):
         stage: AbstractStage,
         piezo: Optional[PiezoStage] = None,
         objectiveStore: Optional[ObjectiveStore] = None,
-        laserAFSettingManager: Optional[LaserAFSettingManager] = None
+        laserAFSettingManager: Optional[LaserAFSettingManager] = None,
     ):
         QObject.__init__(self)
         self._log = squid.logging.get_logger(__class__.__name__)
@@ -4607,16 +4630,18 @@ class LaserAutofocusController(QObject):
         if self.laserAFSettingManager:
             self.load_cached_configuration()
 
-    def initialize_manual(
-        self, config: LaserAFConfig) -> None:
+    def initialize_manual(self, config: LaserAFConfig) -> None:
         """Initialize laser autofocus with manual parameters."""
-        adjusted_config = config.model_copy(update={
-            'x_reference': config.x_reference - config.x_offset,  # self.x_reference is relative to the cropped region
-            'x_offset': int((config.x_offset // 8) * 8),
-            'y_offset': int((config.y_offset // 2) * 2),
-            'width': int((config.width // 8) * 8),
-            'height': int((config.height // 2) * 2),
-        })
+        adjusted_config = config.model_copy(
+            update={
+                "x_reference": config.x_reference
+                - config.x_offset,  # self.x_reference is relative to the cropped region
+                "x_offset": int((config.x_offset // 8) * 8),
+                "y_offset": int((config.y_offset // 2) * 2),
+                "width": int((config.width // 8) * 8),
+                "height": int((config.height // 2) * 2),
+            }
+        )
 
         self.laser_af_properties = adjusted_config
 
@@ -4624,7 +4649,7 @@ class LaserAutofocusController(QObject):
             self.laser_af_properties.x_offset,
             self.laser_af_properties.y_offset,
             self.laser_af_properties.width,
-            self.laser_af_properties.height
+            self.laser_af_properties.height,
         )
 
         self.is_initialized = True
@@ -4632,8 +4657,7 @@ class LaserAutofocusController(QObject):
         # Update cache if objective store and laser_af_settings is available
         if self.objectiveStore and self.laserAFSettingManager and self.objectiveStore.current_objective:
             self.laserAFSettingManager.update_laser_af_settings(
-                self.objectiveStore.current_objective,
-                config.model_dump()
+                self.objectiveStore.current_objective, config.model_dump()
             )
 
     def load_cached_configuration(self):
@@ -4686,11 +4710,13 @@ class LaserAutofocusController(QObject):
         self.microcontroller.wait_till_operation_is_completed()
 
         # Set up ROI around spot
-        config = self.laser_af_properties.model_copy(update={
-            'x_offset': x - self.laser_af_properties.width / 2,
-            'y_offset': y - self.laser_af_properties.height / 2,
-            'x_reference': x
-        })
+        config = self.laser_af_properties.model_copy(
+            update={
+                "x_offset": x - self.laser_af_properties.width / 2,
+                "y_offset": y - self.laser_af_properties.height / 2,
+                "x_reference": x,
+            }
+        )
         self._log.info(f"Laser spot location on the full sensor is ({int(x)}, {int(y)})")
 
         self.initialize_manual(config)
@@ -4763,16 +4789,14 @@ class LaserAutofocusController(QObject):
         self._log.info(f"Pixel to um conversion factor is {pixel_to_um:.3f} um/pixel")
 
         # Update config with new calibration values
-        self.laser_af_properties = self.laser_af_properties.model_copy(update={
-            'pixel_to_um': pixel_to_um,
-            'x_reference': (x1 + x0) / 2
-        })
+        self.laser_af_properties = self.laser_af_properties.model_copy(
+            update={"pixel_to_um": pixel_to_um, "x_reference": (x1 + x0) / 2}
+        )
 
         # Update cache
         if self.objectiveStore and self.laserAFSettingManager:
             self.laserAFSettingManager.update_laser_af_settings(
-                self.objectiveStore.current_objective,
-                self.laser_af_properties.model_dump()
+                self.objectiveStore.current_objective, self.laser_af_properties.model_dump()
             )
 
         return True
@@ -4896,9 +4920,7 @@ class LaserAutofocusController(QObject):
             return False
 
         x, y = result
-        self.laser_af_properties = self.laser_af_properties.model_copy(update={
-            'x_reference': x
-        })
+        self.laser_af_properties = self.laser_af_properties.model_copy(update={"x_reference": x})
 
         # Store cropped and normalized reference image
         center_y = int(reference_image.shape[0] / 2)
@@ -4914,9 +4936,9 @@ class LaserAutofocusController(QObject):
         self._log.info(f"Set reference position to ({x:.1f}, {y:.1f})")
 
         # Update cache
-        self.laserAFSettingManager.update_laser_af_settings(self.objectiveStore.current_objective, {
-            'x_reference': x + self.laser_af_properties.x_offset
-        })
+        self.laserAFSettingManager.update_laser_af_settings(
+            self.objectiveStore.current_objective, {"x_reference": x + self.laser_af_properties.x_offset}
+        )
         self.laserAFSettingManager.save_configurations(self.objectiveStore.current_objective)
 
         return True
@@ -5019,7 +5041,9 @@ class LaserAutofocusController(QObject):
                 # calculate centroid
                 result = utils.find_spot_location(image, mode=self.laser_af_properties.spot_detection_mode)
                 if result is None:
-                    self._log.warning(f"No spot detected in frame {i+1}/{self.laser_af_properties.laser_af_averaging_n}")
+                    self._log.warning(
+                        f"No spot detected in frame {i+1}/{self.laser_af_properties.laser_af_averaging_n}"
+                    )
                     continue
 
                 x, y = result
@@ -5028,7 +5052,9 @@ class LaserAutofocusController(QObject):
                 successful_detections += 1
 
             except Exception as e:
-                self._log.error(f"Error processing frame {i+1}/{self.laser_af_properties.laser_af_averaging_n}: {str(e)}")
+                self._log.error(
+                    f"Error processing frame {i+1}/{self.laser_af_properties.laser_af_averaging_n}: {str(e)}"
+                )
                 continue
 
         # optionally display the image
