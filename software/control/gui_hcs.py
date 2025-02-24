@@ -625,6 +625,7 @@ class HighContentScreeningGui(QMainWindow):
                     include_camera_auto_wb_setting=True,
                 )
             self.laserAutofocusSettingWidget = widgets.LaserAutofocusSettingWidget(
+                self.streamHandler_focus_camera,
                 self.liveController_focus_camera,
                 self.laserAutofocusController,
                 stretch=False,

@@ -350,11 +350,14 @@ class LaserAutofocusSettingWidget(QWidget):
     signal_newAnalogGain = Signal(float)
     signal_apply_settings = Signal()
 
-    def __init__(self, liveController, laserAutofocusController, stretch=True):
+    def __init__(self, streamHandler, liveController, laserAutofocusController, stretch=True):
         super().__init__()
+        self.streamHandler = streamHandler
         self.liveController = liveController
         self.laserAutofocusController = laserAutofocusController
         self.stretch = stretch
+        self.liveController.set_trigger_fps(10)
+        self.streamHandler.set_display_fps(10)
 
         # Enable background filling
         self.setAutoFillBackground(True)
@@ -513,9 +516,6 @@ class LaserAutofocusSettingWidget(QWidget):
         self.spinboxes[property_name] = spinbox
 
     def toggle_live(self, pressed):
-        # Print traceback for debugging
-        import traceback
-        traceback.print_stack()
         if pressed:
             self.liveController.start_live()
             self.btn_live.setText("Stop Live")
