@@ -1714,48 +1714,25 @@ class MultiPointWorker(QObject):
                     self.autofocusController.autofocus()
                     self.autofocusController.wait_till_autofocus_has_completed()
         else:
-            # initialize laser autofocus if it has not been done
-            if not self.microscope.laserAutofocusController.is_initialized:
-                self._log.info("init reflection af")
-                # initialize the reflection AF
-                self.microscope.laserAutofocusController.initialize_auto()
-                # do contrast AF for the first FOV (if contrast AF box is checked)
-                if self.do_autofocus and ((self.NZ == 1) or self.z_stacking_config == "FROM CENTER"):
-                    configuration_name_AF = MULTIPOINT_AUTOFOCUS_CHANNEL
-                    config_AF = next(
-                        (
-                            config
-                            for config in self.channelConfigurationManager.get_channel_configurations_for_objective(
-                                self.objectiveStore.current_objective
-                            )
-                            if config.name == configuration_name_AF
-                        )
-                    )
-                    self.signal_current_configuration.emit(config_AF)
-                    self.autofocusController.autofocus()
-                    self.autofocusController.wait_till_autofocus_has_completed()
-                # set the current plane as reference
-                self.microscope.laserAutofocusController.set_reference()
-            else:
-                self._log.info("laser reflection af")
-                try:
-                    if HAS_OBJECTIVE_PIEZO:  # when piezo is available, one move is sufficient as piezo is closed loop
-                        self.microscope.laserAutofocusController.move_to_target(0)
-                    else:
-                        # TODO(imo): We used to have a case here to try to fix backlash by double commanding a position.  Now, just double command it whether or not we are using PID since we don't expose that now.  But in the future, backlash handing shouldb e done at a lower level (and we can remove the double here)
-                        self.microscope.laserAutofocusController.move_to_target(0)
-                        self.microscope.laserAutofocusController.move_to_target(
-                            0
-                        )  # for stepper in open loop mode, repeat the operation to counter backlash.  It's harmless if any other case.
-                except Exception as e:
-                    file_ID = f"{region_id}_focus_camera.bmp"
-                    saving_path = os.path.join(self.base_path, self.experiment_ID, str(self.time_point), file_ID)
-                    iio.imwrite(saving_path, self.microscope.laserAutofocusController.image)
-                    self._log.error(
-                        "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! laser AF failed !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!",
-                        exc_info=e,
-                    )
-                    return False
+            self._log.info("laser reflection af")
+            try:
+                if HAS_OBJECTIVE_PIEZO:  # when piezo is available, one move is sufficient as piezo is closed loop
+                    self.microscope.laserAutofocusController.move_to_target(0)
+                else:
+                    # TODO(imo): We used to have a case here to try to fix backlash by double commanding a position.  Now, just double command it whether or not we are using PID since we don't expose that now.  But in the future, backlash handing shouldb e done at a lower level (and we can remove the double here)
+                    self.microscope.laserAutofocusController.move_to_target(0)
+                    self.microscope.laserAutofocusController.move_to_target(
+                        0
+                    )  # for stepper in open loop mode, repeat the operation to counter backlash.  It's harmless if any other case.
+            except Exception as e:
+                file_ID = f"{region_id}_focus_camera.bmp"
+                saving_path = os.path.join(self.base_path, self.experiment_ID, str(self.time_point), file_ID)
+                iio.imwrite(saving_path, self.microscope.laserAutofocusController.image)
+                self._log.error(
+                    "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! laser AF failed !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!",
+                    exc_info=e,
+                )
+                return False
         return True
 
     def prepare_z_stack(self):
