@@ -25,7 +25,6 @@ from control._def import (
 from control.utils import SpotDetectionMode
 
 
-
 class LaserAFConfig(BaseModel):
     """Pydantic model for laser autofocus configuration"""
 
@@ -70,6 +69,7 @@ class LaserAFConfig(BaseModel):
             if "spot_detection_mode" in data and isinstance(data["spot_detection_mode"], SpotDetectionMode):
                 data["spot_detection_mode"] = data["spot_detection_mode"].value
         return data
+
 
 class ChannelMode(BaseXmlModel, tag="mode"):
     """Channel configuration model"""
