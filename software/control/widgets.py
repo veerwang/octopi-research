@@ -5,6 +5,7 @@ from typing import Optional
 import squid.logging
 from control.core.core import TrackingController
 from control.microcontroller import Microcontroller
+from control.piezo import PiezoStage
 import control.utils as utils
 from squid.abc import AbstractStage
 
@@ -1507,29 +1508,29 @@ class LiveControlWidget(QFrame):
 
 
 class PiezoWidget(QFrame):
-    def __init__(self, microcontroller: Microcontroller, *args, **kwargs):
+    def __init__(self, piezo: PiezoStage, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.microcontroller = microcontroller
-        self.slider_value = 0.00
+        self.piezo = piezo
+        self.piezo_displacement_um = 0.00
         self.add_components()
 
     def add_components(self):
         # Row 1: Slider and Double Spin Box for direct control
         self.slider = QSlider(Qt.Horizontal, self)
         self.slider.setMinimum(0)
-        self.slider.setMaximum(int(OBJECTIVE_PIEZO_RANGE_UM * 100))  # Multiplied by 100 for 0.01 precision
-        self.slider.setValue(int(OBJECTIVE_PIEZO_HOME_UM * 100))
+        self.slider.setMaximum(int(self.piezo.range_um * 100))  # Multiplied by 100 for 0.01 precision
+        self.slider.setValue(int(self.piezo._home_position_um * 100))
 
         self.spinBox = QDoubleSpinBox(self)
-        self.spinBox.setRange(0.0, OBJECTIVE_PIEZO_RANGE_UM)
+        self.spinBox.setRange(0.0, self.piezo.range_um)
         self.spinBox.setDecimals(2)
         self.spinBox.setSingleStep(1)
         self.spinBox.setSuffix(" μm")
         self.spinBox.setKeyboardTracking(False)
-        self.spinBox.setValue(OBJECTIVE_PIEZO_HOME_UM)
+        self.spinBox.setValue(self.piezo._home_position_um)
 
         # Row 3: Home Button
-        self.home_btn = QPushButton(f" Set to {OBJECTIVE_PIEZO_HOME_UM} μm ", self)
+        self.home_btn = QPushButton(f" Set to {self.piezo._home_position_um} μm ", self)
 
         hbox1 = QHBoxLayout()
         hbox1.addWidget(self.home_btn)
@@ -1566,47 +1567,48 @@ class PiezoWidget(QFrame):
         self.home_btn.clicked.connect(self.home)
 
     def update_from_slider(self, value):
-        self.slider_value = value / 100  # Convert back to float with two decimal places
+        self.piezo_displacement_um = value / 100  # Convert back to float with two decimal places
         self.update_spinBox()
         self.update_piezo_position()
 
     def update_from_spinBox(self, value):
-        self.slider_value = value
+        self.piezo_displacement_um = value
         self.update_slider()
         self.update_piezo_position()
 
     def update_spinBox(self):
         self.spinBox.blockSignals(True)
-        self.spinBox.setValue(self.slider_value)
+        self.spinBox.setValue(self.piezo_displacement_um)
         self.spinBox.blockSignals(False)
 
     def update_slider(self):
         self.slider.blockSignals(True)
-        self.slider.setValue(int(self.slider_value * 100))
+        self.slider.setValue(int(self.piezo_displacement_um * 100))
         self.slider.blockSignals(False)
 
     def update_piezo_position(self):
-        displacement_um = self.slider_value
-        self.microcontroller.set_piezo_um(displacement_um)
+        self.piezo.move_to(self.piezo_displacement_um)
 
     def adjust_position(self, up):
         increment = self.increment_spinBox.value()
         if up:
-            self.slider_value = min(OBJECTIVE_PIEZO_RANGE_UM, self.spinBox.value() + increment)
+            self.piezo_displacement_um = min(self.piezo.range_um, self.spinBox.value() + increment)
         else:
-            self.slider_value = max(0, self.spinBox.value() - increment)
+            self.piezo_displacement_um = max(0, self.spinBox.value() - increment)
         self.update_spinBox()
         self.update_slider()
         self.update_piezo_position()
 
     def home(self):
-        self.slider_value = OBJECTIVE_PIEZO_HOME_UM
+        self.piezo.home()
+        self.piezo_displacement_um = self.piezo._home_position_um
         self.update_spinBox()
         self.update_slider()
-        self.update_piezo_position()
 
-    def update_displacement_um_display(self, displacement):
-        self.slider_value = round(displacement, 2)
+    def update_displacement_um_display(self, displacement=None):
+        if displacement is None:
+            displacement = self.piezo.position
+        self.piezo_displacement_um = round(displacement, 2)
         self.update_spinBox()
         self.update_slider()
 
@@ -6838,6 +6840,7 @@ class LaserAutofocusControlWidget(QFrame):
         super().__init__(*args, **kwargs)
         self.laserAutofocusController = laserAutofocusController
         self.add_components()
+        self.update_init_state()
         self.setFrameStyle(QFrame.Panel | QFrame.Raised)
 
     def add_components(self):
@@ -6894,7 +6897,7 @@ class LaserAutofocusControlWidget(QFrame):
 
         # make connections
         self.btn_initialize.clicked.connect(self.init_controller)
-        self.btn_set_reference.clicked.connect(self.laserAutofocusController.set_reference)
+        self.btn_set_reference.clicked.connect(self.on_set_reference_clicked)
         self.btn_measure_displacement.clicked.connect(self.laserAutofocusController.measure_displacement)
         self.btn_move_to_target.clicked.connect(self.move_to_target)
         self.laserAutofocusController.signal_displacement_um.connect(self.label_displacement.setNum)
@@ -6903,17 +6906,24 @@ class LaserAutofocusControlWidget(QFrame):
         self.laserAutofocusController.initialize_auto()
         if self.laserAutofocusController.is_initialized:
             self.btn_set_reference.setEnabled(True)
-            self.btn_measure_displacement.setEnabled(True)
-            self.btn_move_to_target.setEnabled(True)
+            self.btn_measure_displacement.setEnabled(False)
+            self.btn_move_to_target.setEnabled(False)
 
     def update_init_state(self):
         self.btn_initialize.setChecked(self.laserAutofocusController.is_initialized)
         self.btn_set_reference.setEnabled(self.laserAutofocusController.is_initialized)
-        self.btn_measure_displacement.setEnabled(self.laserAutofocusController.is_initialized)
-        self.btn_move_to_target.setEnabled(self.laserAutofocusController.is_initialized)
+        self.btn_measure_displacement.setEnabled(self.laserAutofocusController.has_reference)
+        self.btn_move_to_target.setEnabled(self.laserAutofocusController.has_reference)
 
     def move_to_target(self, target_um):
         self.laserAutofocusController.move_to_target(self.entry_target.value())
+
+    def on_set_reference_clicked(self):
+        """Handle set reference button click"""
+        success = self.laserAutofocusController.set_reference()
+        if success:
+            self.btn_measure_displacement.setEnabled(True)
+            self.btn_move_to_target.setEnabled(True)
 
 
 class WellplateFormatWidget(QWidget):

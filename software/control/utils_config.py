@@ -33,6 +33,7 @@ class LaserAFConfig(BaseModel):
     width: int = LASER_AF_CROP_WIDTH
     height: int = LASER_AF_CROP_HEIGHT
     pixel_to_um: float = 1
+    has_reference: bool = False
     x_reference: float = 0.0
     laser_af_averaging_n: int = LASER_AF_AVERAGING_N
     displacement_success_window_um: float = (
