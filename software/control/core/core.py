@@ -194,7 +194,6 @@ class StreamHandler(QObject):
             # send image to display
             time_now = time.time()
             if time_now - self.timestamp_last_display >= 1 / self.fps_display:
-                # self.image_to_display.emit(cv2.resize(image_cropped,(round(self.crop_width*self.display_resolution_scaling), round(self.crop_height*self.display_resolution_scaling)),cv2.INTER_LINEAR))
                 self.image_to_display.emit(
                     utils.crop_image(
                         image_cropped,
@@ -220,34 +219,6 @@ class StreamHandler(QObject):
 
             self.handler_busy = False
             camera.image_locked = False
-
-    """
-    def on_new_frame_from_simulation(self,image,frame_ID,timestamp):
-        # check whether image is a local copy or pointer, if a pointer, needs to prevent the image being modified while this function is being executed
-
-        self.handler_busy = True
-
-        # crop image
-        image_cropped = utils.crop_image(image,self.crop_width,self.crop_height)
-
-        # send image to display
-        time_now = time.time()
-        if time_now-self.timestamp_last_display >= 1/self.fps_display:
-            self.image_to_display.emit(cv2.resize(image_cropped,(round(self.crop_width*self.display_resolution_scaling), round(self.crop_height*self.display_resolution_scaling)),cv2.INTER_LINEAR))
-            self.timestamp_last_display = time_now
-
-        # send image to write
-        if self.save_image_flag and time_now-self.timestamp_last_save >= 1/self.fps_save:
-            self.packet_image_to_write.emit(image_cropped,frame_ID,timestamp)
-            self.timestamp_last_save = time_now
-
-        # send image to track
-        if time_now-self.timestamp_last_display >= 1/self.fps_track:
-            # track emit
-            self.timestamp_last_track = time_now
-
-        self.handler_busy = False
-    """
 
 
 class ImageSaver(QObject):
@@ -485,7 +456,7 @@ class LiveController(QObject):
         self.counter = 0
         self.timestamp_last = 0
 
-        self.display_resolution_scaling = DEFAULT_DISPLAY_CROP / 100
+        self.display_resolution_scaling = 1
 
         self.enable_channel_auto_filter_switching = True
 
@@ -1091,7 +1062,6 @@ class AutofocusWorker(QObject):
                 image, rotate_image_angle=self.camera.rotate_image_angle, flip_image=self.camera.flip_image
             )
             self.image_to_display.emit(image)
-            # image_to_display = utils.crop_image(image,round(self.crop_width* self.liveController.display_resolution_scaling), round(self.crop_height* self.liveController.display_resolution_scaling))
 
             QApplication.processEvents()
             timestamp_0 = time.time()
