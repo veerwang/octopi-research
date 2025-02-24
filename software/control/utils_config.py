@@ -1,21 +1,56 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 from pydantic_xml import BaseXmlModel, element, attr
 from typing import List, Optional
 from pathlib import Path
 import control.utils_channel as utils_channel
+from control._def import (FOCUS_CAMERA_EXPOSURE_TIME_MS, FOCUS_CAMERA_ANALOG_GAIN, LASER_AF_RANGE, 
+                          LASER_AF_AVERAGING_N, LASER_AF_CROP_WIDTH, LASER_AF_CROP_HEIGHT, 
+                          LASER_AF_SPOT_DETECTION_MODE, DISPLACEMENT_SUCCESS_WINDOW_UM,
+                          SPOT_CROP_SIZE, CORRELATION_THRESHOLD, PIXEL_TO_UM_CALIBRATION_DISTANCE,
+                          LASER_AF_Y_WINDOW, LASER_AF_X_WINDOW, LASER_AF_MIN_PEAK_WIDTH, LASER_AF_MIN_PEAK_DISTANCE,
+                          LASER_AF_MIN_PEAK_PROMINENCE, LASER_AF_SPOT_SPACING)
+from control.utils import SpotDetectionMode
+
 
 class LaserAFConfig(BaseModel):
     """Pydantic model for laser autofocus configuration"""
     x_offset: float = 0.0
     y_offset: float = 0.0
-    width: int = 1536
-    height: int = 256
-    pixel_to_um: float = 0.4
+    width: int = LASER_AF_CROP_WIDTH
+    height: int = LASER_AF_CROP_HEIGHT
+    pixel_to_um: float = 1
     x_reference: float = 0.0
-    has_two_interfaces: bool = False
-    use_glass_top: bool = True
-    focus_camera_exposure_time_ms: int = 2
-    focus_camera_analog_gain: int = 0
+    laser_af_averaging_n: int = LASER_AF_AVERAGING_N
+    displacement_success_window_um: float = DISPLACEMENT_SUCCESS_WINDOW_UM  # if the displacement is within this window, we consider the move successful
+    spot_crop_size: int = SPOT_CROP_SIZE  # Size of region to crop around spot for correlation
+    correlation_threshold: float = CORRELATION_THRESHOLD  # Minimum correlation coefficient for valid alignment
+    pixel_to_um_calibration_distance: float = PIXEL_TO_UM_CALIBRATION_DISTANCE  # Distance moved in um during calibration
+    laser_af_range: float = LASER_AF_RANGE  # Maximum reasonable displacement in um
+    focus_camera_exposure_time_ms: float = FOCUS_CAMERA_EXPOSURE_TIME_MS
+    focus_camera_analog_gain: float = FOCUS_CAMERA_ANALOG_GAIN
+    spot_detection_mode: SpotDetectionMode = LASER_AF_SPOT_DETECTION_MODE
+    y_window: int = LASER_AF_Y_WINDOW  # Half-height of y-axis crop
+    x_window: int = LASER_AF_X_WINDOW  # Half-width of centroid window
+    min_peak_width: float = LASER_AF_MIN_PEAK_WIDTH  # Minimum width of peaks
+    min_peak_distance: float = LASER_AF_MIN_PEAK_DISTANCE  # Minimum distance between peaks
+    min_peak_prominence: float = LASER_AF_MIN_PEAK_PROMINENCE  # Minimum peak prominence
+    spot_spacing: float = LASER_AF_SPOT_SPACING  # Expected spacing between spots
+
+    @field_validator('spot_detection_mode', mode='before')
+    @classmethod
+    def validate_spot_detection_mode(cls, v):
+        """Convert string to SpotDetectionMode enum if needed"""
+        if isinstance(v, str):
+            return SpotDetectionMode(v)
+        return v
+
+    def model_dump(self, serialize=False, **kwargs):
+        """Ensure proper serialization of enums to strings"""
+        data = super().model_dump(**kwargs)
+        if serialize:
+            if 'spot_detection_mode' in data and isinstance(data['spot_detection_mode'], SpotDetectionMode):
+                data['spot_detection_mode'] = data['spot_detection_mode'].value
+        return data
 
 class ChannelMode(BaseXmlModel, tag='mode'):
     """Channel configuration model"""
