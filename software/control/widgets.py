@@ -350,9 +350,8 @@ class LaserAutofocusSettingWidget(QWidget):
     signal_newAnalogGain = Signal(float)
     signal_start_live = Signal()
 
-    def __init__(self, streamHandler, liveController, laserAutofocusController, stretch=True):
+    def __init__(self, liveController, laserAutofocusController, stretch=True):
         super().__init__()
-        self.streamHandler = streamHandler
         self.liveController = liveController
         self.laserAutofocusController = laserAutofocusController
         self.stretch = stretch
@@ -365,6 +364,7 @@ class LaserAutofocusSettingWidget(QWidget):
         palette.setColor(self.backgroundRole(), QColor(240, 240, 240))
         self.setPalette(palette)
 
+        self.spinboxes = {}
         self.init_ui()
 
     def init_ui(self):
@@ -385,7 +385,7 @@ class LaserAutofocusSettingWidget(QWidget):
         exposure_layout = QHBoxLayout()
         exposure_layout.addWidget(QLabel("Focus Camera Exposure (ms):"))
         self.exposure_spinbox = QDoubleSpinBox()
-        self.exposure_spinbox.setRange(0, 1000)
+        self.exposure_spinbox.setRange(self.liveController.camera.EXPOSURE_TIME_MS_MIN, self.liveController.camera.EXPOSURE_TIME_MS_MAX)
         self.exposure_spinbox.setValue(self.laserAutofocusController.laser_af_properties.focus_camera_exposure_time_ms)
         self.exposure_spinbox.setDecimals(1)
         exposure_layout.addWidget(self.exposure_spinbox)
@@ -394,7 +394,7 @@ class LaserAutofocusSettingWidget(QWidget):
         analog_gain_layout = QHBoxLayout()
         analog_gain_layout.addWidget(QLabel("Focus Camera Analog Gain:"))
         self.analog_gain_spinbox = QDoubleSpinBox()
-        self.analog_gain_spinbox.setRange(0, 20)
+        self.analog_gain_spinbox.setRange(0, 24)
         self.analog_gain_spinbox.setValue(self.laserAutofocusController.laser_af_properties.focus_camera_analog_gain)
         analog_gain_layout.addWidget(self.analog_gain_spinbox)
 
@@ -422,7 +422,7 @@ class LaserAutofocusSettingWidget(QWidget):
 
         # Spot crop size
         self._add_spinbox(settings_layout, "Spot Crop Size (pixels):",
-                         'spot_crop_size', 10, 500, 0)
+                         'spot_crop_size', 1, 500, 0)
 
         # Correlation threshold
         self._add_spinbox(settings_layout, "Correlation Threshold:",
@@ -491,6 +491,7 @@ class LaserAutofocusSettingWidget(QWidget):
         # Connect all signals to slots
         self.btn_live.clicked.connect(self.toggle_live)
         self.exposure_spinbox.valueChanged.connect(self.update_exposure_time)
+        self.analog_gain_spinbox.valueChanged.connect(self.update_analog_gain)
         self.apply_button.clicked.connect(self.apply_settings)
 
     def _add_spinbox(self, layout, label: str, property_name: str, 
@@ -525,6 +526,27 @@ class LaserAutofocusSettingWidget(QWidget):
     
     def update_analog_gain(self, value):
         self.signal_newAnalogGain.emit(value)
+
+    def update_values(self):
+        """Update all widget values from the controller properties"""
+        # Update spinboxes
+        for prop_name, spinbox in self.spinboxes.items():
+            current_value = getattr(self.laserAutofocusController.laser_af_properties, prop_name)
+            spinbox.setValue(current_value)
+
+        # Update exposure and gain
+        self.exposure_spinbox.setValue(
+            self.laserAutofocusController.laser_af_properties.focus_camera_exposure_time_ms
+        )
+        self.analog_gain_spinbox.setValue(
+            self.laserAutofocusController.laser_af_properties.focus_camera_analog_gain
+        )
+        
+        # Update spot detection mode
+        current_mode = self.laserAutofocusController.laser_af_properties.spot_detection_mode
+        index = self.spot_mode_combo.findData(current_mode)
+        if index >= 0:
+            self.spot_mode_combo.setCurrentIndex(index)
 
     def apply_settings(self):
         updates={

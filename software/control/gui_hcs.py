@@ -625,7 +625,6 @@ class HighContentScreeningGui(QMainWindow):
                     include_camera_auto_wb_setting=True,
                 )
             self.laserAutofocusSettingWidget = widgets.LaserAutofocusSettingWidget(
-                self.streamHandler_focus_camera,
                 self.liveController_focus_camera,
                 self.laserAutofocusController,
                 stretch=False,
@@ -986,6 +985,7 @@ class HighContentScreeningGui(QMainWindow):
             def connect_objective_changed_laser_af():
                 self.laserAutofocusController.on_objective_changed()
                 self.laserAutofocusControlWidget.update_init_state()
+                self.laserAutofocusSettingWidget.update_values()
 
             self.objectivesWidget.signal_objective_changed.connect(
                 connect_objective_changed_laser_af
