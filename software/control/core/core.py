@@ -4698,7 +4698,18 @@ class LaserAutofocusController(QObject):
         self.microcontroller.turn_on_AF_laser()
         self.microcontroller.wait_till_operation_is_completed()
 
-        result = self._get_laser_spot_centroid()
+        spot_detection_params = {
+            "y_window": self.laser_af_properties.laser_af_y_window,
+            "x_window": self.laser_af_properties.laser_af_x_window,
+            "peak_width": self.laser_af_properties.laser_af_min_peak_width,
+            "peak_distance": self.laser_af_properties.laser_af_min_peak_distance,
+            "peak_prominence": self.laser_af_properties.laser_af_min_peak_prominence
+        }
+        result = self.get_laser_spot_centroid(
+            averaging_n=self.laser_af_properties.laser_af_averaging_n,
+            spot_detection_mode=self.laser_af_properties.spot_detection_mode,
+            spot_detection_params=spot_detection_params
+        )
         if result is None:
             self._log.error("Failed to find laser spot during initialization")
             self.microcontroller.turn_off_AF_laser()
@@ -4748,7 +4759,18 @@ class LaserAutofocusController(QObject):
             self.stage.move_z(-1.5 * self.laser_af_properties.pixel_to_um_calibration_distance / 1000)
             self.stage.move_z(self.laser_af_properties.pixel_to_um_calibration_distance / 1000)
 
-        result = self._get_laser_spot_centroid()
+        spot_detection_params = {
+            "y_window": self.laser_af_properties.laser_af_y_window,
+            "x_window": self.laser_af_properties.laser_af_x_window,
+            "peak_width": self.laser_af_properties.laser_af_min_peak_width,
+            "peak_distance": self.laser_af_properties.laser_af_min_peak_distance,
+            "peak_prominence": self.laser_af_properties.laser_af_min_peak_prominence
+        }
+        result = self.get_laser_spot_centroid(
+            averaging_n=self.laser_af_properties.laser_af_averaging_n,
+            spot_detection_mode=self.laser_af_properties.spot_detection_mode,
+            spot_detection_params=spot_detection_params
+        )
         if result is None:
             self._log.error("Failed to find laser spot during calibration (position 1)")
             self.microcontroller.turn_off_AF_laser()
@@ -4760,7 +4782,11 @@ class LaserAutofocusController(QObject):
         self._move_z(self.laser_af_properties.pixel_to_um_calibration_distance)
         time.sleep(MULTIPOINT_PIEZO_DELAY_MS / 1000)
 
-        result = self._get_laser_spot_centroid()
+        result = self.get_laser_spot_centroid(
+            averaging_n=self.laser_af_properties.laser_af_averaging_n,
+            spot_detection_mode=self.laser_af_properties.spot_detection_mode,
+            spot_detection_params=spot_detection_params
+        )
         if result is None:
             self._log.error("Failed to find laser spot during calibration (position 2)")
             self.microcontroller.turn_off_AF_laser()
@@ -4817,7 +4843,18 @@ class LaserAutofocusController(QObject):
         self.microcontroller.wait_till_operation_is_completed()
 
         # get laser spot location
-        result = self._get_laser_spot_centroid()
+        spot_detection_params = {
+            "y_window": self.laser_af_properties.laser_af_y_window,
+            "x_window": self.laser_af_properties.laser_af_x_window,
+            "peak_width": self.laser_af_properties.laser_af_min_peak_width,
+            "peak_distance": self.laser_af_properties.laser_af_min_peak_distance,
+            "peak_prominence": self.laser_af_properties.laser_af_min_peak_prominence
+        }
+        result = self.get_laser_spot_centroid(
+            averaging_n=self.laser_af_properties.laser_af_averaging_n,
+            spot_detection_mode=self.laser_af_properties.spot_detection_mode,
+            spot_detection_params=spot_detection_params
+        )
 
         # turn off the laser
         self.microcontroller.turn_off_AF_laser()
@@ -4908,7 +4945,18 @@ class LaserAutofocusController(QObject):
         self.microcontroller.wait_till_operation_is_completed()
 
         # get laser spot location and image
-        result = self._get_laser_spot_centroid()
+        spot_detection_params = {
+            "y_window": self.laser_af_properties.laser_af_y_window,
+            "x_window": self.laser_af_properties.laser_af_x_window,
+            "peak_width": self.laser_af_properties.laser_af_min_peak_width,
+            "peak_distance": self.laser_af_properties.laser_af_min_peak_distance,
+            "peak_prominence": self.laser_af_properties.laser_af_min_peak_prominence
+        }
+        result = self.get_laser_spot_centroid(
+            averaging_n=self.laser_af_properties.laser_af_averaging_n,
+            spot_detection_mode=self.laser_af_properties.spot_detection_mode,
+            spot_detection_params=spot_detection_params
+        )
         reference_image = self.image
 
         # turn off the laser
@@ -4971,7 +5019,18 @@ class LaserAutofocusController(QObject):
         self.camera.send_trigger()
         current_image = self.camera.read_frame()
         """
-        self._get_laser_spot_centroid()
+        spot_detection_params = {
+            "y_window": self.laser_af_properties.laser_af_y_window,
+            "x_window": self.laser_af_properties.laser_af_x_window,
+            "peak_width": self.laser_af_properties.laser_af_min_peak_width,
+            "peak_distance": self.laser_af_properties.laser_af_min_peak_distance,
+            "peak_prominence": self.laser_af_properties.laser_af_min_peak_prominence
+        }
+        self.get_laser_spot_centroid(
+            averaging_n=self.laser_af_properties.laser_af_averaging_n,
+            spot_detection_mode=self.laser_af_properties.spot_detection_mode,
+            spot_detection_params=spot_detection_params
+        )
         current_image = self.image
 
         self.microcontroller.turn_off_AF_laser()
@@ -5005,7 +5064,12 @@ class LaserAutofocusController(QObject):
 
         return True
 
-    def _get_laser_spot_centroid(self) -> Optional[Tuple[float, float]]:
+    def get_laser_spot_centroid(
+        self,
+        averaging_n: int,
+        spot_detection_mode: SpotDetectionMode,
+        spot_detection_params: dict
+    ) -> Optional[Tuple[float, float]]:
         """Get the centroid location of the laser spot.
 
         Averages multiple measurements to improve accuracy. The number of measurements
@@ -5021,7 +5085,7 @@ class LaserAutofocusController(QObject):
         tmp_x = 0
         tmp_y = 0
 
-        for i in range(self.laser_af_properties.laser_af_averaging_n):
+        for i in range(averaging_n):
             try:
                 # send camera trigger
                 if self.liveController.trigger_mode == TriggerMode.SOFTWARE:
@@ -5033,17 +5097,15 @@ class LaserAutofocusController(QObject):
                 # read camera frame
                 image = self.camera.read_frame()
                 if image is None:
-                    self._log.warning(f"Failed to read frame {i+1}/{self.laser_af_properties.laser_af_averaging_n}")
+                    self._log.warning(f"Failed to read frame {i+1}/{averaging_n}")
                     continue
 
                 self.image = image  # store for debugging # TODO: add to return instead of storing
 
                 # calculate centroid
-                result = utils.find_spot_location(image, mode=self.laser_af_properties.spot_detection_mode)
+                result = utils.find_spot_location(image, mode=spot_detection_mode, params=spot_detection_params)
                 if result is None:
-                    self._log.warning(
-                        f"No spot detected in frame {i+1}/{self.laser_af_properties.laser_af_averaging_n}"
-                    )
+                    self._log.warning(f"No spot detected in frame {i+1}/{averaging_n}")
                     continue
 
                 x, y = result
@@ -5052,9 +5114,7 @@ class LaserAutofocusController(QObject):
                 successful_detections += 1
 
             except Exception as e:
-                self._log.error(
-                    f"Error processing frame {i+1}/{self.laser_af_properties.laser_af_averaging_n}: {str(e)}"
-                )
+                self._log.error(f"Error processing frame {i+1}/{averaging_n}: {str(e)}")
                 continue
 
         # optionally display the image

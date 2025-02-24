@@ -5,7 +5,6 @@ from pathlib import Path
 from configparser import ConfigParser
 import json
 import csv
-from control.utils import SpotDetectionMode
 import squid.logging
 from enum import Enum, auto
 
@@ -257,6 +256,23 @@ class ZStageConfig(Enum):
         if mode_str.lower() not in mapping:
             raise ValueError(f"Invalid z_stage_mode. Must be one of: {', '.join(mapping.keys())}")
         return mapping[mode_str.lower()]
+
+
+class SpotDetectionMode(Enum):
+    """Specifies which spot to detect when multiple spots are present.
+
+    SINGLE: Expect and detect single spot
+    DUAL_RIGHT: In dual-spot case, use rightmost spot
+    DUAL_LEFT: In dual-spot case, use leftmost spot
+    MULTI_RIGHT: In multi-spot case, use rightmost spot
+    MULTI_SECOND_RIGHT: In multi-spot case, use spot immediately left of rightmost spot
+    """
+
+    SINGLE = "single"
+    DUAL_RIGHT = "dual_right"
+    DUAL_LEFT = "dual_left"
+    MULTI_RIGHT = "multi_right"
+    MULTI_SECOND_RIGHT = "multi_second_right"
 
 
 PRINT_CAMERA_FPS = True
