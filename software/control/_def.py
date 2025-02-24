@@ -435,6 +435,7 @@ DEFAULT_TRACKER = "csrt"
 ENABLE_TRACKING = False
 TRACKING_SHOW_MICROSCOPE_CONFIGURATIONS = False  # set to true when doing multimodal acquisition
 
+
 class AF:
     STOP_THRESHOLD = 0.85
     CROP_WIDTH = 800

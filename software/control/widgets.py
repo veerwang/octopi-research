@@ -66,7 +66,8 @@ class CollapsibleGroupBox(QGroupBox):
     def toggle_content(self, state):
         self.content_widget.setVisible(state)
 
-'''
+
+"""
 # Planning to replace this with a better design
 class ConfigEditorForAcquisitions(QDialog):
     def __init__(self, configManager, only_z_offset=True):
@@ -204,7 +205,8 @@ class ConfigEditorForAcquisitions(QDialog):
             self.scroll_area_widget.setLayout(self.scroll_area_layout)
             self.scroll_area.setWidget(self.scroll_area_widget)
             self.init_ui(only_z_offset)
-'''
+"""
+
 
 class ConfigEditor(QDialog):
     def __init__(self, config):
@@ -388,7 +390,9 @@ class LaserAutofocusSettingWidget(QWidget):
         exposure_layout = QHBoxLayout()
         exposure_layout.addWidget(QLabel("Focus Camera Exposure (ms):"))
         self.exposure_spinbox = QDoubleSpinBox()
-        self.exposure_spinbox.setRange(self.liveController.camera.EXPOSURE_TIME_MS_MIN, self.liveController.camera.EXPOSURE_TIME_MS_MAX)
+        self.exposure_spinbox.setRange(
+            self.liveController.camera.EXPOSURE_TIME_MS_MIN, self.liveController.camera.EXPOSURE_TIME_MS_MAX
+        )
         self.exposure_spinbox.setValue(self.laserAutofocusController.laser_af_properties.focus_camera_exposure_time_ms)
         exposure_layout.addWidget(self.exposure_spinbox)
 
@@ -415,52 +419,44 @@ class LaserAutofocusSettingWidget(QWidget):
         self.spinboxes = {}
 
         # Averaging
-        self._add_spinbox(settings_layout, "Laser AF Averaging N:",
-                         'laser_af_averaging_n', 1, 100, 0)
+        self._add_spinbox(settings_layout, "Laser AF Averaging N:", "laser_af_averaging_n", 1, 100, 0)
 
         # Displacement window
-        self._add_spinbox(settings_layout, "Displacement Success Window (μm):",
-                         'displacement_success_window_um', 0.1, 10.0, 2)
+        self._add_spinbox(
+            settings_layout, "Displacement Success Window (μm):", "displacement_success_window_um", 0.1, 10.0, 2
+        )
 
         # Spot crop size
-        self._add_spinbox(settings_layout, "Spot Crop Size (pixels):",
-                         'spot_crop_size', 1, 500, 0)
+        self._add_spinbox(settings_layout, "Spot Crop Size (pixels):", "spot_crop_size", 1, 500, 0)
 
         # Correlation threshold
-        self._add_spinbox(settings_layout, "Correlation Threshold:",
-                         'correlation_threshold', 0.1, 1.0, 2)
+        self._add_spinbox(settings_layout, "Correlation Threshold:", "correlation_threshold", 0.1, 1.0, 2)
 
         # Calibration distance
-        self._add_spinbox(settings_layout, "Calibration Distance (μm):",
-                         'pixel_to_um_calibration_distance', 0.1, 20.0, 2)
+        self._add_spinbox(
+            settings_layout, "Calibration Distance (μm):", "pixel_to_um_calibration_distance", 0.1, 20.0, 2
+        )
 
         # AF Range
-        self._add_spinbox(settings_layout, "Laser AF Range (μm):",
-                         'laser_af_range', 1, 1000, 1)
-        
+        self._add_spinbox(settings_layout, "Laser AF Range (μm):", "laser_af_range", 1, 1000, 1)
+
         # Y window
-        self._add_spinbox(settings_layout, "Y Window (pixels):",
-                         'y_window', 1, 500, 0)
+        self._add_spinbox(settings_layout, "Y Window (pixels):", "y_window", 1, 500, 0)
 
         # X window
-        self._add_spinbox(settings_layout, "X Window (pixels):",
-                         'x_window', 1, 500, 0)
+        self._add_spinbox(settings_layout, "X Window (pixels):", "x_window", 1, 500, 0)
 
         # Min peak width
-        self._add_spinbox(settings_layout, "Min Peak Width:",
-                         'min_peak_width', 1, 100, 1)
+        self._add_spinbox(settings_layout, "Min Peak Width:", "min_peak_width", 1, 100, 1)
 
         # Min peak distance
-        self._add_spinbox(settings_layout, "Min Peak Distance:",
-                         'min_peak_distance', 1, 100, 1)
+        self._add_spinbox(settings_layout, "Min Peak Distance:", "min_peak_distance", 1, 100, 1)
 
         # Min peak prominence
-        self._add_spinbox(settings_layout, "Min Peak Prominence:",
-                         'min_peak_prominence', 0.01, 1.0, 2)
+        self._add_spinbox(settings_layout, "Min Peak Prominence:", "min_peak_prominence", 0.01, 1.0, 2)
 
         # Spot spacing
-        self._add_spinbox(settings_layout, "Spot Spacing (pixels):",
-                         'spot_spacing', 1, 1000, 1)
+        self._add_spinbox(settings_layout, "Spot Spacing (pixels):", "spot_spacing", 1, 1000, 1)
 
         # Spot detection mode combo box
         spot_mode_layout = QHBoxLayout()
@@ -496,8 +492,9 @@ class LaserAutofocusSettingWidget(QWidget):
         self.analog_gain_spinbox.valueChanged.connect(self.update_analog_gain)
         self.apply_button.clicked.connect(self.apply_settings)
 
-    def _add_spinbox(self, layout, label: str, property_name: str, 
-                    min_val: float, max_val: float, decimals: int) -> None:
+    def _add_spinbox(
+        self, layout, label: str, property_name: str, min_val: float, max_val: float, decimals: int
+    ) -> None:
         """Helper method to add a labeled spinbox to the layout."""
         box_layout = QHBoxLayout()
         box_layout.addWidget(QLabel(label))
@@ -525,7 +522,7 @@ class LaserAutofocusSettingWidget(QWidget):
 
     def update_exposure_time(self, value):
         self.signal_newExposureTime.emit(value)
-    
+
     def update_analog_gain(self, value):
         self.signal_newAnalogGain.emit(value)
 
@@ -537,13 +534,9 @@ class LaserAutofocusSettingWidget(QWidget):
             spinbox.setValue(current_value)
 
         # Update exposure and gain
-        self.exposure_spinbox.setValue(
-            self.laserAutofocusController.laser_af_properties.focus_camera_exposure_time_ms
-        )
-        self.analog_gain_spinbox.setValue(
-            self.laserAutofocusController.laser_af_properties.focus_camera_analog_gain
-        )
-        
+        self.exposure_spinbox.setValue(self.laserAutofocusController.laser_af_properties.focus_camera_exposure_time_ms)
+        self.analog_gain_spinbox.setValue(self.laserAutofocusController.laser_af_properties.focus_camera_analog_gain)
+
         # Update spot detection mode
         current_mode = self.laserAutofocusController.laser_af_properties.spot_detection_mode
         index = self.spot_mode_combo.findData(current_mode)
@@ -551,22 +544,22 @@ class LaserAutofocusSettingWidget(QWidget):
             self.spot_mode_combo.setCurrentIndex(index)
 
     def apply_settings(self):
-        updates={
-            'laser_af_averaging_n': int(self.spinboxes['laser_af_averaging_n'].value()),
-            'displacement_success_window_um': self.spinboxes['displacement_success_window_um'].value(),
-            'spot_crop_size': int(self.spinboxes['spot_crop_size'].value()),
-            'correlation_threshold': self.spinboxes['correlation_threshold'].value(),
-            'pixel_to_um_calibration_distance': self.spinboxes['pixel_to_um_calibration_distance'].value(),
-            'laser_af_range': self.spinboxes['laser_af_range'].value(),
-            'spot_detection_mode': self.spot_mode_combo.currentData(),
-            'y_window': int(self.spinboxes['y_window'].value()),
-            'x_window': int(self.spinboxes['x_window'].value()),
-            'min_peak_width': self.spinboxes['min_peak_width'].value(),
-            'min_peak_distance': self.spinboxes['min_peak_distance'].value(),
-            'min_peak_prominence': self.spinboxes['min_peak_prominence'].value(),
-            'spot_spacing': self.spinboxes['spot_spacing'].value(),
-            'focus_camera_exposure_time_ms': self.exposure_spinbox.value(),
-            'focus_camera_analog_gain': self.analog_gain_spinbox.value(),
+        updates = {
+            "laser_af_averaging_n": int(self.spinboxes["laser_af_averaging_n"].value()),
+            "displacement_success_window_um": self.spinboxes["displacement_success_window_um"].value(),
+            "spot_crop_size": int(self.spinboxes["spot_crop_size"].value()),
+            "correlation_threshold": self.spinboxes["correlation_threshold"].value(),
+            "pixel_to_um_calibration_distance": self.spinboxes["pixel_to_um_calibration_distance"].value(),
+            "laser_af_range": self.spinboxes["laser_af_range"].value(),
+            "spot_detection_mode": self.spot_mode_combo.currentData(),
+            "y_window": int(self.spinboxes["y_window"].value()),
+            "x_window": int(self.spinboxes["x_window"].value()),
+            "min_peak_width": self.spinboxes["min_peak_width"].value(),
+            "min_peak_distance": self.spinboxes["min_peak_distance"].value(),
+            "min_peak_prominence": self.spinboxes["min_peak_prominence"].value(),
+            "spot_spacing": self.spinboxes["spot_spacing"].value(),
+            "focus_camera_exposure_time_ms": self.exposure_spinbox.value(),
+            "focus_camera_analog_gain": self.analog_gain_spinbox.value(),
         }
         self.laserAutofocusController.set_laser_af_properties(updates)
         self.laserAutofocusController.initialize_auto()
@@ -575,12 +568,14 @@ class LaserAutofocusSettingWidget(QWidget):
 
     def update_calibration_label(self):
         # Clear previous calibration label if it exists
-        if hasattr(self, 'calibration_label'):
+        if hasattr(self, "calibration_label"):
             self.calibration_label.deleteLater()
 
         # Create and add new calibration label
         self.calibration_label = QLabel()
-        self.calibration_label.setText(f"Calibration Result: {self.laserAutofocusController.laser_af_properties.pixel_to_um:.3f} pixels/um")
+        self.calibration_label.setText(
+            f"Calibration Result: {self.laserAutofocusController.laser_af_properties.pixel_to_um:.3f} pixels/um"
+        )
         self.layout().addWidget(self.calibration_label)
 
 
@@ -1090,18 +1085,13 @@ class ProfileWidget(QFrame):
 
     signal_profile_changed = Signal()
 
-    def __init__(
-        self,
-        configurationManager,
-        *args,
-        **kwargs
-    ):
+    def __init__(self, configurationManager, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.configurationManager = configurationManager
-        
+
         self.setFrameStyle(QFrame.Panel | QFrame.Raised)
         self.setup_ui()
-        
+
     def setup_ui(self):
         # Create widgets
         self.dropdown_profiles = QComboBox()
@@ -1123,7 +1113,7 @@ class ProfileWidget(QFrame):
         layout.addWidget(self.dropdown_profiles, 2)
         layout.addWidget(self.btn_loadProfile)
         layout.addWidget(self.btn_newProfile)
-        
+
         self.setLayout(layout)
 
     def load_profile(self):
@@ -1136,13 +1126,7 @@ class ProfileWidget(QFrame):
     def create_new_profile(self):
         """Create a new profile with current configurations."""
         dialog = QInputDialog()
-        profile_name, ok = dialog.getText(
-            self, 
-            "New Profile",
-            "Enter new profile name:",
-            QLineEdit.Normal,
-            ""
-        )
+        profile_name, ok = dialog.getText(self, "New Profile", "Enter new profile name:", QLineEdit.Normal, "")
 
         if ok and profile_name:
             try:
@@ -1192,7 +1176,9 @@ class LiveControlWidget(QFrame):
         self.streamHandler.set_display_fps(self.fps_display)
 
         self.triggerMode = TriggerMode.SOFTWARE
-        self.currentConfiguration = self.channelConfigurationManager.get_channel_configurations_for_objective(self.objectiveStore.current_objective)[0]
+        self.currentConfiguration = self.channelConfigurationManager.get_channel_configurations_for_objective(
+            self.objectiveStore.current_objective
+        )[0]
 
         self.add_components(show_trigger_options, show_display_options, show_autolevel, autolevel, stretch)
         self.setFrameStyle(QFrame.Panel | QFrame.Raised)
@@ -1218,7 +1204,9 @@ class LiveControlWidget(QFrame):
 
         # line 2: choose microscope mode / toggle live mode
         self.dropdown_modeSelection = QComboBox()
-        for microscope_configuration in self.channelConfigurationManager.get_channel_configurations_for_objective(self.objectiveStore.current_objective):
+        for microscope_configuration in self.channelConfigurationManager.get_channel_configurations_for_objective(
+            self.objectiveStore.current_objective
+        ):
             self.dropdown_modeSelection.addItems([microscope_configuration.name])
         self.dropdown_modeSelection.setCurrentText(self.currentConfiguration.name)
         self.dropdown_modeSelection.setSizePolicy(sizePolicy)
@@ -1392,7 +1380,9 @@ class LiveControlWidget(QFrame):
         # Update the mode selection dropdown
         self.dropdown_modeSelection.blockSignals(True)
         self.dropdown_modeSelection.clear()
-        for microscope_configuration in self.channelConfigurationManager.get_channel_configurations_for_objective(self.objectiveStore.current_objective):
+        for microscope_configuration in self.channelConfigurationManager.get_channel_configurations_for_objective(
+            self.objectiveStore.current_objective
+        ):
             self.dropdown_modeSelection.addItem(microscope_configuration.name)
         self.dropdown_modeSelection.blockSignals(False)
 
@@ -1406,10 +1396,12 @@ class LiveControlWidget(QFrame):
         self.currentConfiguration = next(
             (
                 config
-                for config in self.channelConfigurationManager.get_channel_configurations_for_objective(self.objectiveStore.current_objective)
+                for config in self.channelConfigurationManager.get_channel_configurations_for_objective(
+                    self.objectiveStore.current_objective
+                )
                 if config.name == current_microscope_mode_name
-        ),
-        None,
+            ),
+            None,
         )
         self.signal_live_configuration.emit(self.currentConfiguration)
         # update the microscope to the current configuration
@@ -1426,13 +1418,17 @@ class LiveControlWidget(QFrame):
     def update_config_exposure_time(self, new_value):
         if self.is_switching_mode == False:
             self.currentConfiguration.exposure_time = new_value
-            self.channelConfigurationManager.update_configuration(self.objectiveStore.current_objective, self.currentConfiguration.id, "ExposureTime", new_value)
+            self.channelConfigurationManager.update_configuration(
+                self.objectiveStore.current_objective, self.currentConfiguration.id, "ExposureTime", new_value
+            )
             self.signal_newExposureTime.emit(new_value)
 
     def update_config_analog_gain(self, new_value):
         if self.is_switching_mode == False:
             self.currentConfiguration.analog_gain = new_value
-            self.channelConfigurationManager.update_configuration(self.objectiveStore.current_objective, self.currentConfiguration.id, "AnalogGain", new_value)
+            self.channelConfigurationManager.update_configuration(
+                self.objectiveStore.current_objective, self.currentConfiguration.id, "AnalogGain", new_value
+            )
             self.signal_newAnalogGain.emit(new_value)
 
     def update_config_illumination_intensity(self, new_value):
@@ -2374,7 +2370,9 @@ class FlexibleMultiPointWidget(QFrame):
         self.entry_Nt.setFixedWidth(max_num_width)
 
         self.list_configurations = QListWidget()
-        for microscope_configuration in self.channelConfigurationManager.get_channel_configurations_for_objective(self.objectiveStore.current_objective):
+        for microscope_configuration in self.channelConfigurationManager.get_channel_configurations_for_objective(
+            self.objectiveStore.current_objective
+        ):
             self.list_configurations.addItems([microscope_configuration.name])
         self.list_configurations.setSelectionMode(
             QAbstractItemView.MultiSelection
@@ -3533,7 +3531,9 @@ class WellplateMultiPointWidget(QFrame):
         self.combobox_z_stack.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
 
         self.list_configurations = QListWidget()
-        for microscope_configuration in self.channelConfigurationManager.get_channel_configurations_for_objective(self.objectiveStore.current_objective):
+        for microscope_configuration in self.channelConfigurationManager.get_channel_configurations_for_objective(
+            self.objectiveStore.current_objective
+        ):
             self.list_configurations.addItems([microscope_configuration.name])
         self.list_configurations.setSelectionMode(QAbstractItemView.MultiSelection)
 
@@ -4770,7 +4770,9 @@ class NapariLiveWidget(QWidget):
 
         # Microscope Configuration
         self.dropdown_modeSelection = QComboBox()
-        for config in self.channelConfigurationManager.get_channel_configurations_for_objective(self.objectiveStore.current_objective):
+        for config in self.channelConfigurationManager.get_channel_configurations_for_objective(
+            self.objectiveStore.current_objective
+        ):
             self.dropdown_modeSelection.addItem(config.name)
         self.dropdown_modeSelection.setCurrentText(self.live_configuration.name)
         self.dropdown_modeSelection.currentTextChanged.connect(self.update_microscope_mode_by_name)
@@ -5029,7 +5031,9 @@ class NapariLiveWidget(QWidget):
         self.live_configuration = next(
             (
                 config
-                for config in self.channelConfigurationManager.get_channel_configurations_for_objective(self.objectiveStore.current_objective)
+                for config in self.channelConfigurationManager.get_channel_configurations_for_objective(
+                    self.objectiveStore.current_objective
+                )
                 if config.name == current_microscope_mode_name
             ),
             None,
@@ -5042,17 +5046,23 @@ class NapariLiveWidget(QWidget):
 
     def update_config_exposure_time(self, new_value):
         self.live_configuration.exposure_time = new_value
-        self.channelConfigurationManager.update_configuration(self.objectiveStore.current_objective, self.live_configuration.id, "ExposureTime", new_value)
+        self.channelConfigurationManager.update_configuration(
+            self.objectiveStore.current_objective, self.live_configuration.id, "ExposureTime", new_value
+        )
         self.signal_newExposureTime.emit(new_value)
 
     def update_config_analog_gain(self, new_value):
         self.live_configuration.analog_gain = new_value
-        self.channelConfigurationManager.update_configuration(self.objectiveStore.current_objective, self.live_configuration.id, "AnalogGain", new_value)
+        self.channelConfigurationManager.update_configuration(
+            self.objectiveStore.current_objective, self.live_configuration.id, "AnalogGain", new_value
+        )
         self.signal_newAnalogGain.emit(new_value)
 
     def update_config_illumination_intensity(self, new_value):
         self.live_configuration.illumination_intensity = new_value
-        self.channelConfigurationManager.update_configuration(self.objectiveStore.current_objective, self.live_configuration.id, "IlluminationIntensity", new_value)
+        self.channelConfigurationManager.update_configuration(
+            self.objectiveStore.current_objective, self.live_configuration.id, "IlluminationIntensity", new_value
+        )
         self.liveController.set_illumination(self.live_configuration.illumination_source, new_value)
 
     def update_resolution_scaling(self, value):
@@ -5849,7 +5859,9 @@ class TrackingControllerWidget(QFrame):
         self.entry_tracking_interval.setValue(0)
 
         self.list_configurations = QListWidget()
-        for microscope_configuration in self.channelConfigurationManager.get_channel_configurations_for_objective(self.objectiveStore.current_objective):
+        for microscope_configuration in self.channelConfigurationManager.get_channel_configurations_for_objective(
+            self.objectiveStore.current_objective
+        ):
             self.list_configurations.addItems([microscope_configuration.name])
         self.list_configurations.setSelectionMode(
             QAbstractItemView.MultiSelection
