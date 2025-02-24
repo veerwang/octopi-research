@@ -4595,6 +4595,7 @@ class LaserAutofocusController(QObject):
 
     image_to_display = Signal(np.ndarray)
     signal_displacement_um = Signal(float)
+    signal_piezo_position_update = Signal()  # Signal to emit piezo position updates
 
     def __init__(
         self,
@@ -4891,6 +4892,7 @@ class LaserAutofocusController(QObject):
         if self.piezo is not None:
             # TODO: check if um_to_move is in the range of the piezo
             self.piezo.move_relative(um_to_move)
+            self.signal_piezo_position_update.emit()
         else:
             self.stage.move_z(um_to_move / 1000)
 

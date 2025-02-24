@@ -1029,6 +1029,11 @@ class HighContentScreeningGui(QMainWindow):
             )
             self.laserAutofocusController.image_to_display.connect(self.imageDisplayWindow_focus.display_image)
 
+            # Add connection for piezo position updates
+            self.laserAutofocusController.signal_piezo_position_update.connect(
+                self.piezoWidget.update_displacement_um_display
+            )
+
         self.camera.set_callback(self.streamHandler.on_new_frame)
 
     def setup_movement_updater(self):

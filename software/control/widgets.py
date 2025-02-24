@@ -1548,7 +1548,9 @@ class PiezoWidget(QFrame):
         self.update_spinBox()
         self.update_slider()
 
-    def update_displacement_um_display(self, displacement):
+    def update_displacement_um_display(self, displacement=None):
+        if displacement is None:
+            displacement = self.piezo.get_pos()
         self.piezo_displacement_um = round(displacement, 2)
         self.update_spinBox()
         self.update_slider()
