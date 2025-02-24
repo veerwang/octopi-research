@@ -474,9 +474,18 @@ class LaserAutofocusSettingWidget(QWidget):
         settings_layout.addWidget(self.apply_button)
         settings_group.setLayout(settings_layout)
 
+        # Add Laser AF Characterization Mode checkbox
+        characterization_group = QFrame()
+        characterization_layout = QHBoxLayout()
+        self.characterization_checkbox = QCheckBox("Laser AF Characterization Mode")
+        self.characterization_checkbox.setChecked(False)
+        characterization_layout.addWidget(self.characterization_checkbox)
+        characterization_group.setLayout(characterization_layout)
+
         # Add to main layout
         layout.addWidget(live_group)
         layout.addWidget(settings_group)
+        layout.addWidget(characterization_group)
         self.setLayout(layout)
 
         if not self.stretch:
@@ -488,6 +497,7 @@ class LaserAutofocusSettingWidget(QWidget):
         self.analog_gain_spinbox.valueChanged.connect(self.update_analog_gain)
         self.apply_button.clicked.connect(self.apply_settings)
         self.run_spot_detection_button.clicked.connect(self.run_spot_detection)
+        self.characterization_checkbox.stateChanged.connect(self.toggle_characterization_mode)
 
     def _add_spinbox(
         self, layout, label: str, property_name: str, min_val: float, max_val: float, decimals: int
@@ -518,6 +528,10 @@ class LaserAutofocusSettingWidget(QWidget):
             self.liveController.stop_live()
             self.btn_live.setText("Start Live")
             self.run_spot_detection_button.setEnabled(True)
+    
+    def toggle_characterization_mode(self, state):
+        global LASER_AF_CHARACTERIZATION_MODE
+        LASER_AF_CHARACTERIZATION_MODE = state
 
     def update_exposure_time(self, value):
         self.signal_newExposureTime.emit(value)

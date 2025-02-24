@@ -5077,12 +5077,12 @@ class LaserAutofocusController(QObject):
 
                 # calculate centroid
                 spot_detection_params = {
-                    "y_window": self.laser_af_properties.laser_af_y_window,
-                    "x_window": self.laser_af_properties.laser_af_x_window,
-                    "peak_width": self.laser_af_properties.laser_af_min_peak_width,
-                    "peak_distance": self.laser_af_properties.laser_af_min_peak_distance,
-                    "peak_prominence": self.laser_af_properties.laser_af_min_peak_prominence,
-                    "spot_spacing": self.laser_af_properties.laser_af_spot_spacing
+                    "y_window": self.laser_af_properties.y_window,
+                    "x_window": self.laser_af_properties.x_window,
+                    "peak_width": self.laser_af_properties.min_peak_width,
+                    "peak_distance": self.laser_af_properties.min_peak_distance,
+                    "peak_prominence": self.laser_af_properties.min_peak_prominence,
+                    "spot_spacing": self.laser_af_properties.spot_spacing
                 }
                 result = utils.find_spot_location(image, mode=self.laser_af_properties.spot_detection_mode, params=spot_detection_params)
                 if result is None:
