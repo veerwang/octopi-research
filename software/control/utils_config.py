@@ -1,4 +1,4 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 from pydantic_xml import BaseXmlModel, element, attr
 from typing import List, Optional
 from pathlib import Path
@@ -36,18 +36,20 @@ class LaserAFConfig(BaseModel):
     min_peak_prominence: float = LASER_AF_MIN_PEAK_PROMINENCE  # Minimum peak prominence
     spot_spacing: float = LASER_AF_SPOT_SPACING  # Expected spacing between spots
 
-    model_config = {
-        "json_encoders": {
-            SpotDetectionMode: lambda v: v.value
-        }
-    }
+    @field_validator('spot_detection_mode', mode='before')
+    @classmethod
+    def validate_spot_detection_mode(cls, v):
+        """Convert string to SpotDetectionMode enum if needed"""
+        if isinstance(v, str):
+            return SpotDetectionMode(v)
+        return v
 
-    def model_dump(self, **kwargs):
-        """Override model_dump to ensure enums are serialized properly"""
+    def model_dump(self, serialize=False, **kwargs):
+        """Ensure proper serialization of enums to strings"""
         data = super().model_dump(**kwargs)
-        # Convert enum to string value for JSON serialization only if it's still an enum
-        if 'spot_detection_mode' in data and isinstance(data['spot_detection_mode'], SpotDetectionMode):
-            data['spot_detection_mode'] = data['spot_detection_mode'].value
+        if serialize:
+            if 'spot_detection_mode' in data and isinstance(data['spot_detection_mode'], SpotDetectionMode):
+                data['spot_detection_mode'] = data['spot_detection_mode'].value
         return data
 
 class ChannelMode(BaseXmlModel, tag='mode'):

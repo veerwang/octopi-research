@@ -738,7 +738,7 @@ class HighContentScreeningGui(QMainWindow):
             dock_laserfocus_image_display.addWidget(self.imageDisplayWindow_focus.widget)
             dock_laserfocus_image_display.setStretch(x=100, y=100)
 
-            dock_laserfocus_liveController = dock.Dock("Focus Camera Controller", autoOrientation=False)
+            dock_laserfocus_liveController = dock.Dock("Laser Autofocus Settings", autoOrientation=False)
             dock_laserfocus_liveController.showTitleBar()
             dock_laserfocus_liveController.addWidget(self.laserAutofocusSettingWidget)
             dock_laserfocus_liveController.setStretch(x=100, y=100)

@@ -3717,7 +3717,7 @@ class LaserAFSettingManager:
             objective_path.mkdir(parents=True)
         config_file = objective_path / "laser_af_settings.json"
 
-        config_dict = self.autofocus_configurations[objective].model_dump()
+        config_dict = self.autofocus_configurations[objective].model_dump(serialize=True)
         with open(config_file, 'w') as f:
             json.dump(config_dict, f, indent=4)
 

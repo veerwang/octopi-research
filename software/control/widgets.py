@@ -393,7 +393,7 @@ class LaserAutofocusSettingWidget(QWidget):
         # Analog gain control
         analog_gain_layout = QHBoxLayout()
         analog_gain_layout.addWidget(QLabel("Focus Camera Analog Gain:"))
-        self.analog_gain_spinbox = QSpinBox()
+        self.analog_gain_spinbox = QDoubleSpinBox()
         self.analog_gain_spinbox.setRange(0, 20)
         self.analog_gain_spinbox.setValue(self.laserAutofocusController.laser_af_properties.focus_camera_analog_gain)
         analog_gain_layout.addWidget(self.analog_gain_spinbox)
