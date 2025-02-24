@@ -1148,7 +1148,7 @@ class LiveControlWidget(QFrame):
         self.slider_resolutionScaling.setTickPosition(QSlider.TicksBelow)
         self.slider_resolutionScaling.setMinimum(10)
         self.slider_resolutionScaling.setMaximum(100)
-        self.slider_resolutionScaling.setValue(DEFAULT_DISPLAY_CROP)
+        self.slider_resolutionScaling.setValue(100)
         self.slider_resolutionScaling.setSingleStep(10)
 
         self.label_resolutionScaling = QSpinBox()
@@ -4740,7 +4740,7 @@ class NapariLiveWidget(QWidget):
         # Resolution Scaling
         self.slider_resolutionScaling = QSlider(Qt.Horizontal)
         self.slider_resolutionScaling.setRange(10, 100)
-        self.slider_resolutionScaling.setValue(int(DEFAULT_DISPLAY_CROP))
+        self.slider_resolutionScaling.setValue(100)
         self.slider_resolutionScaling.setTickPosition(QSlider.TicksBelow)
         self.slider_resolutionScaling.setTickInterval(10)
         self.slider_resolutionScaling.valueChanged.connect(self.update_resolution_scaling)

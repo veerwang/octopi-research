@@ -238,7 +238,7 @@ class HighContentScreeningGui(QMainWindow):
             self.laserAFSettingManager = None
         self.configurationManager = core.ConfigurationManager(channel_manager=self.channelConfigurationManager, laser_af_manager=self.laserAFSettingManager)
         self.contrastManager = core.ContrastManager()
-        self.streamHandler = core.StreamHandler(display_resolution_scaling=DEFAULT_DISPLAY_CROP / 100)
+        self.streamHandler = core.StreamHandler()
 
         self.liveController = core.LiveController(
             self.camera, self.microcontroller, self.illuminationController, parent=self
@@ -572,7 +572,7 @@ class HighContentScreeningGui(QMainWindow):
             self.liveController,
             self.objectiveStore,
             self.channelConfigurationManager,
-            show_display_options=True,
+            show_display_options=False,
             show_autolevel=True,
             autolevel=True,
         )
