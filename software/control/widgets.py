@@ -6784,6 +6784,7 @@ class LaserAutofocusControlWidget(QFrame):
         super().__init__(*args, **kwargs)
         self.laserAutofocusController = laserAutofocusController
         self.add_components()
+        self.update_init_state()
         self.setFrameStyle(QFrame.Panel | QFrame.Raised)
 
     def add_components(self):
@@ -6840,7 +6841,7 @@ class LaserAutofocusControlWidget(QFrame):
 
         # make connections
         self.btn_initialize.clicked.connect(self.init_controller)
-        self.btn_set_reference.clicked.connect(self.laserAutofocusController.set_reference)
+        self.btn_set_reference.clicked.connect(self.on_set_reference_clicked)
         self.btn_measure_displacement.clicked.connect(self.laserAutofocusController.measure_displacement)
         self.btn_move_to_target.clicked.connect(self.move_to_target)
         self.laserAutofocusController.signal_displacement_um.connect(self.label_displacement.setNum)
@@ -6849,17 +6850,24 @@ class LaserAutofocusControlWidget(QFrame):
         self.laserAutofocusController.initialize_auto()
         if self.laserAutofocusController.is_initialized:
             self.btn_set_reference.setEnabled(True)
-            self.btn_measure_displacement.setEnabled(True)
-            self.btn_move_to_target.setEnabled(True)
+            self.btn_measure_displacement.setEnabled(False)
+            self.btn_move_to_target.setEnabled(False)
 
     def update_init_state(self):
         self.btn_initialize.setChecked(self.laserAutofocusController.is_initialized)
         self.btn_set_reference.setEnabled(self.laserAutofocusController.is_initialized)
-        self.btn_measure_displacement.setEnabled(self.laserAutofocusController.is_initialized)
-        self.btn_move_to_target.setEnabled(self.laserAutofocusController.is_initialized)
+        self.btn_measure_displacement.setEnabled(self.laserAutofocusController.has_reference)
+        self.btn_move_to_target.setEnabled(self.laserAutofocusController.has_reference)
 
     def move_to_target(self, target_um):
         self.laserAutofocusController.move_to_target(self.entry_target.value())
+
+    def on_set_reference_clicked(self):
+        """Handle set reference button click"""
+        success = self.laserAutofocusController.set_reference()
+        if success:
+            self.btn_measure_displacement.setEnabled(True)
+            self.btn_move_to_target.setEnabled(True)
 
 
 class WellplateFormatWidget(QWidget):
