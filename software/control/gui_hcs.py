@@ -586,7 +586,7 @@ class HighContentScreeningGui(QMainWindow):
         )
         self.dacControlWidget = widgets.DACControWidget(self.microcontroller)
         self.autofocusWidget = widgets.AutoFocusWidget(self.autofocusController)
-        self.piezoWidget = widgets.PiezoWidget(self.microcontroller)
+        self.piezoWidget = widgets.PiezoWidget(self.microscope.piezo)
         if USE_XERYON:
             self.objectivesWidget = widgets.ObjectivesWidget(self.objectiveStore, self.objective_changer)
         else:
@@ -1028,6 +1028,11 @@ class HighContentScreeningGui(QMainWindow):
                 self.displacementMeasurementWidget.display_readings
             )
             self.laserAutofocusController.image_to_display.connect(self.imageDisplayWindow_focus.display_image)
+
+            # Add connection for piezo position updates
+            self.laserAutofocusController.signal_piezo_position_update.connect(
+                self.piezoWidget.update_displacement_um_display
+            )
 
         self.camera.set_callback(self.streamHandler.on_new_frame)
 
