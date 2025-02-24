@@ -4931,10 +4931,10 @@ class LaserAutofocusController(QObject):
 
         # Store cropped and normalized reference image
         center_y = int(reference_image.shape[0] / 2)
-        x_start = max(0, int(x) - self.SPOT_CROP_SIZE // 2)
-        x_end = min(reference_image.shape[1], int(x) + self.SPOT_CROP_SIZE // 2)
-        y_start = max(0, center_y - self.SPOT_CROP_SIZE // 2)
-        y_end = min(reference_image.shape[0], center_y + self.SPOT_CROP_SIZE // 2)
+        x_start = max(0, int(x) - self.laser_af_properties.spot_crop_size // 2)
+        x_end = min(reference_image.shape[1], int(x) + self.laser_af_properties.spot_crop_size // 2)
+        y_start = max(0, center_y - self.laser_af_properties.spot_crop_size // 2)
+        y_end = min(reference_image.shape[0], center_y + self.laser_af_properties.spot_crop_size // 2)
 
         reference_crop = reference_image[y_start:y_end, x_start:x_end].astype(np.float32)
         self.reference_crop = (reference_crop - np.mean(reference_crop)) / np.max(reference_crop)

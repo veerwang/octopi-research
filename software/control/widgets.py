@@ -348,7 +348,7 @@ class LaserAutofocusSettingWidget(QWidget):
 
     signal_newExposureTime = Signal(float)
     signal_newAnalogGain = Signal(float)
-    signal_start_live = Signal()
+    signal_apply_settings = Signal()
 
     def __init__(self, liveController, laserAutofocusController, stretch=True):
         super().__init__()
@@ -387,7 +387,6 @@ class LaserAutofocusSettingWidget(QWidget):
         self.exposure_spinbox = QDoubleSpinBox()
         self.exposure_spinbox.setRange(self.liveController.camera.EXPOSURE_TIME_MS_MIN, self.liveController.camera.EXPOSURE_TIME_MS_MAX)
         self.exposure_spinbox.setValue(self.laserAutofocusController.laser_af_properties.focus_camera_exposure_time_ms)
-        self.exposure_spinbox.setDecimals(1)
         exposure_layout.addWidget(self.exposure_spinbox)
 
         # Analog gain control
@@ -514,6 +513,9 @@ class LaserAutofocusSettingWidget(QWidget):
         self.spinboxes[property_name] = spinbox
 
     def toggle_live(self, pressed):
+        # Print traceback for debugging
+        import traceback
+        traceback.print_stack()
         if pressed:
             self.liveController.start_live()
             self.btn_live.setText("Stop Live")
@@ -568,6 +570,7 @@ class LaserAutofocusSettingWidget(QWidget):
         }
         self.laserAutofocusController.set_laser_af_properties(updates)
         self.laserAutofocusController.initialize_auto()
+        self.signal_apply_settings.emit()
         self.update_calibration_label()
 
     def update_calibration_label(self):

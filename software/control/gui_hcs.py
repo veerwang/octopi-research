@@ -996,6 +996,9 @@ class HighContentScreeningGui(QMainWindow):
             self.laserAutofocusSettingWidget.signal_newAnalogGain.connect(
                 self.cameraSettingWidget_focus_camera.set_analog_gain
             )
+            self.laserAutofocusSettingWidget.signal_apply_settings.connect(
+                self.laserAutofocusControlWidget.update_init_state
+            )
 
             self.laserAutofocusSettingWidget.update_exposure_time(self.laserAutofocusSettingWidget.exposure_spinbox.value())
             self.laserAutofocusSettingWidget.update_analog_gain(self.laserAutofocusSettingWidget.analog_gain_spinbox.value())
