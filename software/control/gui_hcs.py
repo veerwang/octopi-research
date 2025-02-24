@@ -586,7 +586,7 @@ class HighContentScreeningGui(QMainWindow):
         )
         self.dacControlWidget = widgets.DACControWidget(self.microcontroller)
         self.autofocusWidget = widgets.AutoFocusWidget(self.autofocusController)
-        self.piezoWidget = widgets.PiezoWidget(self.microcontroller)
+        self.piezoWidget = widgets.PiezoWidget(self.microscope.piezo)
         if USE_XERYON:
             self.objectivesWidget = widgets.ObjectivesWidget(self.objectiveStore, self.objective_changer)
         else:
