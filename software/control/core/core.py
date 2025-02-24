@@ -3023,7 +3023,6 @@ class ImageDisplayWindow(QMainWindow):
         liveController=None,
         contrastManager=None,
         window_title="",
-        draw_crosshairs=False,
         show_LUT=False,
         autoLevels=False,
     ):
@@ -3080,7 +3079,6 @@ class ImageDisplayWindow(QMainWindow):
         self.ptRect2 = None
         self.DrawCirc = False
         self.centroid = None
-        self.DrawCrossHairs = False
         self.image_offset = np.array([0, 0])
 
         ## Layout

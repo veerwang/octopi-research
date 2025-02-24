@@ -301,7 +301,7 @@ class HighContentScreeningGui(QMainWindow):
                 for_displacement_measurement=True,
             )
             self.imageDisplayWindow_focus = core.ImageDisplayWindow(
-                draw_crosshairs=True, show_LUT=False, autoLevels=False
+                show_LUT=False, autoLevels=False
             )
             self.displacementMeasurementController = core_displacement_measurement.DisplacementMeasurementController()
             self.laserAutofocusController = core.LaserAutofocusController(
@@ -641,18 +641,18 @@ class HighContentScreeningGui(QMainWindow):
             self.laserAutofocusControlWidget: widgets.LaserAutofocusControlWidget = widgets.LaserAutofocusControlWidget(
                 self.laserAutofocusController
             )
-            self.imageDisplayWindow_focus = core.ImageDisplayWindow(draw_crosshairs=True)
+            self.imageDisplayWindow_focus = core.ImageDisplayWindow()
 
         self.imageDisplayTabs = QTabWidget()
         if self.live_only_mode:
             if ENABLE_TRACKING:
                 self.imageDisplayWindow = core.ImageDisplayWindow(
-                    self.liveController, self.contrastManager, draw_crosshairs=True
+                    self.liveController, self.contrastManager
                 )
                 self.imageDisplayWindow.show_ROI_selector()
             else:
                 self.imageDisplayWindow = core.ImageDisplayWindow(
-                    self.liveController, self.contrastManager, draw_crosshairs=True, show_LUT=True, autoLevels=True
+                    self.liveController, self.contrastManager, show_LUT=True, autoLevels=True
                 )
             self.imageDisplayTabs = self.imageDisplayWindow.widget
             self.napariMosaicDisplayWidget = None
@@ -713,12 +713,12 @@ class HighContentScreeningGui(QMainWindow):
         else:
             if ENABLE_TRACKING:
                 self.imageDisplayWindow = core.ImageDisplayWindow(
-                    self.liveController, self.contrastManager, draw_crosshairs=True
+                    self.liveController, self.contrastManager
                 )
                 self.imageDisplayWindow.show_ROI_selector()
             else:
                 self.imageDisplayWindow = core.ImageDisplayWindow(
-                    self.liveController, self.contrastManager, draw_crosshairs=True, show_LUT=True, autoLevels=True
+                    self.liveController, self.contrastManager, show_LUT=True, autoLevels=True
                 )
             self.imageDisplayTabs.addTab(self.imageDisplayWindow.widget, "Live View")
 
