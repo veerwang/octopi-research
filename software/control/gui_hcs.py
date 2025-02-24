@@ -236,7 +236,9 @@ class HighContentScreeningGui(QMainWindow):
             self.laserAFSettingManager = core.LaserAFSettingManager()
         else:
             self.laserAFSettingManager = None
-        self.configurationManager = core.ConfigurationManager(channel_manager=self.channelConfigurationManager, laser_af_manager=self.laserAFSettingManager)
+        self.configurationManager = core.ConfigurationManager(
+            channel_manager=self.channelConfigurationManager, laser_af_manager=self.laserAFSettingManager
+        )
         self.contrastManager = core.ContrastManager()
         self.streamHandler = core.StreamHandler(display_resolution_scaling=DEFAULT_DISPLAY_CROP / 100)
 
@@ -546,7 +548,9 @@ class HighContentScreeningGui(QMainWindow):
     def loadWidgets(self):
         # Initialize all GUI widgets
         if ENABLE_SPINNING_DISK_CONFOCAL:
-            self.spinningDiskConfocalWidget = widgets.SpinningDiskConfocalWidget(self.xlight, self.channelConfigurationManager)
+            self.spinningDiskConfocalWidget = widgets.SpinningDiskConfocalWidget(
+                self.xlight, self.channelConfigurationManager
+            )
         if ENABLE_NL5:
             import control.NL5Widget as NL5Widget
 
@@ -683,7 +687,9 @@ class HighContentScreeningGui(QMainWindow):
                 show_configurations=TRACKING_SHOW_MICROSCOPE_CONFIGURATIONS,
             )
         if ENABLE_STITCHER:
-            self.stitcherWidget = widgets.StitcherWidget(self.objectiveStore, self.channelConfigurationManager, self.contrastManager)
+            self.stitcherWidget = widgets.StitcherWidget(
+                self.objectiveStore, self.channelConfigurationManager, self.contrastManager
+            )
 
         self.recordTabWidget = QTabWidget()
         self.setupRecordTabWidget()
@@ -977,18 +983,19 @@ class HighContentScreeningGui(QMainWindow):
             self.wellSelectionWidget.signal_wellSelected.connect(self.wellplateMultiPointWidget.update_well_coordinates)
             self.objectivesWidget.signal_objective_changed.connect(self.wellplateMultiPointWidget.update_coordinates)
 
-        self.objectivesWidget.signal_objective_changed.connect(lambda: self.liveControlWidget.update_microscope_mode_by_name(
-            self.liveControlWidget.currentConfiguration.name
-            ))
+        self.objectivesWidget.signal_objective_changed.connect(
+            lambda: self.liveControlWidget.update_microscope_mode_by_name(
+                self.liveControlWidget.currentConfiguration.name
+            )
+        )
 
         if SUPPORT_LASER_AUTOFOCUS:
+
             def connect_objective_changed_laser_af():
                 self.laserAutofocusController.on_objective_changed()
                 self.laserAutofocusControlWidget.update_init_state()
 
-            self.objectivesWidget.signal_objective_changed.connect(
-                connect_objective_changed_laser_af
-            )
+            self.objectivesWidget.signal_objective_changed.connect(connect_objective_changed_laser_af)
             self.focusCameraControlWidget.signal_newExposureTime.connect(
                 self.cameraSettingWidget_focus_camera.set_exposure_time
             )

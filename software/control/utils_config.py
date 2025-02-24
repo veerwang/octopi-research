@@ -4,8 +4,10 @@ from typing import List, Optional
 from pathlib import Path
 import control.utils_channel as utils_channel
 
+
 class LaserAFConfig(BaseModel):
     """Pydantic model for laser autofocus configuration"""
+
     x_offset: float = 0.0
     y_offset: float = 0.0
     width: int = 1536
@@ -17,44 +19,50 @@ class LaserAFConfig(BaseModel):
     focus_camera_exposure_time_ms: int = 2
     focus_camera_analog_gain: int = 0
 
-class ChannelMode(BaseXmlModel, tag='mode'):
+
+class ChannelMode(BaseXmlModel, tag="mode"):
     """Channel configuration model"""
-    id: str = attr(name='ID')
-    name: str = attr(name='Name')
-    exposure_time: float = attr(name='ExposureTime')
-    analog_gain: float = attr(name='AnalogGain')
-    illumination_source: int = attr(name='IlluminationSource')
-    illumination_intensity: float = attr(name='IlluminationIntensity')
-    camera_sn: Optional[str] = attr(name='CameraSN', default=None)
-    z_offset: float = attr(name='ZOffset')
-    emission_filter_position: int = attr(name='EmissionFilterPosition', default=1)
-    selected: bool = attr(name='Selected', default=False)
+
+    id: str = attr(name="ID")
+    name: str = attr(name="Name")
+    exposure_time: float = attr(name="ExposureTime")
+    analog_gain: float = attr(name="AnalogGain")
+    illumination_source: int = attr(name="IlluminationSource")
+    illumination_intensity: float = attr(name="IlluminationIntensity")
+    camera_sn: Optional[str] = attr(name="CameraSN", default=None)
+    z_offset: float = attr(name="ZOffset")
+    emission_filter_position: int = attr(name="EmissionFilterPosition", default=1)
+    selected: bool = attr(name="Selected", default=False)
     color: Optional[str] = None  # Not stored in XML but computed from name
 
     def __init__(self, **data):
         super().__init__(**data)
         self.color = utils_channel.get_channel_color(self.name)
 
-class ChannelConfig(BaseXmlModel, tag='modes'):
+
+class ChannelConfig(BaseXmlModel, tag="modes"):
     """Root configuration file model"""
-    modes: List[ChannelMode] = element(tag='mode')
+
+    modes: List[ChannelMode] = element(tag="mode")
+
 
 def get_attr_name(attr_name: str) -> str:
     """Get the attribute name for a given configuration attribute"""
     attr_map = {
-        'ID': 'id',
-        'Name': 'name',
-        'ExposureTime': 'exposure_time',
-        'AnalogGain': 'analog_gain',
-        'IlluminationSource': 'illumination_source',
-        'IlluminationIntensity': 'illumination_intensity',
-        'CameraSN': 'camera_sn',
-        'ZOffset': 'z_offset',
-        'EmissionFilterPosition': 'emission_filter_position',
-        'Selected': 'selected',
-        'Color': 'color'
+        "ID": "id",
+        "Name": "name",
+        "ExposureTime": "exposure_time",
+        "AnalogGain": "analog_gain",
+        "IlluminationSource": "illumination_source",
+        "IlluminationIntensity": "illumination_intensity",
+        "CameraSN": "camera_sn",
+        "ZOffset": "z_offset",
+        "EmissionFilterPosition": "emission_filter_position",
+        "Selected": "selected",
+        "Color": "color",
     }
     return attr_map[attr_name]
+
 
 def generate_default_configuration(filename: str) -> None:
     """Generate default configuration using Pydantic models"""
@@ -67,7 +75,7 @@ def generate_default_configuration(filename: str) -> None:
             illumination_source=0,
             illumination_intensity=5,
             camera_sn="",
-            z_offset=0.0
+            z_offset=0.0,
         ),
         ChannelMode(
             id="4",
@@ -77,7 +85,7 @@ def generate_default_configuration(filename: str) -> None:
             illumination_source=3,
             illumination_intensity=5,
             camera_sn="",
-            z_offset=0.0
+            z_offset=0.0,
         ),
         ChannelMode(
             id="5",
@@ -87,7 +95,7 @@ def generate_default_configuration(filename: str) -> None:
             illumination_source=11,
             illumination_intensity=100,
             camera_sn="",
-            z_offset=0.0
+            z_offset=0.0,
         ),
         ChannelMode(
             id="6",
@@ -97,7 +105,7 @@ def generate_default_configuration(filename: str) -> None:
             illumination_source=12,
             illumination_intensity=100,
             camera_sn="",
-            z_offset=0.0
+            z_offset=0.0,
         ),
         ChannelMode(
             id="7",
@@ -107,7 +115,7 @@ def generate_default_configuration(filename: str) -> None:
             illumination_source=13,
             illumination_intensity=100,
             camera_sn="",
-            z_offset=0.0
+            z_offset=0.0,
         ),
         ChannelMode(
             id="8",
@@ -117,7 +125,7 @@ def generate_default_configuration(filename: str) -> None:
             illumination_source=14,
             illumination_intensity=100,
             camera_sn="",
-            z_offset=0.0
+            z_offset=0.0,
         ),
         ChannelMode(
             id="12",
@@ -127,7 +135,7 @@ def generate_default_configuration(filename: str) -> None:
             illumination_source=15,
             illumination_intensity=100,
             camera_sn="",
-            z_offset=0.0
+            z_offset=0.0,
         ),
         ChannelMode(
             id="9",
@@ -137,7 +145,7 @@ def generate_default_configuration(filename: str) -> None:
             illumination_source=4,
             illumination_intensity=20,
             camera_sn="",
-            z_offset=0.0
+            z_offset=0.0,
         ),
         # Commented out modes for reference
         # ChannelMode(
@@ -168,7 +176,7 @@ def generate_default_configuration(filename: str) -> None:
             illumination_source=1,
             illumination_intensity=5,
             camera_sn="",
-            z_offset=0.0
+            z_offset=0.0,
         ),
         ChannelMode(
             id="3",
@@ -178,7 +186,7 @@ def generate_default_configuration(filename: str) -> None:
             illumination_source=2,
             illumination_intensity=5,
             camera_sn="",
-            z_offset=0.0
+            z_offset=0.0,
         ),
         ChannelMode(
             id="12",
@@ -188,7 +196,7 @@ def generate_default_configuration(filename: str) -> None:
             illumination_source=7,
             illumination_intensity=20,
             camera_sn="",
-            z_offset=0.0
+            z_offset=0.0,
         ),
         ChannelMode(
             id="13",
@@ -198,7 +206,7 @@ def generate_default_configuration(filename: str) -> None:
             illumination_source=8,
             illumination_intensity=20,
             camera_sn="",
-            z_offset=0.0
+            z_offset=0.0,
         ),
         ChannelMode(
             id="14",
@@ -208,7 +216,7 @@ def generate_default_configuration(filename: str) -> None:
             illumination_source=0,
             illumination_intensity=5,
             camera_sn="",
-            z_offset=0.0
+            z_offset=0.0,
         ),
         ChannelMode(
             id="15",
@@ -218,7 +226,7 @@ def generate_default_configuration(filename: str) -> None:
             illumination_source=0,
             illumination_intensity=5,
             camera_sn="",
-            z_offset=0.0
+            z_offset=0.0,
         ),
         ChannelMode(
             id="16",
@@ -228,7 +236,7 @@ def generate_default_configuration(filename: str) -> None:
             illumination_source=0,
             illumination_intensity=5,
             camera_sn="",
-            z_offset=0.0
+            z_offset=0.0,
         ),
         ChannelMode(
             id="21",
@@ -238,7 +246,7 @@ def generate_default_configuration(filename: str) -> None:
             illumination_source=0,
             illumination_intensity=5,
             camera_sn="",
-            z_offset=0.0
+            z_offset=0.0,
         ),
         ChannelMode(
             id="20",
@@ -248,13 +256,13 @@ def generate_default_configuration(filename: str) -> None:
             illumination_source=6,
             illumination_intensity=0,
             camera_sn="",
-            z_offset=0.0
-        )
+            z_offset=0.0,
+        ),
     ]
 
     config = ChannelConfig(modes=default_modes)
-    xml_str = config.to_xml(pretty_print=True, encoding='utf-8')
-    
+    xml_str = config.to_xml(pretty_print=True, encoding="utf-8")
+
     # Write to file
     path = Path(filename)
     if not path.parent.exists():

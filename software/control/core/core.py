@@ -1731,7 +1731,9 @@ class MultiPointWorker(QObject):
                 config_AF = next(
                     (
                         config
-                        for config in self.channelConfigurationManager.get_channel_configurations_for_objective(self.objectiveStore.current_objective)
+                        for config in self.channelConfigurationManager.get_channel_configurations_for_objective(
+                            self.objectiveStore.current_objective
+                        )
                         if config.name == configuration_name_AF
                     )
                 )
@@ -1753,7 +1755,9 @@ class MultiPointWorker(QObject):
                     config_AF = next(
                         (
                             config
-                            for config in self.channelConfigurationManager.get_channel_configurations_for_objective(self.objectiveStore.current_objective)
+                            for config in self.channelConfigurationManager.get_channel_configurations_for_objective(
+                                self.objectiveStore.current_objective
+                            )
                             if config.name == configuration_name_AF
                         )
                     )
@@ -1867,7 +1871,9 @@ class MultiPointWorker(QObject):
         rgb_channels = ["BF LED matrix full_R", "BF LED matrix full_G", "BF LED matrix full_B"]
         images = {}
 
-        for config_ in self.channelConfigurationManager.get_channel_configurations_for_objective(self.objectiveStore.current_objective):
+        for config_ in self.channelConfigurationManager.get_channel_configurations_for_objective(
+            self.objectiveStore.current_objective
+        ):
             if config_.name in rgb_channels:
                 # update the current configuration
                 self.signal_current_configuration.emit(config_)
@@ -2300,7 +2306,9 @@ class MultiPointController(QObject):
         # create a new folder
         utils.ensure_directory_exists(os.path.join(self.base_path, self.experiment_ID))
         self.channelConfigurationManager.write_configuration_selected(
-            self.objectiveStore.current_objective, self.selected_configurations, os.path.join(self.base_path, self.experiment_ID) + "/configurations.xml"
+            self.objectiveStore.current_objective,
+            self.selected_configurations,
+            os.path.join(self.base_path, self.experiment_ID) + "/configurations.xml",
         )  # save the configuration for the experiment
         # Prepare acquisition parameters
         acquisition_parameters = {
@@ -2344,9 +2352,13 @@ class MultiPointController(QObject):
         for configuration_name in selected_configurations_name:
             self.selected_configurations.append(
                 next(
-                    (config
-                    for config in self.channelConfigurationManager.get_channel_configurations_for_objective(self.objectiveStore.current_objective)
-                    if config.name == configuration_name)
+                    (
+                        config
+                        for config in self.channelConfigurationManager.get_channel_configurations_for_objective(
+                            self.objectiveStore.current_objective
+                        )
+                        if config.name == configuration_name
+                    )
                 )
             )
 
@@ -2737,7 +2749,7 @@ class TrackingController(QObject):
             utils.ensure_directory_exists(os.path.join(self.base_path, self.experiment_ID))
             self.channelConfigurationManager.save_current_configuration_to_path(
                 self.objectiveStore.current_objective,
-                os.path.join(self.base_path, self.experiment_ID) + "/configurations.xml"
+                os.path.join(self.base_path, self.experiment_ID) + "/configurations.xml",
             )  # save the configuration for the experiment
         except:
             print("error in making a new folder")
@@ -2747,10 +2759,14 @@ class TrackingController(QObject):
         self.selected_configurations = []
         for configuration_name in selected_configurations_name:
             self.selected_configurations.append(
-                next((
-                    config
-                    for config in self.channelConfigurationManager.get_channel_configurations_for_objective(self.objectiveStore.current_objective)
-                    if config.name == configuration_name)
+                next(
+                    (
+                        config
+                        for config in self.channelConfigurationManager.get_channel_configurations_for_objective(
+                            self.objectiveStore.current_objective
+                        )
+                        if config.name == configuration_name
+                    )
                 )
             )
 
@@ -3582,7 +3598,7 @@ class ChannelConfigurationManager:
         self.all_configs: Dict[ConfigType, Dict[str, ChannelConfig]] = {
             ConfigType.CHANNEL: {},
             ConfigType.CONFOCAL: {},
-            ConfigType.WIDEFIELD: {}
+            ConfigType.WIDEFIELD: {},
         }
         self.active_config_type = ConfigType.CHANNEL if not ENABLE_SPINNING_DISK_CONFOCAL else ConfigType.CONFOCAL
 
@@ -3596,7 +3612,7 @@ class ChannelConfigurationManager:
 
         if not config_file.exists():
             utils_config.generate_default_configuration(str(config_file))
-            
+
         xml_content = config_file.read_bytes()
         self.all_configs[config_type][objective] = ChannelConfig.from_xml(xml_content)
 
@@ -3621,7 +3637,7 @@ class ChannelConfigurationManager:
         if not save_path.parent.exists():
             save_path.parent.mkdir(parents=True)
 
-        xml_str = config.to_xml(pretty_print=True, encoding='utf-8')
+        xml_str = config.to_xml(pretty_print=True, encoding="utf-8")
         save_path.write_bytes(xml_str)
 
     def save_configurations(self, objective: str) -> None:
@@ -3637,7 +3653,7 @@ class ChannelConfigurationManager:
     def save_current_configuration_to_path(self, objective: str, path: Path) -> None:
         """Only used in TrackingController. Might be temporary."""
         config = self.all_configs[self.active_config_type][objective]
-        xml_str = config.to_xml(pretty_print=True, encoding='utf-8')
+        xml_str = config.to_xml(pretty_print=True, encoding="utf-8")
         path.write_bytes(xml_str)
 
     def get_configurations(self, objective: str) -> List[ChannelMode]:
@@ -3661,7 +3677,9 @@ class ChannelConfigurationManager:
 
         self.save_configurations(objective)
 
-    def write_configuration_selected(self, objective: str, selected_configurations: List[ChannelMode], filename: str) -> None:
+    def write_configuration_selected(
+        self, objective: str, selected_configurations: List[ChannelMode], filename: str
+    ) -> None:
         """Write selected configurations to a file"""
         config = self.all_configs[self.active_config_type].get(objective)
         if not config:
@@ -3672,7 +3690,7 @@ class ChannelConfigurationManager:
             mode.selected = any(conf.id == mode.id for conf in selected_configurations)
 
         # Save to specified file
-        xml_str = config.to_xml(pretty_print=True, encoding='utf-8')
+        xml_str = config.to_xml(pretty_print=True, encoding="utf-8")
         filename = Path(filename)
         filename.write_bytes(xml_str)
 
@@ -3692,6 +3710,7 @@ class ChannelConfigurationManager:
 
 class LaserAFSettingManager:
     """Manages JSON-based laser autofocus configurations."""
+
     def __init__(self):
         self.autofocus_configurations: Dict[str, LaserAFConfig] = {}  # Dict[str, Dict[str, Any]]
         self.current_profile_path = None
@@ -3703,7 +3722,7 @@ class LaserAFSettingManager:
         """Load autofocus configurations for a specific objective."""
         config_file = self.current_profile_path / objective / "laser_af_settings.json"
         if config_file.exists():
-            with open(config_file, 'r') as f:
+            with open(config_file, "r") as f:
                 config_dict = json.load(f)
                 self.autofocus_configurations[objective] = LaserAFConfig(**config_dict)
 
@@ -3718,7 +3737,7 @@ class LaserAFSettingManager:
         config_file = objective_path / "laser_af_settings.json"
 
         config_dict = self.autofocus_configurations[objective].model_dump()
-        with open(config_file, 'w') as f:
+        with open(config_file, "w") as f:
             json.dump(config_dict, f, indent=4)
 
     def get_settings_for_objective(self, objective: str) -> Dict[str, Any]:
@@ -3736,21 +3755,25 @@ class LaserAFSettingManager:
             config = self.autofocus_configurations[objective]
             self.autofocus_configurations[objective] = config.model_copy(update=updates)
 
+
 class ConfigurationManager:
     """Main configuration manager that coordinates channel and autofocus configurations."""
-    def __init__(self, 
-                 channel_manager: ChannelConfigurationManager,
-                 laser_af_manager: Optional[LaserAFSettingManager] = None,
-                 base_config_path: Path = Path("acquisition_configurations"), 
-                 profile: str = "default_profile"):
+
+    def __init__(
+        self,
+        channel_manager: ChannelConfigurationManager,
+        laser_af_manager: Optional[LaserAFSettingManager] = None,
+        base_config_path: Path = Path("acquisition_configurations"),
+        profile: str = "default_profile",
+    ):
         super().__init__()
         self.base_config_path = Path(base_config_path)
         self.current_profile = profile
         self.available_profiles = self._get_available_profiles()
-        
+
         self.channel_manager = channel_manager
         self.laser_af_manager = laser_af_manager
-        
+
         self.load_profile(profile)
 
     def _get_available_profiles(self) -> List[str]:
