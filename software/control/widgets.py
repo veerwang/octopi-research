@@ -568,6 +568,17 @@ class LaserAutofocusSettingWidget(QWidget):
         }
         self.laserAutofocusController.set_laser_af_properties(updates)
         self.laserAutofocusController.initialize_auto()
+        self.update_calibration_label()
+
+    def update_calibration_label(self):
+        # Clear previous calibration label if it exists
+        if hasattr(self, 'calibration_label'):
+            self.calibration_label.deleteLater()
+
+        # Create and add new calibration label
+        self.calibration_label = QLabel()
+        self.calibration_label.setText(f"Calibration Result: {self.laserAutofocusController.laser_af_properties.pixel_to_um:.3f} pixels/um")
+        self.layout().addWidget(self.calibration_label)
 
 
 class SpinningDiskConfocalWidget(QWidget):
