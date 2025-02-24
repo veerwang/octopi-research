@@ -301,7 +301,7 @@ class HighContentScreeningGui(QMainWindow):
                 for_displacement_measurement=True,
             )
             self.imageDisplayWindow_focus = core.ImageDisplayWindow(
-                draw_crosshairs=True, show_LUT=False, autoLevels=False
+                show_LUT=False, autoLevels=False
             )
             self.displacementMeasurementController = core_displacement_measurement.DisplacementMeasurementController()
             self.laserAutofocusController = core.LaserAutofocusController(
@@ -644,18 +644,18 @@ class HighContentScreeningGui(QMainWindow):
             self.laserAutofocusControlWidget: widgets.LaserAutofocusControlWidget = widgets.LaserAutofocusControlWidget(
                 self.laserAutofocusController
             )
-            self.imageDisplayWindow_focus = core.ImageDisplayWindow(draw_crosshairs=True)
+            self.imageDisplayWindow_focus = core.ImageDisplayWindow()
 
         self.imageDisplayTabs = QTabWidget()
         if self.live_only_mode:
             if ENABLE_TRACKING:
                 self.imageDisplayWindow = core.ImageDisplayWindow(
-                    self.liveController, self.contrastManager, draw_crosshairs=True
+                    self.liveController, self.contrastManager
                 )
                 self.imageDisplayWindow.show_ROI_selector()
             else:
                 self.imageDisplayWindow = core.ImageDisplayWindow(
-                    self.liveController, self.contrastManager, draw_crosshairs=True, show_LUT=True, autoLevels=True
+                    self.liveController, self.contrastManager, show_LUT=True, autoLevels=True
                 )
             self.imageDisplayTabs = self.imageDisplayWindow.widget
             self.napariMosaicDisplayWidget = None
@@ -716,12 +716,12 @@ class HighContentScreeningGui(QMainWindow):
         else:
             if ENABLE_TRACKING:
                 self.imageDisplayWindow = core.ImageDisplayWindow(
-                    self.liveController, self.contrastManager, draw_crosshairs=True
+                    self.liveController, self.contrastManager
                 )
                 self.imageDisplayWindow.show_ROI_selector()
             else:
                 self.imageDisplayWindow = core.ImageDisplayWindow(
-                    self.liveController, self.contrastManager, draw_crosshairs=True, show_LUT=True, autoLevels=True
+                    self.liveController, self.contrastManager, show_LUT=True, autoLevels=True
                 )
             self.imageDisplayTabs.addTab(self.imageDisplayWindow.widget, "Live View")
 
@@ -1011,12 +1011,17 @@ class HighContentScreeningGui(QMainWindow):
             self.laserAutofocusSettingWidget.signal_apply_settings.connect(
                 self.laserAutofocusControlWidget.update_init_state
             )
-
+            self.laserAutofocusSettingWidget.signal_laser_spot_location.connect(
+                self.imageDisplayWindow_focus.mark_spot
+            )
             self.laserAutofocusSettingWidget.update_exposure_time(
                 self.laserAutofocusSettingWidget.exposure_spinbox.value()
             )
             self.laserAutofocusSettingWidget.update_analog_gain(
                 self.laserAutofocusSettingWidget.analog_gain_spinbox.value()
+            )
+            self.laserAutofocusController.signal_cross_correlation.connect(
+                self.laserAutofocusSettingWidget.show_cross_correlation_result
             )
 
             self.streamHandler_focus_camera.signal_new_frame_received.connect(

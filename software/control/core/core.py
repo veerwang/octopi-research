@@ -3017,7 +3017,6 @@ class ImageDisplayWindow(QMainWindow):
         liveController=None,
         contrastManager=None,
         window_title="",
-        draw_crosshairs=False,
         show_LUT=False,
         autoLevels=False,
     ):
@@ -3074,7 +3073,6 @@ class ImageDisplayWindow(QMainWindow):
         self.ptRect2 = None
         self.DrawCirc = False
         self.centroid = None
-        self.DrawCrossHairs = False
         self.image_offset = np.array([0, 0])
 
         ## Layout
@@ -3158,6 +3156,43 @@ class ImageDisplayWindow(QMainWindow):
                 self.graphics_widget.img.setLevels((min_val, max_val))
 
         self.graphics_widget.img.updateImage()
+
+    def mark_spot(self, image: np.ndarray, x: float, y: float):
+        """Mark the detected laserspot location on the image.
+
+        Args:
+            image: Image to mark
+            x: x-coordinate of the spot
+            y: y-coordinate of the spot
+
+        Returns:
+            Image with marked spot
+        """
+        # Draw a green crosshair at the specified x,y coordinates
+        crosshair_size = 10  # Size of crosshair lines in pixels
+        crosshair_color = (0, 255, 0)  # Green in BGR format
+        crosshair_thickness = 1
+        x = int(round(x))
+        y = int(round(y))
+
+        # Convert grayscale to BGR
+        marked_image = cv2.cvtColor(image, cv2.COLOR_GRAY2BGR)
+
+        # Draw horizontal line
+        cv2.line(marked_image, 
+                 (x - crosshair_size, y),
+                 (x + crosshair_size, y),
+                 crosshair_color,
+                 crosshair_thickness)
+
+        # Draw vertical line  
+        cv2.line(marked_image,
+                 (x, y - crosshair_size),
+                 (x, y + crosshair_size),
+                 crosshair_color,
+                 crosshair_thickness)
+
+        self.display_image(marked_image)
 
     def update_contrast_limits(self):
         if self.show_LUT and self.contrastManager and self.contrastManager.acquisition_dtype:
@@ -4589,6 +4624,7 @@ class LaserAutofocusController(QObject):
 
     image_to_display = Signal(np.ndarray)
     signal_displacement_um = Signal(float)
+    signal_cross_correlation = Signal(float)
     signal_piezo_position_update = Signal()  # Signal to emit piezo position updates
 
     def __init__(
@@ -4869,7 +4905,9 @@ class LaserAutofocusController(QObject):
         self._move_z(um_to_move)
 
         # Verify using cross-correlation that spot is in same location as reference
-        if not self._verify_spot_alignment():
+        cc_result, correlation = self._verify_spot_alignment()
+        self.signal_cross_correlation.emit(correlation)
+        if not cc_result:
             self._log.warning("Cross correlation check failed - spots not well aligned")
             # move back to the current position
             self._move_z(-um_to_move)
@@ -4970,7 +5008,7 @@ class LaserAutofocusController(QObject):
         self.has_reference = False
         self.load_cached_configuration()
 
-    def _verify_spot_alignment(self) -> bool:
+    def _verify_spot_alignment(self) -> Tuple[bool, float]:
         """Verify laser spot alignment using cross-correlation with reference image.
 
         Captures current laser spot image and compares it with the reference image
@@ -5025,7 +5063,7 @@ class LaserAutofocusController(QObject):
             self._log.warning("Cross correlation check failed - spots not well aligned")
             return False
 
-        return True
+        return True, correlation
 
     def _get_laser_spot_centroid(self) -> Optional[Tuple[float, float]]:
         """Get the centroid location of the laser spot.
@@ -5061,11 +5099,17 @@ class LaserAutofocusController(QObject):
                 self.image = image  # store for debugging # TODO: add to return instead of storing
 
                 # calculate centroid
-                result = utils.find_spot_location(image, mode=self.laser_af_properties.spot_detection_mode)
+                spot_detection_params = {
+                    "y_window": self.laser_af_properties.y_window,
+                    "x_window": self.laser_af_properties.x_window,
+                    "peak_width": self.laser_af_properties.min_peak_width,
+                    "peak_distance": self.laser_af_properties.min_peak_distance,
+                    "peak_prominence": self.laser_af_properties.min_peak_prominence,
+                    "spot_spacing": self.laser_af_properties.spot_spacing
+                }
+                result = utils.find_spot_location(image, mode=self.laser_af_properties.spot_detection_mode, params=spot_detection_params)
                 if result is None:
-                    self._log.warning(
-                        f"No spot detected in frame {i+1}/{self.laser_af_properties.laser_af_averaging_n}"
-                    )
+                    self._log.warning(f"No spot detected in frame {i+1}/{self.laser_af_properties.laser_af_averaging_n}")
                     continue
 
                 x, y = result
@@ -5074,9 +5118,7 @@ class LaserAutofocusController(QObject):
                 successful_detections += 1
 
             except Exception as e:
-                self._log.error(
-                    f"Error processing frame {i+1}/{self.laser_af_properties.laser_af_averaging_n}: {str(e)}"
-                )
+                self._log.error(f"Error processing frame {i+1}/{self.laser_af_properties.laser_af_averaging_n}: {str(e)}")
                 continue
 
         # optionally display the image
