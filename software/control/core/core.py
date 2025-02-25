@@ -5093,7 +5093,7 @@ class LaserAutofocusController(QObject):
 
                 if remove_background:
                     # remove background using top hat filter
-                    kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPTICAL, (50, 50))  # TODO: tmp hard coded value
+                    kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (50, 50))  # TODO: tmp hard coded value
                     image = cv2.morphologyEx(image, cv2.MORPH_TOPHAT, kernel)
 
                 # calculate centroid
