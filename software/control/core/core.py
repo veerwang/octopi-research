@@ -1356,7 +1356,7 @@ class MultiPointWorker(QObject):
         self.scan_region_names = self.multiPointController.scan_region_names
         self.z_stacking_config = self.multiPointController.z_stacking_config  # default 'from bottom'
         self.z_range = self.multiPointController.z_range
-        self.run_fluidics = self.multiPointController.run_fluidics
+        self.fluidics = self.multiPointController.fluidics
 
         self.microscope = self.multiPointController.parent
         self.performance_mode = self.microscope and self.microscope.performance_mode
@@ -1409,20 +1409,18 @@ class MultiPointWorker(QObject):
                     self._log.debug("In run, abort_acquisition_requested=True")
                     break
 
-                if self.run_fluidics:
-                    assert self.Nt <= len(PORT_LIST), "Nt is greater than the number of ports"
-                    probe_port =PORT_LIST[self.time_point]
-                    self.run_fluidics.update_port(probe_port)  # use the port in PORT_LIST
+                if self.fluidics:
+                    self.fluidics.update_port(self.time_point)  # use the port in PORT_LIST
                     # For MERFISH, before imaging, run the first 3 sequences (Add probe, wash buffer, imaging buffer)
-                    self.run_fluidics.run_sequences(section=BEFORE_IMAGING_SEQUENCES)
-                    self.run_fluidics.wait_for_completion()
+                    self.fluidics.run_sequences(section=BEFORE_IMAGING_SEQUENCES)
+                    self.fluidics.wait_for_completion()
 
                 self.run_single_time_point()
 
-                if self.run_fluidics:
+                if self.fluidics:
                     # For MERFISH, after imaging, run the following 2 sequences (Cleavage buffer, SSC rinse)
-                    self.run_fluidics.run_sequences(section=AFTER_IMAGING_SEQUENCES)
-                    self.run_fluidics.wait_for_completion()
+                    self.fluidics.run_sequences(section=AFTER_IMAGING_SEQUENCES)
+                    self.fluidics.wait_for_completion()
 
                 self.time_point = self.time_point + 1
                 if self.dt == 0:  # continous acquisition
@@ -2124,7 +2122,7 @@ class MultiPointController(QObject):
         channelConfigurationManager,
         usb_spectrometer=None,
         scanCoordinates=None,
-        run_fluidics=None,
+        fluidics=None,
         parent=None,
     ):
         QObject.__init__(self)
@@ -2177,7 +2175,7 @@ class MultiPointController(QObject):
         self.old_images_per_page = 1
         z_mm_current = self.stage.get_pos().z_mm
         self.z_range = [z_mm_current, z_mm_current + self.deltaZ * (self.NZ - 1)]  # [start_mm, end_mm]
-        self.run_fluidics = run_fluidics
+        self.fluidics = fluidics
 
         try:
             if self.parent is not None:

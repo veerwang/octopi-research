@@ -14,7 +14,7 @@ from fluidics_v2.software.control._def import CMD_SET
 
 import json
 
-class RunFluidics:
+class Fluidics:
     def __init__(self, 
                  config_path: str, 
                  sequence_path: str, 
@@ -31,7 +31,8 @@ class RunFluidics:
         self.config_path = config_path
         self.sequence_path = sequence_path
         self.simulation = simulation
-        
+        self.port_list = None
+
         # Initialize member variables
         self.config = None
         self.sequences = None
@@ -51,7 +52,10 @@ class RunFluidics:
             'on_finished': lambda: print("Experiment completed"),
             'on_estimate': lambda time, n: print(f"Est. time: {time}s, Sequences: {n}")
         }
+
+        self.initialize()
         
+    def initialize(self):
         # Initialize everything
         self._load_config()
         self._load_sequences()
@@ -138,18 +142,21 @@ class RunFluidics:
         if self.thread:
             self.thread.join()
     
-    def update_port(self, port: int):
+    def update_port(self, index: int):
         """Update the fluidics port for Flow Reagent sequences
-        
+
         Args:
             port: New port number to use for Flow Reagent sequences with port <= 24
         """
         # Find Flow Reagent sequences with port <= 24
         mask = (self.sequences['sequence_name'] == 'Flow Reagent') & (self.sequences['fluidic_port'] <= 24)
-        
-        # Update the port number for matching sequences
-        self.sequences.loc[mask, 'fluidic_port'] = port
-            
+
+        self.sequences.loc[mask, 'fluidic_port'] = self.port_list[index]
+    
+    def set_rounds(self, rounds: list):
+        """Rounds: a list of port indices of unique reagents to run"""
+        self.port_list = rounds
+
     def cleanup(self):
         """Clean up hardware resources"""
         if self.syringe_pump:

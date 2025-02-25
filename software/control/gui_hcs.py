@@ -106,7 +106,7 @@ if USE_JUPYTER_CONSOLE:
     from control.console import JupyterWidget
 
 if RUN_FLUIDICS:
-    from control.run_fluidics import RunFluidics
+    from control.fluidics import Fluidics
 
 
 class MovementUpdater(QObject):
@@ -291,7 +291,7 @@ class HighContentScreeningGui(QMainWindow):
             self.objectiveStore,
             self.channelConfigurationManager,
             scanCoordinates=self.scanCoordinates,
-            run_fluidics=self.fluidics,
+            fluidics=self.fluidics,
             parent=self,
         )
 
@@ -364,7 +364,7 @@ class HighContentScreeningGui(QMainWindow):
                 sn=XERYON_SERIAL_NUMBER, stage=self.stage
             )
         if RUN_FLUIDICS:
-            self.fluidics = RunFluidics(
+            self.fluidics = Fluidics(
                 config_path=FLUIDICS_CONFIG_PATH,
                 sequence_path=FLUIDICS_SEQUENCE_PATH,
                 simulation=True,
@@ -490,7 +490,7 @@ class HighContentScreeningGui(QMainWindow):
 
         if RUN_FLUIDICS:
             try:
-                self.fluidics = RunFluidics(
+                self.fluidics = Fluidics(
                     config_path=FLUIDICS_CONFIG_PATH,
                     sequence_path=FLUIDICS_SEQUENCE_PATH,
                     simulation=False,
@@ -702,6 +702,16 @@ class HighContentScreeningGui(QMainWindow):
             self.focusMapWidget,
             self.napariMosaicDisplayWidget,
         )
+        self.multiPointWithFluidicsWidget = widgets.MultiPointWithFluidicsWidget(
+            self.stage,
+            self.navigationViewer,
+            self.multipointController,
+            self.objectiveStore,
+            self.channelConfigurationManager,
+            self.scanCoordinates,
+            self.focusMapWidget,
+            self.napariMosaicDisplayWidget,
+        )
         self.sampleSettingsWidget = widgets.SampleSettingsWidget(self.objectivesWidget, self.wellplateFormatWidget)
 
         if ENABLE_TRACKING:
@@ -799,6 +809,8 @@ class HighContentScreeningGui(QMainWindow):
             self.recordTabWidget.addTab(self.wellplateMultiPointWidget, "Wellplate Multipoint")
         if ENABLE_FLEXIBLE_MULTIPOINT:
             self.recordTabWidget.addTab(self.flexibleMultiPointWidget, "Flexible Multipoint")
+        if RUN_FLUIDICS:
+            self.recordTabWidget.addTab(self.multiPointWithFluidicsWidget, "Multipoint with Fluidics")
         if ENABLE_TRACKING:
             self.recordTabWidget.addTab(self.trackingControlWidget, "Tracking")
         if ENABLE_RECORDING:
@@ -936,6 +948,9 @@ class HighContentScreeningGui(QMainWindow):
                 self.wellplateMultiPointWidget.signal_stitcher_z_levels.connect(
                     self.stitcherWidget.updateRegistrationZLevels
                 )
+
+        if RUN_FLUIDICS:
+            self.multiPointWithFluidicsWidget.signal_acquisition_started.connect(self.toggleAcquisitionStart)
 
         self.profileWidget.signal_profile_changed.connect(self.liveControlWidget.refresh_mode_list)
 
@@ -1153,6 +1168,19 @@ class HighContentScreeningGui(QMainWindow):
                             ),
                         ]
                     )
+                if RUN_FLUIDICS:
+                    self.napari_connections["napariMultiChannelWidget"].extend(
+                        [
+                            (
+                                self.multiPointWithFluidicsWidget.signal_acquisition_channels,
+                                self.napariMultiChannelWidget.initChannels,
+                            ),
+                            (
+                                self.multiPointWithFluidicsWidget.signal_acquisition_shape,
+                                self.napariMultiChannelWidget.initLayersShape,
+                            ),
+                        ]
+                    )
             else:
                 self.multipointController.image_to_display_multi.connect(self.imageArrayDisplayWindow.display_image)
 
@@ -1196,6 +1224,20 @@ class HighContentScreeningGui(QMainWindow):
                             (
                                 self.napariMosaicDisplayWidget.signal_shape_drawn,
                                 self.wellplateMultiPointWidget.update_manual_shape,
+                            ),
+                        ]
+                    )
+
+                if RUN_FLUIDICS:
+                    self.napari_connections["napariMosaicDisplayWidget"].extend(
+                        [
+                            (
+                                self.multiPointWithFluidicsWidget.signal_acquisition_channels,
+                                self.napariMosaicDisplayWidget.initChannels,
+                            ),
+                            (
+                                self.multiPointWithFluidicsWidget.signal_acquisition_shape,
+                                self.napariMosaicDisplayWidget.initLayersShape,
                             ),
                         ]
                     )
@@ -1352,6 +1394,10 @@ class HighContentScreeningGui(QMainWindow):
             self.slidePositionController.signal_slide_loading_position_reached.connect(
                 self.wellplateMultiPointWidget.disable_the_start_aquisition_button
             )
+        if RUN_FLUIDICS:
+            self.slidePositionController.signal_slide_loading_position_reached.connect(
+                self.multiPointWithFluidicsWidget.disable_the_start_aquisition_button
+            )
 
         self.slidePositionController.signal_slide_scanning_position_reached.connect(
             self.navigationWidget.slot_slide_scanning_position_reached
@@ -1363,6 +1409,10 @@ class HighContentScreeningGui(QMainWindow):
         if ENABLE_WELLPLATE_MULTIPOINT:
             self.slidePositionController.signal_slide_scanning_position_reached.connect(
                 self.wellplateMultiPointWidget.enable_the_start_aquisition_button
+            )
+        if RUN_FLUIDICS:
+            self.slidePositionController.signal_slide_scanning_position_reached.connect(
+                self.multiPointWithFluidicsWidget.enable_the_start_aquisition_button
             )
 
         self.slidePositionController.signal_clear_slide.connect(self.navigationViewer.clear_slide)

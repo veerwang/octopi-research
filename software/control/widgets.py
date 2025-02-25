@@ -4507,7 +4507,7 @@ class MultiPointWithFluidicsWidget(QFrame):
         z_stack_layout.addWidget(self.entry_NZ)
 
         # Rounds input
-        z_stack_layout.addWidget(QLabel("Rounds:"))
+        z_stack_layout.addWidget(QLabel("Fluidics Rounds:"))
         self.entry_rounds = QLineEdit()
         z_stack_layout.addWidget(self.entry_rounds)
 
@@ -4578,28 +4578,31 @@ class MultiPointWithFluidicsWidget(QFrame):
 
     # The following methods are copied from WellplateMultiPointWidget with minimal modifications
     def toggle_acquisition(self, pressed):
-        if not self.base_path_is_set:
-            self.btn_startAcquisition.setChecked(False)
-            QMessageBox.warning(self, "Warning", "Please choose base saving directory first")
-            return
-
-        if not self.list_configurations.selectedItems():
-            self.btn_startAcquisition.setChecked(False)
-            QMessageBox.warning(self, "Warning", "Please select at least one imaging channel")
-            return
-
+        rounds = self.get_rounds()
         if pressed:
+            if not self.base_path_is_set:
+                self.btn_startAcquisition.setChecked(False)
+                QMessageBox.warning(self, "Warning", "Please choose base saving directory first")
+                return
+
+            if not self.list_configurations.selectedItems():
+                self.btn_startAcquisition.setChecked(False)
+                QMessageBox.warning(self, "Warning", "Please select at least one imaging channel")
+                return
+
             if self.multipointController.acquisition_in_progress():
                 self._log.warning("Acquisition in progress or aborting, cannot start another yet.")
                 self.btn_startAcquisition.setChecked(False)
                 return
-                
+
+            if not rounds:
+                self.btn_startAcquisition.setChecked(False)
+                QMessageBox.warning(self, "Warning", "Please enter valid round numbers (1-24)")
+                return
+
             self.setEnabled_all(False)
             self.is_current_acquisition_widget = True
 
-            # Calculate total number of positions for signal emission
-            total_positions = len(self.scanCoordinates.region_fov_coordinates.get("current", []))
-            
             self.multipointController.set_deltaZ(self.entry_deltaZ.value())
             self.multipointController.set_NZ(self.entry_NZ.value())
             self.multipointController.set_use_piezo(self.checkbox_usePiezo.isChecked())
@@ -4607,6 +4610,8 @@ class MultiPointWithFluidicsWidget(QFrame):
             self.multipointController.set_selected_configurations(
                 [item.text() for item in self.list_configurations.selectedItems()]
             )
+            self.multipointController.set_Nt(len(rounds))
+            self.multipointController.fluidics.set_rounds(rounds)
             self.multipointController.start_new_experiment(self.lineEdit_experimentID.text())
 
             # Emit signals

@@ -897,7 +897,6 @@ if not (DEFAULT_SAVING_PATH.startswith(str(Path.home()))):
 
 # fluidics
 RUN_FLUIDICS = False
-PORT_LIST = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24]
 FLUIDICS_CONFIG_PATH = "./merfish_config/MERFISH_config.json"
 FLUIDICS_SEQUENCE_PATH = "./merfish_config/merfish-imaging.csv"
 BEFORE_IMAGING_SEQUENCES = [0, 3]
