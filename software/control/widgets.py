@@ -532,7 +532,7 @@ class LaserAutofocusSettingWidget(QWidget):
 
     def toggle_characterization_mode(self, state):
         global LASER_AF_CHARACTERIZATION_MODE
-        LASER_AF_CHARACTERIZATION_MODE = state
+        LASER_AF_CHARACTERIZATION_MODE = bool(state == Qt.Checked)
 
     def update_exposure_time(self, value):
         self.signal_newExposureTime.emit(value)
