@@ -1153,18 +1153,16 @@ class ProfileWidget(QFrame):
         sizePolicy = QSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         self.dropdown_profiles.setSizePolicy(sizePolicy)
 
-        self.btn_loadProfile = QPushButton("Load")
         self.btn_newProfile = QPushButton("Save As")
 
         # Connect signals
-        self.btn_loadProfile.clicked.connect(self.load_profile)
+        self.dropdown_profiles.currentTextChanged.connect(self.load_profile)
         self.btn_newProfile.clicked.connect(self.create_new_profile)
 
         # Layout
         layout = QHBoxLayout()
         layout.addWidget(QLabel("Configuration Profile"))
         layout.addWidget(self.dropdown_profiles, 2)
-        layout.addWidget(self.btn_loadProfile)
         layout.addWidget(self.btn_newProfile)
 
         self.setLayout(layout)
