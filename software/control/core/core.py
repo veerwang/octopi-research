@@ -4727,7 +4727,7 @@ class LaserAutofocusController(QObject):
         self.microcontroller.turn_on_AF_laser()
         self.microcontroller.wait_till_operation_is_completed()
 
-        result = self._get_laser_spot_centroid()
+        result = self._get_laser_spot_centroid(remove_background=True)
         if result is None:
             self._log.error("Failed to find laser spot during initialization")
             self.microcontroller.turn_off_AF_laser()
@@ -4754,6 +4754,7 @@ class LaserAutofocusController(QObject):
 
         self.initialize_manual(config)
 
+        # Calibrate pixel-to-um conversion
         if not self._calibrate_pixel_to_um():
             self._log.error("Failed to calibrate pixel-to-um conversion")
             return False
@@ -5057,7 +5058,7 @@ class LaserAutofocusController(QObject):
 
         return True, correlation
 
-    def _get_laser_spot_centroid(self) -> Optional[Tuple[float, float]]:
+    def _get_laser_spot_centroid(self, remove_background: bool = False) -> Optional[Tuple[float, float]]:
         """Get the centroid location of the laser spot.
 
         Averages multiple measurements to improve accuracy. The number of measurements
@@ -5089,6 +5090,11 @@ class LaserAutofocusController(QObject):
                     continue
 
                 self.image = image  # store for debugging # TODO: add to return instead of storing
+
+                if remove_background:
+                    # remove background using top hat filter
+                    kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPTICAL, (50, 50))  # TODO: tmp hard coded value
+                    image = cv2.morphologyEx(image, cv2.MORPH_TOPHAT, kernel)
 
                 # calculate centroid
                 spot_detection_params = {
