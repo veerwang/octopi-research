@@ -2,9 +2,6 @@ from pydantic import BaseModel, field_validator
 from pydantic_xml import BaseXmlModel, element, attr
 from typing import List, Optional
 from pathlib import Path
-import base64
-import numpy as np
-
 import control.utils_channel as utils_channel
 from control._def import (
     FOCUS_CAMERA_EXPOSURE_TIME_MS,
@@ -37,6 +34,7 @@ class LaserAFConfig(BaseModel):
     height: int = LASER_AF_CROP_HEIGHT
     pixel_to_um: float = 1
     has_reference: bool = False
+    x_reference: float = 0.0
     laser_af_averaging_n: int = LASER_AF_AVERAGING_N
     displacement_success_window_um: float = (
         DISPLACEMENT_SUCCESS_WINDOW_UM  # if the displacement is within this window, we consider the move successful
@@ -56,18 +54,6 @@ class LaserAFConfig(BaseModel):
     min_peak_distance: float = LASER_AF_MIN_PEAK_DISTANCE  # Minimum distance between peaks
     min_peak_prominence: float = LASER_AF_MIN_PEAK_PROMINENCE  # Minimum peak prominence
     spot_spacing: float = LASER_AF_SPOT_SPACING  # Expected spacing between spots
-    x_reference: Optional[float] = None
-    reference_image: Optional[str] = None  # Stores base64 encoded image data
-    reference_image_shape: Optional[tuple] = None
-    reference_image_dtype: Optional[str] = None
-
-    @property
-    def reference_image_cropped(self) -> Optional[np.ndarray]:
-        """Convert stored base64 data back to numpy array"""
-        if self.reference_image is None:
-            return None
-        data = base64.b64decode(self.reference_image.encode('utf-8'))
-        return np.frombuffer(data, dtype=np.dtype(self.reference_image_dtype)).reshape(self.reference_image_shape)
 
     @field_validator("spot_detection_mode", mode="before")
     @classmethod
@@ -76,12 +62,6 @@ class LaserAFConfig(BaseModel):
         if isinstance(v, str):
             return SpotDetectionMode(v)
         return v
-    
-    def set_reference_image(self, image: np.ndarray) -> None:
-        """Convert numpy array to base64 encoded string"""
-        self.reference_image = base64.b64encode(image.tobytes()).decode('utf-8')
-        self.reference_image_shape = image.shape
-        self.reference_image_dtype = str(image.dtype)
 
     def model_dump(self, serialize=False, **kwargs):
         """Ensure proper serialization of enums to strings"""
