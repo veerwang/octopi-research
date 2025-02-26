@@ -1601,7 +1601,7 @@ class MultiPointWorker(QObject):
             print(f"Acquiring image: ID={file_ID}, Metadata={metadata}")
 
             # laser af characterization mode
-            if LASER_AF_CHARACTERIZATION_MODE:
+            if self.microscope.laserAutofocusController.characterization_mode:
                 image = self.microscope.laserAutofocusController.get_image()
                 saving_path = os.path.join(current_path, file_ID + "_laser af camera" + ".bmp")
                 iio.imwrite(saving_path, image)
@@ -3748,8 +3748,10 @@ class LaserAFSettingManager:
             self.autofocus_configurations[objective] = config.model_copy(update=updates)
 
 
-class ConfigurationManager:
+class ConfigurationManager(QObject):
     """Main configuration manager that coordinates channel and autofocus configurations."""
+
+    signal_profile_loaded = Signal()
 
     def __init__(
         self,
@@ -3799,6 +3801,8 @@ class ConfigurationManager:
                 self.channel_manager.load_configurations(objective)
             if self.laser_af_manager:
                 self.laser_af_manager.load_configurations(objective)
+
+        self.signal_profile_loaded.emit()
 
     def create_new_profile(self, profile_name: str) -> None:
         """Create a new profile using current configurations."""
@@ -4638,6 +4642,7 @@ class LaserAutofocusController(QObject):
         self.piezo = piezo
         self.objectiveStore = objectiveStore
         self.laserAFSettingManager = laserAFSettingManager
+        self.characterization_mode = LASER_AF_CHARACTERIZATION_MODE
 
         self.is_initialized = False
 
@@ -4727,7 +4732,7 @@ class LaserAutofocusController(QObject):
         self.microcontroller.turn_on_AF_laser()
         self.microcontroller.wait_till_operation_is_completed()
 
-        result = self._get_laser_spot_centroid()
+        result = self._get_laser_spot_centroid(remove_background=True)
         if result is None:
             self._log.error("Failed to find laser spot during initialization")
             self.microcontroller.turn_off_AF_laser()
@@ -4754,6 +4759,7 @@ class LaserAutofocusController(QObject):
 
         self.initialize_manual(config)
 
+        # Calibrate pixel-to-um conversion
         if not self._calibrate_pixel_to_um():
             self._log.error("Failed to calibrate pixel-to-um conversion")
             return False
@@ -4990,8 +4996,8 @@ class LaserAutofocusController(QObject):
 
         return True
 
-    def on_objective_changed(self) -> None:
-        """Handle objective change event.
+    def on_settings_changed(self) -> None:
+        """Handle objective change or profile load event.
 
         This method is called when the objective changes. It resets the initialization
         status and loads the cached configuration for the new objective.
@@ -5057,7 +5063,7 @@ class LaserAutofocusController(QObject):
 
         return True, correlation
 
-    def _get_laser_spot_centroid(self) -> Optional[Tuple[float, float]]:
+    def _get_laser_spot_centroid(self, remove_background: bool = False) -> Optional[Tuple[float, float]]:
         """Get the centroid location of the laser spot.
 
         Averages multiple measurements to improve accuracy. The number of measurements
@@ -5089,6 +5095,11 @@ class LaserAutofocusController(QObject):
                     continue
 
                 self.image = image  # store for debugging # TODO: add to return instead of storing
+
+                if remove_background:
+                    # remove background using top hat filter
+                    kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (50, 50))  # TODO: tmp hard coded value
+                    image = cv2.morphologyEx(image, cv2.MORPH_TOPHAT, kernel)
 
                 # calculate centroid
                 spot_detection_params = {

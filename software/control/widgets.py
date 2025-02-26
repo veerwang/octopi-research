@@ -373,6 +373,7 @@ class LaserAutofocusSettingWidget(QWidget):
 
         self.spinboxes = {}
         self.init_ui()
+        self.update_calibration_label()
 
     def init_ui(self):
         layout = QVBoxLayout()
@@ -479,7 +480,7 @@ class LaserAutofocusSettingWidget(QWidget):
         characterization_group = QFrame()
         characterization_layout = QHBoxLayout()
         self.characterization_checkbox = QCheckBox("Laser AF Characterization Mode")
-        self.characterization_checkbox.setChecked(False)
+        self.characterization_checkbox.setChecked(self.laserAutofocusController.characterization_mode)
         characterization_layout.addWidget(self.characterization_checkbox)
         characterization_group.setLayout(characterization_layout)
 
@@ -498,7 +499,7 @@ class LaserAutofocusSettingWidget(QWidget):
         self.analog_gain_spinbox.valueChanged.connect(self.update_analog_gain)
         self.apply_button.clicked.connect(self.apply_settings)
         self.run_spot_detection_button.clicked.connect(self.run_spot_detection)
-        self.characterization_checkbox.stateChanged.connect(self.toggle_characterization_mode)
+        self.characterization_checkbox.toggled.connect(self.toggle_characterization_mode)
 
     def _add_spinbox(
         self, layout, label: str, property_name: str, min_val: float, max_val: float, decimals: int
@@ -530,9 +531,13 @@ class LaserAutofocusSettingWidget(QWidget):
             self.btn_live.setText("Start Live")
             self.run_spot_detection_button.setEnabled(True)
 
+    def stop_live(self):
+        """Used for stopping live when switching to other tabs"""
+        self.toggle_live(False)
+        self.btn_live.setChecked(False)
+
     def toggle_characterization_mode(self, state):
-        global LASER_AF_CHARACTERIZATION_MODE
-        LASER_AF_CHARACTERIZATION_MODE = state
+        self.laserAutofocusController.characterization_mode = state
 
     def update_exposure_time(self, value):
         self.signal_newExposureTime.emit(value)
@@ -557,6 +562,8 @@ class LaserAutofocusSettingWidget(QWidget):
         if index >= 0:
             self.spot_mode_combo.setCurrentIndex(index)
 
+        self.update_calibration_label()
+
     def apply_settings(self):
         updates = {
             "laser_af_averaging_n": int(self.spinboxes["laser_af_averaging_n"].value()),
@@ -578,7 +585,9 @@ class LaserAutofocusSettingWidget(QWidget):
         self.laserAutofocusController.set_laser_af_properties(updates)
         self.laserAutofocusController.initialize_auto()
         self.signal_apply_settings.emit()
+        self.update_calibration_label()
 
+    def update_calibration_label(self):
         # Show calibration result
         # Clear previous calibration label if it exists
         if hasattr(self, "calibration_label"):
@@ -1153,18 +1162,16 @@ class ProfileWidget(QFrame):
         sizePolicy = QSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         self.dropdown_profiles.setSizePolicy(sizePolicy)
 
-        self.btn_loadProfile = QPushButton("Load")
         self.btn_newProfile = QPushButton("Save As")
 
         # Connect signals
-        self.btn_loadProfile.clicked.connect(self.load_profile)
+        self.dropdown_profiles.currentTextChanged.connect(self.load_profile)
         self.btn_newProfile.clicked.connect(self.create_new_profile)
 
         # Layout
         layout = QHBoxLayout()
         layout.addWidget(QLabel("Configuration Profile"))
         layout.addWidget(self.dropdown_profiles, 2)
-        layout.addWidget(self.btn_loadProfile)
         layout.addWidget(self.btn_newProfile)
 
         self.setLayout(layout)
