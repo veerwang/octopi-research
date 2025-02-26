@@ -4822,10 +4822,11 @@ class LaserAutofocusController(QObject):
         else:
             pixel_to_um = self.laser_af_properties.pixel_to_um_calibration_distance / (x1 - x0)
         self._log.info(f"Pixel to um conversion factor is {pixel_to_um:.3f} um/pixel")
+        calibration_timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
         # Update config with new calibration values
         self.laser_af_properties = self.laser_af_properties.model_copy(
-            update={"pixel_to_um": pixel_to_um}
+            update={"pixel_to_um": pixel_to_um, "calibration_timestamp": calibration_timestamp}
         )
 
         # Update cache

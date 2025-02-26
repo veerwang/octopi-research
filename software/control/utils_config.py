@@ -46,6 +46,7 @@ class LaserAFConfig(BaseModel):
     pixel_to_um_calibration_distance: float = (
         PIXEL_TO_UM_CALIBRATION_DISTANCE  # Distance moved in um during calibration
     )
+    calibration_timestamp: str = ""  # Timestamp of calibration performed
     laser_af_range: float = LASER_AF_RANGE  # Maximum reasonable displacement in um
     focus_camera_exposure_time_ms: float = FOCUS_CAMERA_EXPOSURE_TIME_MS
     focus_camera_analog_gain: float = FOCUS_CAMERA_ANALOG_GAIN

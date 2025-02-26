@@ -597,7 +597,7 @@ class LaserAutofocusSettingWidget(QWidget):
         # Create and add new calibration label
         self.calibration_label = QLabel()
         self.calibration_label.setText(
-            f"Calibration Result: {self.laserAutofocusController.laser_af_properties.pixel_to_um:.3f} pixels/um"
+            f"Calibration Result: {self.laserAutofocusController.laser_af_properties.pixel_to_um:.3f} pixels/um\nPerformed at {self.laserAutofocusController.laser_af_properties.calibration_timestamp}"
         )
         self.layout().addWidget(self.calibration_label)
 
