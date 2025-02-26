@@ -1279,7 +1279,7 @@ class HighContentScreeningGui(QMainWindow):
         if SUPPORT_LASER_AUTOFOCUS:
             is_laser_focus_tab = self.imageDisplayTabs.tabText(index) == "Laser-Based Focus"
 
-            if hasattr(self, 'dock_wellSelection'):
+            if hasattr(self, "dock_wellSelection"):
                 self.dock_wellSelection.setVisible(not is_laser_focus_tab)
 
             if not is_laser_focus_tab:

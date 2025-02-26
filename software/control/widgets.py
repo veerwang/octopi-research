@@ -530,7 +530,7 @@ class LaserAutofocusSettingWidget(QWidget):
             self.liveController.stop_live()
             self.btn_live.setText("Start Live")
             self.run_spot_detection_button.setEnabled(True)
-    
+
     def stop_live(self):
         """Used for stopping live when switching to other tabs"""
         self.toggle_live(False)
