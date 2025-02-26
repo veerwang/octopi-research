@@ -2573,7 +2573,7 @@ class MultiPointController(QObject):
 
     def validate_acquisition_settings(self) -> bool:
         """Validate settings before starting acquisition"""
-        if self.do_reflection_af and not self.parent.laserAutofocusController.has_reference:
+        if self.do_reflection_af and not self.parent.laserAutofocusController.laser_af_properties.has_reference:
             QMessageBox.warning(
                 None,
                 "Laser Autofocus Not Ready",
@@ -3740,12 +3740,14 @@ class LaserAFSettingManager:
     def get_laser_af_settings(self) -> Dict[str, Any]:
         return self.autofocus_configurations
 
-    def update_laser_af_settings(self, objective: str, updates: Dict[str, Any]) -> None:
+    def update_laser_af_settings(self, objective: str, updates: Dict[str, Any], crop_image: Optional[np.ndarray] = None) -> None:
         if objective not in self.autofocus_configurations:
             self.autofocus_configurations[objective] = LaserAFConfig(**updates)
         else:
             config = self.autofocus_configurations[objective]
             self.autofocus_configurations[objective] = config.model_copy(update=updates)
+        if crop_image is not None:
+            self.autofocus_configurations[objective].set_reference_image(crop_image)
 
 
 class ConfigurationManager(QObject):
@@ -4654,9 +4656,6 @@ class LaserAutofocusController(QObject):
 
         self.image = None  # for saving the focus camera image for debugging when centroid cannot be found
 
-        self.has_reference = False  # Track if reference has been set
-        self.reference_crop = None  # for saving the reference image for cross-correlation check
-
         # Load configurations if provided
         if self.laserAFSettingManager:
             self.load_cached_configuration()
@@ -4675,6 +4674,9 @@ class LaserAutofocusController(QObject):
         )
 
         self.laser_af_properties = adjusted_config
+
+        if self.laser_af_properties.has_reference:
+            self.reference_crop = self.laser_af_properties.reference_image_cropped
 
         self.camera.set_ROI(
             self.laser_af_properties.x_offset,
@@ -4704,10 +4706,6 @@ class LaserAutofocusController(QObject):
 
             # Initialize with loaded config
             self.initialize_manual(config)
-
-            # read self.has_reference
-            self.has_reference = config.has_reference
-            # TODO: update self.reference_crop
 
     def initialize_auto(self) -> bool:
         """Automatically initialize laser autofocus by finding the spot and calibrating.
@@ -4743,11 +4741,7 @@ class LaserAutofocusController(QObject):
         self.microcontroller.turn_off_AF_laser()
         self.microcontroller.wait_till_operation_is_completed()
 
-        # Clear reference
-        self.has_reference = False
-        self.reference_crop = None
-
-        # Set up ROI around spot
+        # Set up ROI around spot and clear reference
         config = self.laser_af_properties.model_copy(
             update={
                 "x_offset": x - self.laser_af_properties.width / 2,
@@ -4755,6 +4749,8 @@ class LaserAutofocusController(QObject):
                 "has_reference": False,
             }
         )
+        self.reference_crop = None
+        config.set_reference_image(None)
         self._log.info(f"Laser spot location on the full sensor is ({int(x)}, {int(y)})")
 
         self.initialize_manual(config)
@@ -4829,7 +4825,7 @@ class LaserAutofocusController(QObject):
 
         # Update config with new calibration values
         self.laser_af_properties = self.laser_af_properties.model_copy(
-            update={"pixel_to_um": pixel_to_um, "x_reference": (x1 + x0) / 2}
+            update={"pixel_to_um": pixel_to_um}
         )
 
         # Update cache
@@ -4882,7 +4878,7 @@ class LaserAutofocusController(QObject):
         Returns:
             bool: True if move was successful, False if measurement failed or displacement was out of range
         """
-        if not self.has_reference:
+        if not self.laser_af_properties.has_reference:
             self._log.warning("Cannot move to target - reference not set")
             return False
 
@@ -4966,9 +4962,6 @@ class LaserAutofocusController(QObject):
             return False
 
         x, y = result
-        self.laser_af_properties = self.laser_af_properties.model_copy(
-            update={"x_reference": x, "has_reference": self.has_reference}
-        )
 
         # Store cropped and normalized reference image
         center_y = int(reference_image.shape[0] / 2)
@@ -4983,12 +4976,15 @@ class LaserAutofocusController(QObject):
         self.signal_displacement_um.emit(0)
         self._log.info(f"Set reference position to ({x:.1f}, {y:.1f})")
 
-        self.has_reference = True
+        self.laser_af_properties = self.laser_af_properties.model_copy(
+            update={"x_reference": x, "has_reference": True}
+        )  # We don't keep reference_crop here to avoid serializing it
 
-        # Update cache
+        # Update cached file. reference_crop needs to be saved.
         self.laserAFSettingManager.update_laser_af_settings(
             self.objectiveStore.current_objective,
-            {"x_reference": x + self.laser_af_properties.x_offset, "has_reference": self.has_reference},
+            {"x_reference": x + self.laser_af_properties.x_offset, "has_reference": True},
+            crop_image=self.reference_crop,
         )
         self.laserAFSettingManager.save_configurations(self.objectiveStore.current_objective)
 
@@ -5003,7 +4999,6 @@ class LaserAutofocusController(QObject):
         status and loads the cached configuration for the new objective.
         """
         self.is_initialized = False
-        self.has_reference = False
         self.load_cached_configuration()
 
     def _verify_spot_alignment(self) -> Tuple[bool, float]:

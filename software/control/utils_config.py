@@ -36,7 +36,7 @@ class LaserAFConfig(BaseModel):
     width: int = LASER_AF_CROP_WIDTH
     height: int = LASER_AF_CROP_HEIGHT
     pixel_to_um: float = 1
-    has_reference: bool = False
+    has_reference: bool = False  # Track if reference has been set
     laser_af_averaging_n: int = LASER_AF_AVERAGING_N
     displacement_success_window_um: float = (
         DISPLACEMENT_SUCCESS_WINDOW_UM  # if the displacement is within this window, we consider the move successful
@@ -56,8 +56,8 @@ class LaserAFConfig(BaseModel):
     min_peak_distance: float = LASER_AF_MIN_PEAK_DISTANCE  # Minimum distance between peaks
     min_peak_prominence: float = LASER_AF_MIN_PEAK_PROMINENCE  # Minimum peak prominence
     spot_spacing: float = LASER_AF_SPOT_SPACING  # Expected spacing between spots
-    x_reference: Optional[float] = None
-    reference_image: Optional[str] = None  # Stores base64 encoded image data
+    x_reference: Optional[float] = 0  # Reference position in um
+    reference_image: Optional[str] = None  # Stores base64 encoded reference image for cross-correlation check
     reference_image_shape: Optional[tuple] = None
     reference_image_dtype: Optional[str] = None
 
@@ -77,8 +77,13 @@ class LaserAFConfig(BaseModel):
             return SpotDetectionMode(v)
         return v
     
-    def set_reference_image(self, image: np.ndarray) -> None:
-        """Convert numpy array to base64 encoded string"""
+    def set_reference_image(self, image: Optional[np.ndarray]) -> None:
+        """Convert numpy array to base64 encoded string or clear reference if None"""
+        if image is None:
+            self.reference_image = None
+            self.reference_image_shape = None
+            self.reference_image_dtype = None
+            return
         self.reference_image = base64.b64encode(image.tobytes()).decode('utf-8')
         self.reference_image_shape = image.shape
         self.reference_image_dtype = str(image.dtype)
