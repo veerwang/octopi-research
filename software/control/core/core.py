@@ -1601,7 +1601,7 @@ class MultiPointWorker(QObject):
             print(f"Acquiring image: ID={file_ID}, Metadata={metadata}")
 
             # laser af characterization mode
-            if LASER_AF_CHARACTERIZATION_MODE:
+            if self.microscope.laserAutofocusController.characterization_mode:
                 image = self.microscope.laserAutofocusController.get_image()
                 saving_path = os.path.join(current_path, file_ID + "_laser af camera" + ".bmp")
                 iio.imwrite(saving_path, image)
@@ -3748,8 +3748,10 @@ class LaserAFSettingManager:
             self.autofocus_configurations[objective] = config.model_copy(update=updates)
 
 
-class ConfigurationManager:
+class ConfigurationManager(QObject):
     """Main configuration manager that coordinates channel and autofocus configurations."""
+
+    signal_profile_loaded = Signal()
 
     def __init__(
         self,
@@ -3799,6 +3801,8 @@ class ConfigurationManager:
                 self.channel_manager.load_configurations(objective)
             if self.laser_af_manager:
                 self.laser_af_manager.load_configurations(objective)
+
+        self.signal_profile_loaded.emit()
 
     def create_new_profile(self, profile_name: str) -> None:
         """Create a new profile using current configurations."""
@@ -4638,6 +4642,7 @@ class LaserAutofocusController(QObject):
         self.piezo = piezo
         self.objectiveStore = objectiveStore
         self.laserAFSettingManager = laserAFSettingManager
+        self.characterization_mode = LASER_AF_CHARACTERIZATION_MODE
 
         self.is_initialized = False
 
@@ -4991,8 +4996,8 @@ class LaserAutofocusController(QObject):
 
         return True
 
-    def on_objective_changed(self) -> None:
-        """Handle objective change event.
+    def on_settings_changed(self) -> None:
+        """Handle objective change or profile load event.
 
         This method is called when the objective changes. It resets the initialization
         status and loads the cached configuration for the new objective.
