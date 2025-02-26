@@ -4561,7 +4561,7 @@ class MultiPointWithFluidicsWidget(QFrame):
         # Connect signals
         self.btn_setSavingDir.clicked.connect(self.set_saving_dir)
         self.btn_startAcquisition.clicked.connect(self.toggle_acquisition)
-        self.btn_load_coordinates.clicked.connect(self.load_coordinates)
+        self.btn_load_coordinates.clicked.connect(self.on_load_coordinates_clicked)
         self.btn_init_fluidics.clicked.connect(self.init_fluidics)
         self.entry_deltaZ.valueChanged.connect(self.set_deltaZ)
         self.entry_NZ.valueChanged.connect(self.multipointController.set_NZ)
