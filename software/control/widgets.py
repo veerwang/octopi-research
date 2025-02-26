@@ -373,6 +373,7 @@ class LaserAutofocusSettingWidget(QWidget):
 
         self.spinboxes = {}
         self.init_ui()
+        self.update_calibration_label()
 
     def init_ui(self):
         layout = QVBoxLayout()
@@ -561,6 +562,8 @@ class LaserAutofocusSettingWidget(QWidget):
         if index >= 0:
             self.spot_mode_combo.setCurrentIndex(index)
 
+        self.update_calibration_label()
+
     def apply_settings(self):
         updates = {
             "laser_af_averaging_n": int(self.spinboxes["laser_af_averaging_n"].value()),
@@ -582,7 +585,9 @@ class LaserAutofocusSettingWidget(QWidget):
         self.laserAutofocusController.set_laser_af_properties(updates)
         self.laserAutofocusController.initialize_auto()
         self.signal_apply_settings.emit()
+        self.update_calibration_label()
 
+    def update_calibration_label(self):
         # Show calibration result
         # Clear previous calibration label if it exists
         if hasattr(self, "calibration_label"):

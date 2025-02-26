@@ -982,6 +982,11 @@ class HighContentScreeningGui(QMainWindow):
             self.wellSelectionWidget.signal_wellSelected.connect(self.wellplateMultiPointWidget.update_well_coordinates)
             self.objectivesWidget.signal_objective_changed.connect(self.wellplateMultiPointWidget.update_coordinates)
 
+        self.configurationManager.signal_profile_loaded.connect(
+            lambda: self.liveControlWidget.update_microscope_mode_by_name(
+                self.liveControlWidget.currentConfiguration.name
+            )
+        )
         self.objectivesWidget.signal_objective_changed.connect(
             lambda: self.liveControlWidget.update_microscope_mode_by_name(
                 self.liveControlWidget.currentConfiguration.name
@@ -990,12 +995,13 @@ class HighContentScreeningGui(QMainWindow):
 
         if SUPPORT_LASER_AUTOFOCUS:
 
-            def connect_objective_changed_laser_af():
-                self.laserAutofocusController.on_objective_changed()
+            def connect_settings_changed_laser_af():
+                self.laserAutofocusController.on_settings_changed()
                 self.laserAutofocusControlWidget.update_init_state()
                 self.laserAutofocusSettingWidget.update_values()
 
-            self.objectivesWidget.signal_objective_changed.connect(connect_objective_changed_laser_af)
+            self.configurationManager.signal_profile_loaded.connect(connect_settings_changed_laser_af)
+            self.objectivesWidget.signal_objective_changed.connect(connect_settings_changed_laser_af)
             self.laserAutofocusSettingWidget.signal_newExposureTime.connect(
                 self.cameraSettingWidget_focus_camera.set_exposure_time
             )
