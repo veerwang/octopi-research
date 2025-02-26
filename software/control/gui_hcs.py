@@ -1269,6 +1269,11 @@ class HighContentScreeningGui(QMainWindow):
         if hasattr(current_widget, "viewer"):
             current_widget.activate()
 
+        # Stop focus camera live if not on laser focus tab
+        if SUPPORT_LASER_AUTOFOCUS:
+            if self.imageDisplayTabs.tabText(index) != "Laser-Based Focus":
+                self.laserAutofocusSettingWidget.stop_live()
+
     def onWellplateChanged(self, format_):
         if isinstance(format_, QVariant):
             format_ = format_.value()
