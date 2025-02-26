@@ -995,13 +995,13 @@ class HighContentScreeningGui(QMainWindow):
 
         if SUPPORT_LASER_AUTOFOCUS:
 
-            def connect_settings_changed_laser_af():
+            def slot_settings_changed_laser_af():
                 self.laserAutofocusController.on_settings_changed()
                 self.laserAutofocusControlWidget.update_init_state()
                 self.laserAutofocusSettingWidget.update_values()
 
-            self.configurationManager.signal_profile_loaded.connect(connect_settings_changed_laser_af)
-            self.objectivesWidget.signal_objective_changed.connect(connect_settings_changed_laser_af)
+            self.configurationManager.signal_profile_loaded.connect(slot_settings_changed_laser_af)
+            self.objectivesWidget.signal_objective_changed.connect(slot_settings_changed_laser_af)
             self.laserAutofocusSettingWidget.signal_newExposureTime.connect(
                 self.cameraSettingWidget_focus_camera.set_exposure_time
             )
