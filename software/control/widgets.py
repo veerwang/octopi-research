@@ -4407,12 +4407,9 @@ class MultiPointWithFluidicsWidget(QFrame):
         self.setFrameStyle(QFrame.Panel | QFrame.Raised)
 
     def add_components(self):
-        btn_width = 100  # Fixed width for buttons
-
         self.btn_setSavingDir = QPushButton("Browse")
         self.btn_setSavingDir.setDefault(False)
         self.btn_setSavingDir.setIcon(QIcon("icon/folder.png"))
-        self.btn_setSavingDir.setFixedWidth(btn_width)
 
         self.lineEdit_savingDir = QLineEdit()
         self.lineEdit_savingDir.setText(DEFAULT_SAVING_PATH)
