@@ -4807,7 +4807,7 @@ class MultiPointWithFluidicsWidget(QFrame):
             if not rounds_str:
                 return []
 
-            rounds = set()  # Use set to avoid duplicates
+            rounds = []
 
             # Split by comma and process each part
             for part in rounds_str.split(","):
@@ -4819,16 +4819,15 @@ class MultiPointWithFluidicsWidget(QFrame):
                         raise ValueError(
                             f"Invalid range {part}: Numbers must be between 1 and 24, and start must be <= end"
                         )
-                    rounds.update(range(start, end + 1))
+                    rounds.extend(range(start, end + 1))
                 else:
                     # Handle single number
                     num = int(part)
                     if num < 1 or num > 24:
                         raise ValueError(f"Invalid number {num}: Must be between 1 and 24")
-                    rounds.add(num)
+                    rounds.append(num)
 
-            # Convert to sorted list
-            return list(rounds)
+            return rounds
 
         except ValueError as e:
             QMessageBox.warning(self, "Invalid Input", str(e))
