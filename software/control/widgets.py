@@ -4456,6 +4456,7 @@ class MultiPointWithFluidicsWidget(QFrame):
         self.btn_startAcquisition.setStyleSheet("background-color: #C2C2FF")
         self.btn_startAcquisition.setCheckable(True)
         self.btn_startAcquisition.setChecked(False)
+        self.btn_startAcquisition.setEnabled(False)
 
         # Progress indicators
         self.progress_label = QLabel("Region -/-")
@@ -4787,6 +4788,7 @@ class MultiPointWithFluidicsWidget(QFrame):
     def init_fluidics(self):
         """Initialize the fluidics system"""
         self.multipointController.fluidics.initialize()
+        self.btn_startAcquisition.setEnabled(True)
 
     def get_rounds(self) -> list:
         """Parse rounds input string into a list of round numbers.
