@@ -52,8 +52,6 @@ class Fluidics:
             "on_estimate": lambda time, n: print(f"Est. time: {time}s, Sequences: {n}"),
         }
 
-        self.initialize()
-
     def initialize(self):
         # Initialize everything
         self._load_config()
