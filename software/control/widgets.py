@@ -4370,8 +4370,6 @@ class MultiPointWithFluidicsWidget(QFrame):
     signal_acquisition_started = Signal(bool)
     signal_acquisition_channels = Signal(list)
     signal_acquisition_shape = Signal(int, float)  # acquisition Nz, dz
-    signal_stitcher_z_levels = Signal(int)  # live Nz
-    signal_stitcher_widget = Signal(bool)  # start stitching
 
     def __init__(
         self,
@@ -4398,7 +4396,7 @@ class MultiPointWithFluidicsWidget(QFrame):
         else:
             self.napariMosaicWidget = napariMosaicWidget
             self.performance_mode = False
-        
+
         self.base_path_is_set = False
         self.acquisition_start_time = None
         self.eta_seconds = 0
@@ -4456,10 +4454,6 @@ class MultiPointWithFluidicsWidget(QFrame):
         self.checkbox_usePiezo = QCheckBox("Piezo Z-Stack")
         self.checkbox_usePiezo.setChecked(MULTIPOINT_USE_PIEZO_FOR_ZSTACKS)
 
-        # Stitch output checkbox
-        self.checkbox_stitchOutput = QCheckBox("Stitch Scans")
-        self.checkbox_stitchOutput.setChecked(False)
-
         # Start acquisition button
         self.btn_startAcquisition = QPushButton("Start\n Acquisition ")
         self.btn_startAcquisition.setStyleSheet("background-color: #C2C2FF")
@@ -4493,10 +4487,10 @@ class MultiPointWithFluidicsWidget(QFrame):
 
         self.btn_load_coordinates = QPushButton("Load Coordinates")
         exp_id_layout.addWidget(self.btn_load_coordinates)
-        
+
         self.btn_init_fluidics = QPushButton("Init Fluidics")
         exp_id_layout.addWidget(self.btn_init_fluidics)
-    
+
         main_layout.addLayout(exp_id_layout)
 
         # Z-stack controls
@@ -4525,8 +4519,6 @@ class MultiPointWithFluidicsWidget(QFrame):
             options_layout.addWidget(self.checkbox_withReflectionAutofocus)
         if HAS_OBJECTIVE_PIEZO:
             options_layout.addWidget(self.checkbox_usePiezo)
-        if ENABLE_STITCHER:
-            options_layout.addWidget(self.checkbox_stitchOutput)
 
         grid.addLayout(options_layout, 0, 2)
 
@@ -4567,14 +4559,12 @@ class MultiPointWithFluidicsWidget(QFrame):
         self.entry_NZ.valueChanged.connect(self.multipointController.set_NZ)
         self.checkbox_withReflectionAutofocus.toggled.connect(self.multipointController.set_reflection_af_flag)
         self.checkbox_usePiezo.toggled.connect(self.multipointController.set_use_piezo)
-        self.checkbox_stitchOutput.toggled.connect(self.display_stitcher_widget)
         self.list_configurations.itemSelectionChanged.connect(self.emit_selected_channels)
         self.multipointController.acquisitionFinished.connect(self.acquisition_is_finished)
         self.multipointController.signal_acquisition_progress.connect(self.update_acquisition_progress)
         self.multipointController.signal_region_progress.connect(self.update_region_progress)
         self.signal_acquisition_started.connect(self.display_progress_bar)
         self.eta_timer.timeout.connect(self.update_eta_display)
-        self.entry_NZ.valueChanged.connect(self.signal_stitcher_z_levels.emit)
 
     # The following methods are copied from WellplateMultiPointWidget with minimal modifications
     def toggle_acquisition(self, pressed):
@@ -4659,10 +4649,6 @@ class MultiPointWithFluidicsWidget(QFrame):
         """Emit signal with list of selected channel names"""
         selected_channels = [item.text() for item in self.list_configurations.selectedItems()]
         self.signal_acquisition_channels.emit(selected_channels)
-
-    def display_stitcher_widget(self, checked):
-        """Toggle stitcher widget visibility"""
-        self.signal_stitcher_widget.emit(checked)
 
     def acquisition_is_finished(self):
         """Handle acquisition completion"""
@@ -4809,11 +4795,11 @@ class MultiPointWithFluidicsWidget(QFrame):
 
     def get_rounds(self) -> list:
         """Parse rounds input string into a list of round numbers.
-        
+
         Accepts formats like:
         - Single numbers: "1,3,5"
         - Ranges: "1-3,5,7-10"
-        
+
         Returns:
             List of integers representing rounds, sorted without duplicates.
             Empty list if input is invalid.
@@ -4826,13 +4812,15 @@ class MultiPointWithFluidicsWidget(QFrame):
             rounds = set()  # Use set to avoid duplicates
 
             # Split by comma and process each part
-            for part in rounds_str.split(','):
+            for part in rounds_str.split(","):
                 part = part.strip()
-                if '-' in part:
+                if "-" in part:
                     # Handle range (e.g., "1-3")
-                    start, end = map(int, part.split('-'))
+                    start, end = map(int, part.split("-"))
                     if start < 1 or end > 24 or start > end:
-                        raise ValueError(f"Invalid range {part}: Numbers must be between 1 and 24, and start must be <= end")
+                        raise ValueError(
+                            f"Invalid range {part}: Numbers must be between 1 and 24, and start must be <= end"
+                        )
                     rounds.update(range(start, end + 1))
                 else:
                     # Handle single number
