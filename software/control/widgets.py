@@ -4789,9 +4789,7 @@ class MultiPointWithFluidicsWidget(QFrame):
 
     def init_fluidics(self):
         """Initialize the fluidics system"""
-        # TODO: Implement fluidics initialization
-        print("Initializing fluidics system...")
-        QMessageBox.information(self, "Fluidics", "Fluidics initialization not yet implemented")
+        self.multipointController.fluidics.initialize()
 
     def get_rounds(self) -> list:
         """Parse rounds input string into a list of round numbers.
