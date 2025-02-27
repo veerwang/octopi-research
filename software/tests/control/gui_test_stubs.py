@@ -21,11 +21,17 @@ def get_test_live_controller(
 
 
 def get_test_configuration_manager_path() -> pathlib.Path:
-    return get_repo_root() / "channel_configurations.xml"
+    return get_repo_root() / "acquisition_configurations"
 
 
 def get_test_configuration_manager() -> control.core.core.ConfigurationManager:
-    return control.core.core.ConfigurationManager(get_test_configuration_manager_path())
+    channel_manager = control.core.core.ChannelConfigurationManager()
+    laser_af_manager = control.core.core.LaserAFManager()
+    return control.core.core.ConfigurationManager(
+        channel_manager=channel_manager,
+        laser_af_manager=laser_af_manager,
+        base_config_path=get_test_configuration_manager_path(),
+    )
 
 
 def get_test_illumination_controller(
@@ -83,7 +89,7 @@ def get_test_multi_point_controller() -> control.core.core.MultiPointController:
         microcontroller=microcontroller,
         liveController=live_controller,
         autofocusController=get_test_autofocus_controller(camera, stage, live_controller, microcontroller),
-        configurationManager=get_test_configuration_manager(),
+        configurationManager=config_manager,
         scanCoordinates=get_test_scan_coordinates(objective_store, get_test_navigation_viewer(objective_store), stage),
         piezo=get_test_piezo_stage(microcontroller),
     )

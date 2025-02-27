@@ -3740,7 +3740,9 @@ class LaserAFSettingManager:
     def get_laser_af_settings(self) -> Dict[str, Any]:
         return self.autofocus_configurations
 
-    def update_laser_af_settings(self, objective: str, updates: Dict[str, Any], crop_image: Optional[np.ndarray] = None) -> None:
+    def update_laser_af_settings(
+        self, objective: str, updates: Dict[str, Any], crop_image: Optional[np.ndarray] = None
+    ) -> None:
         if objective not in self.autofocus_configurations:
             self.autofocus_configurations[objective] = LaserAFConfig(**updates)
         else:

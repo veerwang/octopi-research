@@ -67,7 +67,7 @@ class LaserAFConfig(BaseModel):
         """Convert stored base64 data back to numpy array"""
         if self.reference_image is None:
             return None
-        data = base64.b64decode(self.reference_image.encode('utf-8'))
+        data = base64.b64decode(self.reference_image.encode("utf-8"))
         return np.frombuffer(data, dtype=np.dtype(self.reference_image_dtype)).reshape(self.reference_image_shape)
 
     @field_validator("spot_detection_mode", mode="before")
@@ -77,7 +77,7 @@ class LaserAFConfig(BaseModel):
         if isinstance(v, str):
             return SpotDetectionMode(v)
         return v
-    
+
     def set_reference_image(self, image: Optional[np.ndarray]) -> None:
         """Convert numpy array to base64 encoded string or clear reference if None"""
         if image is None:
@@ -85,7 +85,7 @@ class LaserAFConfig(BaseModel):
             self.reference_image_shape = None
             self.reference_image_dtype = None
             return
-        self.reference_image = base64.b64encode(image.tobytes()).decode('utf-8')
+        self.reference_image = base64.b64encode(image.tobytes()).decode("utf-8")
         self.reference_image_shape = image.shape
         self.reference_image_dtype = str(image.dtype)
 
