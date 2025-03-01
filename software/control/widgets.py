@@ -2284,6 +2284,7 @@ class FlexibleMultiPointWidget(QFrame):
         self.is_current_acquisition_widget = False
         self.acquisition_in_place = False
         self.parent = self.multipointController.parent
+        self.multipointController.use_fluidics = False
 
     def add_components(self):
         self.btn_setSavingDir = QPushButton("Browse")
@@ -3485,6 +3486,7 @@ class WellplateMultiPointWidget(QFrame):
         self.eta_seconds = 0
         self.is_current_acquisition_widget = False
         self.parent = self.multipointController.parent
+        self.multipointController.use_fluidics = False
 
         # TODO (hl): these along with update_live_coordinates need to move out of this class
         self._last_update_time = 0
@@ -4402,6 +4404,7 @@ class MultiPointWithFluidicsWidget(QFrame):
         self.eta_seconds = 0
         self.is_current_acquisition_widget = False
         self.parent = self.multipointController.parent
+        self.multipointController.use_fluidics = True
 
         self.add_components()
         self.setFrameStyle(QFrame.Panel | QFrame.Raised)

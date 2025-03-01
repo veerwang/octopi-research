@@ -1409,7 +1409,7 @@ class MultiPointWorker(QObject):
                     self._log.debug("In run, abort_acquisition_requested=True")
                     break
 
-                if self.fluidics:
+                if self.fluidics and self.multiPointController.use_fluidics:
                     self.fluidics.update_port(self.time_point)  # use the port in PORT_LIST
                     # For MERFISH, before imaging, run the first 3 sequences (Add probe, wash buffer, imaging buffer)
                     self.fluidics.run_sequences(section=BEFORE_IMAGING_SEQUENCES)
@@ -1417,7 +1417,7 @@ class MultiPointWorker(QObject):
 
                 self.run_single_time_point()
 
-                if self.fluidics:
+                if self.fluidics and self.multiPointController.use_fluidics:
                     # For MERFISH, after imaging, run the following 2 sequences (Cleavage buffer, SSC rinse)
                     self.fluidics.run_sequences(section=AFTER_IMAGING_SEQUENCES)
                     self.fluidics.wait_for_completion()
@@ -2175,6 +2175,7 @@ class MultiPointController(QObject):
         self.old_images_per_page = 1
         z_mm_current = self.stage.get_pos().z_mm
         self.z_range = [z_mm_current, z_mm_current + self.deltaZ * (self.NZ - 1)]  # [start_mm, end_mm]
+        self.use_fluidics = False
         self.fluidics = fluidics
 
         try:
