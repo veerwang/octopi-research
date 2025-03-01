@@ -5031,11 +5031,11 @@ class LaserAutofocusController(QObject):
 
         if self.reference_crop is None:
             self._log.warning("No reference crop stored")
-            return False
+            return False, 0,0
 
         if current_image is None:
             self._log.error("Failed to get images for cross-correlation check")
-            return False
+            return False, 0.0
 
         # Crop and normalize current image
         center_x = int(self.laser_af_properties.x_reference)
@@ -5057,7 +5057,7 @@ class LaserAutofocusController(QObject):
         # Check if correlation exceeds threshold
         if correlation < self.laser_af_properties.correlation_threshold:
             self._log.warning("Cross correlation check failed - spots not well aligned")
-            return False
+            return False, correlation
 
         return True, correlation
 
