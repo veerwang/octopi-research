@@ -1965,7 +1965,7 @@ class MultiPointWorker(QObject):
                 self.napari_layers_init.emit(image.shape[0], image.shape[1], image.dtype)
             pos = self.stage.get_pos()
             objective_magnification = str(int(self.objectiveStore.get_current_objective_info()["magnification"]))
-            self.napari_layers_update.emit(image, pos.x_mm, pos.y_mm, k, objective_magnification + "x_" + config_name)
+            self.napari_layers_update.emit(image, pos.x_mm, pos.y_mm, k, objective_magnification + "x " + config_name)
 
     def handle_dpc_generation(self, current_round_images):
         keys_to_check = [

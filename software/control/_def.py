@@ -658,7 +658,7 @@ IS_HCS = False
 DYNAMIC_REGISTRATION = False
 STITCH_COMPLETE_ACQUISITION = False
 CHANNEL_COLORS_MAP = {
-    "405": {"hex": 0x3300FF, "name": "blue"},
+    "405": {"hex": 0x20ADF8, "name": "bop blue"},
     "488": {"hex": 0x1FFF00, "name": "green"},
     "561": {"hex": 0xFFCF00, "name": "yellow"},
     "638": {"hex": 0xFF0000, "name": "red"},
