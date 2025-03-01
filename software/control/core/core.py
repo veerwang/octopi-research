@@ -4651,6 +4651,8 @@ class LaserAutofocusController(QObject):
         self.is_initialized = False
 
         self.laser_af_properties = LaserAFConfig()
+        self.reference_crop = None
+
         self.x_width = 3088
         self.y_width = 2064
 
