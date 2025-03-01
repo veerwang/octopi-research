@@ -581,6 +581,7 @@ class LaserAutofocusSettingWidget(QWidget):
             "spot_spacing": self.spinboxes["spot_spacing"].value(),
             "focus_camera_exposure_time_ms": self.exposure_spinbox.value(),
             "focus_camera_analog_gain": self.analog_gain_spinbox.value(),
+            "has_reference": False,
         }
         self.laserAutofocusController.set_laser_af_properties(updates)
         self.laserAutofocusController.initialize_auto()
@@ -596,7 +597,7 @@ class LaserAutofocusSettingWidget(QWidget):
         # Create and add new calibration label
         self.calibration_label = QLabel()
         self.calibration_label.setText(
-            f"Calibration Result: {self.laserAutofocusController.laser_af_properties.pixel_to_um:.3f} pixels/um"
+            f"Calibration Result: {self.laserAutofocusController.laser_af_properties.pixel_to_um:.3f} pixels/um\nPerformed at {self.laserAutofocusController.laser_af_properties.calibration_timestamp}"
         )
         self.layout().addWidget(self.calibration_label)
 
@@ -6915,8 +6916,8 @@ class LaserAutofocusControlWidget(QFrame):
     def update_init_state(self):
         self.btn_initialize.setChecked(self.laserAutofocusController.is_initialized)
         self.btn_set_reference.setEnabled(self.laserAutofocusController.is_initialized)
-        self.btn_measure_displacement.setEnabled(self.laserAutofocusController.has_reference)
-        self.btn_move_to_target.setEnabled(self.laserAutofocusController.has_reference)
+        self.btn_measure_displacement.setEnabled(self.laserAutofocusController.laser_af_properties.has_reference)
+        self.btn_move_to_target.setEnabled(self.laserAutofocusController.laser_af_properties.has_reference)
 
     def move_to_target(self, target_um):
         self.laserAutofocusController.move_to_target(self.entry_target.value())
