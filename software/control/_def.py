@@ -773,6 +773,13 @@ XERYON_OBJECTIVE_SWITCHER_POS_1 = ["4x", "10x"]
 XERYON_OBJECTIVE_SWITCHER_POS_2 = ["20x", "40x", "60x"]
 XERYON_OBJECTIVE_SWITCHER_POS_2_OFFSET_MM = 2
 
+# fluidics
+RUN_FLUIDICS = False
+FLUIDICS_CONFIG_PATH = "./merfish_config/MERFISH_config.json"
+FLUIDICS_SEQUENCE_PATH = "./merfish_config/merfish-imaging.csv"
+BEFORE_IMAGING_SEQUENCES = [0, 4]
+AFTER_IMAGING_SEQUENCES = [4, 6]
+
 ##########################################################
 #### start of loading machine specific configurations ####
 ##########################################################
