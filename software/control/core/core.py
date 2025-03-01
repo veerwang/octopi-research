@@ -5031,7 +5031,7 @@ class LaserAutofocusController(QObject):
 
         if self.reference_crop is None:
             self._log.warning("No reference crop stored")
-            return False, 0,0
+            return False, 0.0
 
         if current_image is None:
             self._log.error("Failed to get images for cross-correlation check")
