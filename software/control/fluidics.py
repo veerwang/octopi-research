@@ -137,7 +137,7 @@ class Fluidics:
             port: New port number to use for Flow Reagent sequences with port <= 24
         """
         # Find Flow Reagent sequences with port <= 24
-        mask = (self.sequences["sequence_name"] == "Flow Reagent") & (self.sequences["fluidic_port"] <= 24)
+        mask = (self.sequences["sequence_name"] == "Flow Probe") & (self.sequences["fluidic_port"] <= 24)
 
         self.sequences.loc[mask, "fluidic_port"] = self.port_list[index]
 
