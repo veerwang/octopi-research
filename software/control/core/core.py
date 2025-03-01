@@ -3,6 +3,7 @@ import os
 import sys
 
 from control.microcontroller import Microcontroller
+from control.piezo import PiezoStage
 from squid.abc import AbstractStage
 import squid.logging
 
@@ -23,6 +24,7 @@ if DO_FLUORESCENCE_RTP:
     from control.multipoint_built_in_functionalities import malaria_rtp
 
 import control.utils as utils
+import control.utils_channel as utils_channel
 import control.utils_config as utils_config
 import control.tracking as tracking
 import control.serial_peripherals as serial_peripherals
@@ -34,16 +36,17 @@ try:
 except:
     pass
 
-from typing import List, Tuple, Optional
+from typing import List, Tuple, Optional, Dict, Any
 from queue import Queue
 from threading import Thread, Lock
 from pathlib import Path
 from datetime import datetime
+from enum import Enum
+from control.utils_config import ChannelConfig, ChannelMode, LaserAFConfig
 import time
 import subprocess
 import shutil
 import itertools
-from lxml import etree
 import json
 import math
 import random
@@ -191,7 +194,6 @@ class StreamHandler(QObject):
             # send image to display
             time_now = time.time()
             if time_now - self.timestamp_last_display >= 1 / self.fps_display:
-                # self.image_to_display.emit(cv2.resize(image_cropped,(round(self.crop_width*self.display_resolution_scaling), round(self.crop_height*self.display_resolution_scaling)),cv2.INTER_LINEAR))
                 self.image_to_display.emit(
                     utils.crop_image(
                         image_cropped,
@@ -218,34 +220,6 @@ class StreamHandler(QObject):
             self.handler_busy = False
             camera.image_locked = False
 
-    """
-    def on_new_frame_from_simulation(self,image,frame_ID,timestamp):
-        # check whether image is a local copy or pointer, if a pointer, needs to prevent the image being modified while this function is being executed
-
-        self.handler_busy = True
-
-        # crop image
-        image_cropped = utils.crop_image(image,self.crop_width,self.crop_height)
-
-        # send image to display
-        time_now = time.time()
-        if time_now-self.timestamp_last_display >= 1/self.fps_display:
-            self.image_to_display.emit(cv2.resize(image_cropped,(round(self.crop_width*self.display_resolution_scaling), round(self.crop_height*self.display_resolution_scaling)),cv2.INTER_LINEAR))
-            self.timestamp_last_display = time_now
-
-        # send image to write
-        if self.save_image_flag and time_now-self.timestamp_last_save >= 1/self.fps_save:
-            self.packet_image_to_write.emit(image_cropped,frame_ID,timestamp)
-            self.timestamp_last_save = time_now
-
-        # send image to track
-        if time_now-self.timestamp_last_display >= 1/self.fps_track:
-            # track emit
-            self.timestamp_last_track = time_now
-
-        self.handler_busy = False
-    """
-
 
 class ImageSaver(QObject):
 
@@ -260,7 +234,7 @@ class ImageSaver(QObject):
         self.queue = Queue(10)  # max 10 items in the queue
         self.image_lock = Lock()
         self.stop_signal_received = False
-        self.thread = Thread(target=self.process_queue)
+        self.thread = Thread(target=self.process_queue, daemon=True)
         self.thread.start()
         self.counter = 0
         self.recording_start_time = 0
@@ -350,7 +324,7 @@ class ImageSaver_Tracking(QObject):
         self.queue = Queue(100)  # max 100 items in the queue
         self.image_lock = Lock()
         self.stop_signal_received = False
-        self.thread = Thread(target=self.process_queue)
+        self.thread = Thread(target=self.process_queue, daemon=True)
         self.thread.start()
 
     def process_queue(self):
@@ -407,7 +381,7 @@ class ImageDisplay(QObject):
         self.queue = Queue(10)  # max 10 items in the queue
         self.image_lock = Lock()
         self.stop_signal_received = False
-        self.thread = Thread(target=self.process_queue)
+        self.thread = Thread(target=self.process_queue, daemon=True)
         self.thread.start()
 
     def process_queue(self):
@@ -443,46 +417,11 @@ class ImageDisplay(QObject):
         self.thread.join()
 
 
-class Configuration:
-    def __init__(
-        self,
-        mode_id=None,
-        name=None,
-        color=None,
-        camera_sn=None,
-        exposure_time=None,
-        analog_gain=None,
-        illumination_source=None,
-        illumination_intensity=None,
-        z_offset=None,
-        pixel_format=None,
-        _pixel_format_options=None,
-        emission_filter_position=None,
-    ):
-        self.id = mode_id
-        self.name = name
-        self.color = color
-        self.exposure_time = exposure_time
-        self.analog_gain = analog_gain
-        self.illumination_source = illumination_source
-        self.illumination_intensity = illumination_intensity
-        self.camera_sn = camera_sn
-        self.z_offset = z_offset
-        self.pixel_format = pixel_format
-        if self.pixel_format is None:
-            self.pixel_format = "default"
-        self._pixel_format_options = _pixel_format_options
-        if _pixel_format_options is None:
-            self._pixel_format_options = self.pixel_format
-        self.emission_filter_position = emission_filter_position
-
-
 class LiveController(QObject):
     def __init__(
         self,
         camera,
         microcontroller,
-        configurationManager,
         illuminationController,
         parent=None,
         control_illumination=True,
@@ -493,7 +432,6 @@ class LiveController(QObject):
         self.microscope = parent
         self.camera = camera
         self.microcontroller = microcontroller
-        self.configurationManager = configurationManager
         self.currentConfiguration = None
         self.trigger_mode = TriggerMode.SOFTWARE  # @@@ change to None
         self.is_live = False
@@ -518,7 +456,7 @@ class LiveController(QObject):
         self.counter = 0
         self.timestamp_last = 0
 
-        self.display_resolution_scaling = DEFAULT_DISPLAY_CROP / 100
+        self.display_resolution_scaling = 1
 
         self.enable_channel_auto_filter_switching = True
 
@@ -533,7 +471,7 @@ class LiveController(QObject):
     def turn_on_illumination(self):
         if self.illuminationController is not None and not "LED matrix" in self.currentConfiguration.name:
             self.illuminationController.turn_on_illumination(
-                int(self.configurationManager.extract_wavelength(self.currentConfiguration.name))
+                int(utils_channel.extract_wavelength_from_config_name(self.currentConfiguration.name))
             )
         elif SUPPORT_SCIMICROSCOPY_LED_ARRAY and "LED matrix" in self.currentConfiguration.name:
             self.led_array.turn_on_illumination()
@@ -544,7 +482,7 @@ class LiveController(QObject):
     def turn_off_illumination(self):
         if self.illuminationController is not None and not "LED matrix" in self.currentConfiguration.name:
             self.illuminationController.turn_off_illumination(
-                int(self.configurationManager.extract_wavelength(self.currentConfiguration.name))
+                int(utils_channel.extract_wavelength_from_config_name(self.currentConfiguration.name))
             )
         elif SUPPORT_SCIMICROSCOPY_LED_ARRAY and "LED matrix" in self.currentConfiguration.name:
             self.led_array.turn_off_illumination()
@@ -597,7 +535,7 @@ class LiveController(QObject):
             # update illumination
             if self.illuminationController is not None:
                 self.illuminationController.set_intensity(
-                    int(self.configurationManager.extract_wavelength(self.currentConfiguration.name)), intensity
+                    int(utils_channel.extract_wavelength_from_config_name(self.currentConfiguration.name)), intensity
                 )
             elif ENABLE_NL5 and NL5_USE_DOUT and "Fluorescence" in self.currentConfiguration.name:
                 wavelength = int(self.currentConfiguration.name[13:16])
@@ -1124,7 +1062,6 @@ class AutofocusWorker(QObject):
                 image, rotate_image_angle=self.camera.rotate_image_angle, flip_image=self.camera.flip_image
             )
             self.image_to_display.emit(image)
-            # image_to_display = utils.crop_image(image,round(self.crop_width* self.liveController.display_resolution_scaling), round(self.crop_height* self.liveController.display_resolution_scaling))
 
             QApplication.processEvents()
             timestamp_0 = time.time()
@@ -1361,7 +1298,7 @@ class MultiPointWorker(QObject):
     image_to_display = Signal(np.ndarray)
     spectrum_to_display = Signal(np.ndarray)
     image_to_display_multi = Signal(np.ndarray, int)
-    signal_current_configuration = Signal(Configuration)
+    signal_current_configuration = Signal(ChannelMode)
     signal_register_current_fov = Signal(float, float)
     signal_detection_stats = Signal(object)
     signal_update_stats = Signal(object)
@@ -1384,9 +1321,11 @@ class MultiPointWorker(QObject):
         self.microcontroller = self.multiPointController.microcontroller
         self.usb_spectrometer = self.multiPointController.usb_spectrometer
         self.stage: squid.abc.AbstractStage = self.multiPointController.stage
+        self.piezo: PiezoStage = self.multiPointController.piezo
         self.liveController = self.multiPointController.liveController
         self.autofocusController = self.multiPointController.autofocusController
-        self.configurationManager = self.multiPointController.configurationManager
+        self.objectiveStore = self.multiPointController.objectiveStore
+        self.channelConfigurationManager = self.multiPointController.channelConfigurationManager
         self.NX = self.multiPointController.NX
         self.NY = self.multiPointController.NY
         self.NZ = self.multiPointController.NZ
@@ -1417,9 +1356,10 @@ class MultiPointWorker(QObject):
         self.scan_region_names = self.multiPointController.scan_region_names
         self.z_stacking_config = self.multiPointController.z_stacking_config  # default 'from bottom'
         self.z_range = self.multiPointController.z_range
+        self.fluidics = self.multiPointController.fluidics
 
         self.microscope = self.multiPointController.parent
-        self.performance_mode = self.microscope.performance_mode
+        self.performance_mode = self.microscope and self.microscope.performance_mode
 
         try:
             self.model = self.microscope.segmentation_model
@@ -1431,8 +1371,7 @@ class MultiPointWorker(QObject):
         self.t_inf = []
         self.t_over = []
 
-        if USE_NAPARI_FOR_MULTIPOINT:
-            self.init_napari_layers = False
+        self.init_napari_layers = not USE_NAPARI_FOR_MULTIPOINT
 
         self.count = 0
 
@@ -1470,7 +1409,18 @@ class MultiPointWorker(QObject):
                     self._log.debug("In run, abort_acquisition_requested=True")
                     break
 
+                if self.fluidics and self.multiPointController.use_fluidics:
+                    self.fluidics.update_port(self.time_point)  # use the port in PORT_LIST
+                    # For MERFISH, before imaging, run the first 3 sequences (Add probe, wash buffer, imaging buffer)
+                    self.fluidics.run_sequences(section=BEFORE_IMAGING_SEQUENCES)
+                    self.fluidics.wait_for_completion()
+
                 self.run_single_time_point()
+
+                if self.fluidics and self.multiPointController.use_fluidics:
+                    # For MERFISH, after imaging, run the following 2 sequences (Cleavage buffer, SSC rinse)
+                    self.fluidics.run_sequences(section=AFTER_IMAGING_SEQUENCES)
+                    self.fluidics.wait_for_completion()
 
                 self.time_point = self.time_point + 1
                 if self.dt == 0:  # continous acquisition
@@ -1557,7 +1507,7 @@ class MultiPointWorker(QObject):
         # reset piezo to home position
         if self.use_piezo:
             self.z_piezo_um = OBJECTIVE_PIEZO_HOME_UM
-            self.microcontroller.set_piezo_um(self.z_piezo_um)
+            self.piezo.move_to(self.z_piezo_um)
             # TODO(imo): Not sure the wait comment below is actually correct?  Should this wait just be in the set_piezo_um helper?
             if (
                 self.liveController.trigger_mode == TriggerMode.SOFTWARE
@@ -1663,7 +1613,7 @@ class MultiPointWorker(QObject):
             print(f"Acquiring image: ID={file_ID}, Metadata={metadata}")
 
             # laser af characterization mode
-            if LASER_AF_CHARACTERIZATION_MODE:
+            if self.microscope.laserAutofocusController.characterization_mode:
                 image = self.microscope.laserAutofocusController.get_image()
                 saving_path = os.path.join(current_path, file_ID + "_laser af camera" + ".bmp")
                 iio.imwrite(saving_path, image)
@@ -1763,7 +1713,9 @@ class MultiPointWorker(QObject):
                 config_AF = next(
                     (
                         config
-                        for config in self.configurationManager.configurations
+                        for config in self.channelConfigurationManager.get_channel_configurations_for_objective(
+                            self.objectiveStore.current_objective
+                        )
                         if config.name == configuration_name_AF
                     )
                 )
@@ -1774,43 +1726,25 @@ class MultiPointWorker(QObject):
                     self.autofocusController.autofocus()
                     self.autofocusController.wait_till_autofocus_has_completed()
         else:
-            # initialize laser autofocus if it has not been done
-            if not self.microscope.laserAutofocusController.is_initialized:
-                self._log.info("init reflection af")
-                # initialize the reflection AF
-                self.microscope.laserAutofocusController.initialize_auto()
-                # do contrast AF for the first FOV (if contrast AF box is checked)
-                if self.do_autofocus and ((self.NZ == 1) or self.z_stacking_config == "FROM CENTER"):
-                    configuration_name_AF = MULTIPOINT_AUTOFOCUS_CHANNEL
-                    config_AF = next(
-                        (
-                            config
-                            for config in self.configurationManager.configurations
-                            if config.name == configuration_name_AF
-                        )
-                    )
-                    self.signal_current_configuration.emit(config_AF)
-                    self.autofocusController.autofocus()
-                    self.autofocusController.wait_till_autofocus_has_completed()
-                # set the current plane as reference
-                self.microscope.laserAutofocusController.set_reference()
-            else:
-                self._log.info("laser reflection af")
-                try:
+            self._log.info("laser reflection af")
+            try:
+                if HAS_OBJECTIVE_PIEZO:  # when piezo is available, one move is sufficient as piezo is closed loop
+                    self.microscope.laserAutofocusController.move_to_target(0)
+                else:
                     # TODO(imo): We used to have a case here to try to fix backlash by double commanding a position.  Now, just double command it whether or not we are using PID since we don't expose that now.  But in the future, backlash handing shouldb e done at a lower level (and we can remove the double here)
                     self.microscope.laserAutofocusController.move_to_target(0)
                     self.microscope.laserAutofocusController.move_to_target(
                         0
                     )  # for stepper in open loop mode, repeat the operation to counter backlash.  It's harmless if any other case.
-                except Exception as e:
-                    file_ID = f"{region_id}_focus_camera.bmp"
-                    saving_path = os.path.join(self.base_path, self.experiment_ID, str(self.time_point), file_ID)
-                    iio.imwrite(saving_path, self.microscope.laserAutofocusController.image)
-                    self._log.error(
-                        "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! laser AF failed !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!",
-                        exc_info=e,
-                    )
-                    return False
+            except Exception as e:
+                file_ID = f"{region_id}_focus_camera.bmp"
+                saving_path = os.path.join(self.base_path, self.experiment_ID, str(self.time_point), file_ID)
+                iio.imwrite(saving_path, self.microscope.laserAutofocusController.image)
+                self._log.error(
+                    "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! laser AF failed !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!",
+                    exc_info=e,
+                )
+                return False
         return True
 
     def prepare_z_stack(self):
@@ -1896,7 +1830,9 @@ class MultiPointWorker(QObject):
         rgb_channels = ["BF LED matrix full_R", "BF LED matrix full_G", "BF LED matrix full_B"]
         images = {}
 
-        for config_ in self.configurationManager.configurations:
+        for config_ in self.channelConfigurationManager.get_channel_configurations_for_objective(
+            self.objectiveStore.current_objective
+        ):
             if config_.name in rgb_channels:
                 # update the current configuration
                 self.signal_current_configuration.emit(config_)
@@ -2028,7 +1964,8 @@ class MultiPointWorker(QObject):
                 self.init_napari_layers = True
                 self.napari_layers_init.emit(image.shape[0], image.shape[1], image.dtype)
             pos = self.stage.get_pos()
-            self.napari_layers_update.emit(image, pos.x_mm, pos.y_mm, k, config_name)
+            objective_magnification = str(int(self.objectiveStore.get_current_objective_info()["magnification"]))
+            self.napari_layers_update.emit(image, pos.x_mm, pos.y_mm, k, objective_magnification + "x_" + config_name)
 
     def handle_dpc_generation(self, current_round_images):
         keys_to_check = [
@@ -2125,7 +2062,7 @@ class MultiPointWorker(QObject):
     def move_z_for_stack(self):
         if self.use_piezo:
             self.z_piezo_um += self.deltaZ * 1000
-            self.microcontroller.set_piezo_um(self.z_piezo_um)
+            self.piezo.move_to(self.z_piezo_um)
             if (
                 self.liveController.trigger_mode == TriggerMode.SOFTWARE
             ):  # for hardware trigger, delay is in waiting for the last row to start exposure
@@ -2139,7 +2076,7 @@ class MultiPointWorker(QObject):
     def move_z_back_after_stack(self):
         if self.use_piezo:
             self.z_piezo_um = OBJECTIVE_PIEZO_HOME_UM
-            self.microcontroller.set_piezo_um(self.z_piezo_um)
+            self.piezo.move_to(self.z_piezo_um)
             if (
                 self.liveController.trigger_mode == TriggerMode.SOFTWARE
             ):  # for hardware trigger, delay is in waiting for the last row to start exposure
@@ -2166,7 +2103,7 @@ class MultiPointController(QObject):
     image_to_display = Signal(np.ndarray)
     image_to_display_multi = Signal(np.ndarray, int)
     spectrum_to_display = Signal(np.ndarray)
-    signal_current_configuration = Signal(Configuration)
+    signal_current_configuration = Signal(ChannelMode)
     signal_register_current_fov = Signal(float, float)
     detection_stats = Signal(object)
     signal_stitcher = Signal(str)
@@ -2181,12 +2118,15 @@ class MultiPointController(QObject):
         self,
         camera,
         stage: AbstractStage,
+        piezo: Optional[PiezoStage],
         microcontroller: Microcontroller,
         liveController,
         autofocusController,
-        configurationManager,
+        objectiveStore,
+        channelConfigurationManager,
         usb_spectrometer=None,
         scanCoordinates=None,
+        fluidics=None,
         parent=None,
     ):
         QObject.__init__(self)
@@ -2195,10 +2135,12 @@ class MultiPointController(QObject):
         if DO_FLUORESCENCE_RTP:
             self.processingHandler = ProcessingHandler()
         self.stage = stage
+        self.piezo = piezo
         self.microcontroller = microcontroller
         self.liveController = liveController
         self.autofocusController = autofocusController
-        self.configurationManager = configurationManager
+        self.objectiveStore = objectiveStore
+        self.channelConfigurationManager = channelConfigurationManager
         self.multiPointWorker: Optional[MultiPointWorker] = None
         self.thread: Optional[QThread] = None
         self.NX = 1
@@ -2212,6 +2154,8 @@ class MultiPointController(QObject):
         self.deltat = 0
         self.do_autofocus = False
         self.do_reflection_af = False
+        self.focus_map = None
+        self.use_manual_focus_map = False
         self.gen_focus_map = False
         self.focus_map_storage = []
         self.already_using_fmap = False
@@ -2223,7 +2167,7 @@ class MultiPointController(QObject):
         self.counter = 0
         self.experiment_ID = None
         self.base_path = None
-        self.use_piezo = False  # MULTIPOINT_USE_PIEZO_FOR_ZSTACKS
+        self.use_piezo = MULTIPOINT_USE_PIEZO_FOR_ZSTACKS
         self.selected_configurations = []
         self.usb_spectrometer = usb_spectrometer
         self.scanCoordinates = scanCoordinates
@@ -2235,6 +2179,8 @@ class MultiPointController(QObject):
         self.old_images_per_page = 1
         z_mm_current = self.stage.get_pos().z_mm
         self.z_range = [z_mm_current, z_mm_current + self.deltaZ * (self.NZ - 1)]  # [start_mm, end_mm]
+        self.use_fluidics = False
+        self.fluidics = fluidics
 
         try:
             if self.parent is not None:
@@ -2249,7 +2195,8 @@ class MultiPointController(QObject):
         return False
 
     def set_use_piezo(self, checked):
-        print("Use Piezo:", checked)
+        if checked and self.piezo is None:
+            raise ValueError("Cannot enable piezo - no piezo stage configured")
         self.use_piezo = checked
         if self.multiPointWorker:
             self.multiPointWorker.update_use_piezo(checked)
@@ -2292,6 +2239,9 @@ class MultiPointController(QObject):
     def set_reflection_af_flag(self, flag):
         self.do_reflection_af = flag
 
+    def set_manual_focus_map_flag(self, flag):
+        self.use_manual_focus_map = flag
+
     def set_gen_focus_map_flag(self, flag):
         self.gen_focus_map = flag
         if not flag:
@@ -2322,10 +2272,10 @@ class MultiPointController(QObject):
         self.recording_start_time = time.time()
         # create a new folder
         utils.ensure_directory_exists(os.path.join(self.base_path, self.experiment_ID))
-        # TODO(imo): If the config has changed since boot, is this still the correct config?
-        configManagerThrowaway = ConfigurationManager(self.configurationManager.config_filename)
-        configManagerThrowaway.write_configuration_selected(
-            self.selected_configurations, os.path.join(self.base_path, self.experiment_ID) + "/configurations.xml"
+        self.channelConfigurationManager.write_configuration_selected(
+            self.objectiveStore.current_objective,
+            self.selected_configurations,
+            os.path.join(self.base_path, self.experiment_ID) + "/configurations.xml",
         )  # save the configuration for the experiment
         # Prepare acquisition parameters
         acquisition_parameters = {
@@ -2339,6 +2289,7 @@ class MultiPointController(QObject):
             "Nt": self.Nt,
             "with AF": self.do_autofocus,
             "with reflection AF": self.do_reflection_af,
+            "with manual focus map": self.use_manual_focus_map,
         }
         try:  # write objective data if it is available
             current_objective = self.parent.objectiveStore.current_objective
@@ -2368,11 +2319,23 @@ class MultiPointController(QObject):
         for configuration_name in selected_configurations_name:
             self.selected_configurations.append(
                 next(
-                    (config for config in self.configurationManager.configurations if config.name == configuration_name)
+                    (
+                        config
+                        for config in self.channelConfigurationManager.get_channel_configurations_for_objective(
+                            self.objectiveStore.current_objective
+                        )
+                        if config.name == configuration_name
+                    )
                 )
             )
 
     def run_acquisition(self):
+
+        if not self.validate_acquisition_settings():
+            # emit acquisition finished signal to re-enable the UI
+            self.acquisitionFinished.emit()
+            return
+
         print("start multipoint")
 
         self.scan_region_coords_mm = list(self.scanCoordinates.region_centers.values())
@@ -2409,7 +2372,7 @@ class MultiPointController(QObject):
                 self.usb_spectrometer_was_streaming = False
 
         # set current tabs
-        if self.parent.performance_mode:
+        if self.parent and self.parent.performance_mode:
             self.parent.imageDisplayTabs.setCurrentIndex(0)
 
         elif self.parent is not None and not self.parent.live_only_mode:
@@ -2627,20 +2590,32 @@ class MultiPointController(QObject):
     def slot_region_progress(self, current_fov, total_fovs):
         self.signal_region_progress.emit(current_fov, total_fovs)
 
+    def validate_acquisition_settings(self) -> bool:
+        """Validate settings before starting acquisition"""
+        if self.do_reflection_af and not self.parent.laserAutofocusController.laser_af_properties.has_reference:
+            QMessageBox.warning(
+                None,
+                "Laser Autofocus Not Ready",
+                "Please set the laser autofocus reference position before starting acquisition with laser AF enabled.",
+            )
+            return False
+        return True
+
 
 class TrackingController(QObject):
 
     signal_tracking_stopped = Signal()
     image_to_display = Signal(np.ndarray)
     image_to_display_multi = Signal(np.ndarray, int)
-    signal_current_configuration = Signal(Configuration)
+    signal_current_configuration = Signal(ChannelMode)
 
     def __init__(
         self,
         camera,
         microcontroller: Microcontroller,
         stage: AbstractStage,
-        configurationManager,
+        objectiveStore,
+        channelConfigurationManager,
         liveController: LiveController,
         autofocusController,
         imageDisplayWindow,
@@ -2649,7 +2624,8 @@ class TrackingController(QObject):
         self.camera = camera
         self.microcontroller = microcontroller
         self.stage = stage
-        self.configurationManager = configurationManager
+        self.objectiveStore = objectiveStore
+        self.channelConfigurationManager = channelConfigurationManager
         self.liveController = liveController
         self.autofocusController = autofocusController
         self.imageDisplayWindow = imageDisplayWindow
@@ -2755,8 +2731,9 @@ class TrackingController(QObject):
         # create a new folder
         try:
             utils.ensure_directory_exists(os.path.join(self.base_path, self.experiment_ID))
-            self.configurationManager.write_configuration(
-                os.path.join(self.base_path, self.experiment_ID) + "/configurations.xml"
+            self.channelConfigurationManager.save_current_configuration_to_path(
+                self.objectiveStore.current_objective,
+                os.path.join(self.base_path, self.experiment_ID) + "/configurations.xml",
             )  # save the configuration for the experiment
         except:
             print("error in making a new folder")
@@ -2767,7 +2744,13 @@ class TrackingController(QObject):
         for configuration_name in selected_configurations_name:
             self.selected_configurations.append(
                 next(
-                    (config for config in self.configurationManager.configurations if config.name == configuration_name)
+                    (
+                        config
+                        for config in self.channelConfigurationManager.get_channel_configurations_for_objective(
+                            self.objectiveStore.current_objective
+                        )
+                        if config.name == configuration_name
+                    )
                 )
             )
 
@@ -2856,7 +2839,7 @@ class TrackingWorker(QObject):
     finished = Signal()
     image_to_display = Signal(np.ndarray)
     image_to_display_multi = Signal(np.ndarray, int)
-    signal_current_configuration = Signal(Configuration)
+    signal_current_configuration = Signal(ChannelMode)
 
     def __init__(self, trackingController: TrackingController):
         QObject.__init__(self)
@@ -2867,7 +2850,7 @@ class TrackingWorker(QObject):
         self.microcontroller = self.trackingController.microcontroller
         self.liveController = self.trackingController.liveController
         self.autofocusController = self.trackingController.autofocusController
-        self.configurationManager = self.trackingController.configurationManager
+        self.channelConfigurationManager = self.trackingController.channelConfigurationManager
         self.imageDisplayWindow = self.trackingController.imageDisplayWindow
         self.crop_width = self.trackingController.crop_width
         self.crop_height = self.trackingController.crop_height
@@ -3053,7 +3036,6 @@ class ImageDisplayWindow(QMainWindow):
         liveController=None,
         contrastManager=None,
         window_title="",
-        draw_crosshairs=False,
         show_LUT=False,
         autoLevels=False,
     ):
@@ -3110,7 +3092,6 @@ class ImageDisplayWindow(QMainWindow):
         self.ptRect2 = None
         self.DrawCirc = False
         self.centroid = None
-        self.DrawCrossHairs = False
         self.image_offset = np.array([0, 0])
 
         ## Layout
@@ -3194,6 +3175,35 @@ class ImageDisplayWindow(QMainWindow):
                 self.graphics_widget.img.setLevels((min_val, max_val))
 
         self.graphics_widget.img.updateImage()
+
+    def mark_spot(self, image: np.ndarray, x: float, y: float):
+        """Mark the detected laserspot location on the image.
+
+        Args:
+            image: Image to mark
+            x: x-coordinate of the spot
+            y: y-coordinate of the spot
+
+        Returns:
+            Image with marked spot
+        """
+        # Draw a green crosshair at the specified x,y coordinates
+        crosshair_size = 10  # Size of crosshair lines in pixels
+        crosshair_color = (0, 255, 0)  # Green in BGR format
+        crosshair_thickness = 1
+        x = int(round(x))
+        y = int(round(y))
+
+        # Convert grayscale to BGR
+        marked_image = cv2.cvtColor(image, cv2.COLOR_GRAY2BGR)
+
+        # Draw horizontal line
+        cv2.line(marked_image, (x - crosshair_size, y), (x + crosshair_size, y), crosshair_color, crosshair_thickness)
+
+        # Draw vertical line
+        cv2.line(marked_image, (x, y - crosshair_size), (x, y + crosshair_size), crosshair_color, crosshair_thickness)
+
+        self.display_image(marked_image)
 
     def update_contrast_limits(self):
         if self.show_LUT and self.contrastManager and self.contrastManager.acquisition_dtype:
@@ -3322,8 +3332,8 @@ class NavigationViewer(QFrame):
 
         self.background_item.setZValue(-1)  # Background layer at the bottom
         self.scan_overlay_item.setZValue(0)  # Scan overlay in the middle
-        self.fov_overlay_item.setZValue(1)  # FOV overlay next
-        self.focus_point_overlay_item.setZValue(2)  # # Focus points on top
+        self.focus_point_overlay_item.setZValue(1)  # # Focus points next
+        self.fov_overlay_item.setZValue(2)  # FOV overlay on top
 
     def update_display_properties(self, sample):
         if sample == "glass slide":
@@ -3586,82 +3596,260 @@ class ImageArrayDisplayWindow(QMainWindow):
             self.graphics_widget_4.img.setImage(image, autoLevels=False)
 
 
-class ConfigurationManager(QObject):
-    def __init__(self, filename="channel_configurations.xml"):
-        QObject.__init__(self)
-        self.config_filename = filename
-        self.configurations = []
-        self.read_configurations()
+class ConfigType(Enum):
+    CHANNEL = "channel"
+    CONFOCAL = "confocal"
+    WIDEFIELD = "widefield"
 
-    def save_configurations(self):
-        self.write_configuration(self.config_filename)
 
-    def write_configuration(self, filename):
-        self.config_xml_tree.write(filename, encoding="utf-8", xml_declaration=True, pretty_print=True)
+class ChannelConfigurationManager:
+    def __init__(self):
+        self._log = squid.logging.get_logger(self.__class__.__name__)
+        self.config_root = None
+        self.all_configs: Dict[ConfigType, Dict[str, ChannelConfig]] = {
+            ConfigType.CHANNEL: {},
+            ConfigType.CONFOCAL: {},
+            ConfigType.WIDEFIELD: {},
+        }
+        self.active_config_type = ConfigType.CHANNEL if not ENABLE_SPINNING_DISK_CONFOCAL else ConfigType.CONFOCAL
 
-    def read_configurations(self):
-        if os.path.isfile(self.config_filename) == False:
-            utils_config.generate_default_configuration(self.config_filename)
-            print("genenrate default config files")
-        self.config_xml_tree = etree.parse(self.config_filename)
-        self.config_xml_tree_root = self.config_xml_tree.getroot()
-        self.num_configurations = 0
-        for mode in self.config_xml_tree_root.iter("mode"):
-            self.num_configurations += 1
-            self.configurations.append(
-                Configuration(
-                    mode_id=mode.get("ID"),
-                    name=mode.get("Name"),
-                    color=self.get_channel_color(mode.get("Name")),
-                    exposure_time=float(mode.get("ExposureTime")),
-                    analog_gain=float(mode.get("AnalogGain")),
-                    illumination_source=int(mode.get("IlluminationSource")),
-                    illumination_intensity=float(mode.get("IlluminationIntensity")),
-                    camera_sn=mode.get("CameraSN"),
-                    z_offset=float(mode.get("ZOffset")),
-                    pixel_format=mode.get("PixelFormat"),
-                    _pixel_format_options=mode.get("_PixelFormat_options"),
-                    emission_filter_position=int(mode.get("EmissionFilterPosition", 1)),
-                )
-            )
+    def set_profile_path(self, profile_path: Path) -> None:
+        """Set the root path for configurations"""
+        self.config_root = profile_path
 
-    def update_configuration(self, configuration_id, attribute_name, new_value):
-        conf_list = self.config_xml_tree_root.xpath("//mode[contains(@ID," + "'" + str(configuration_id) + "')]")
-        mode_to_update = conf_list[0]
-        mode_to_update.set(attribute_name, str(new_value))
-        self.save_configurations()
+    def _load_xml_config(self, objective: str, config_type: ConfigType) -> None:
+        """Load XML configuration for a specific config type, generating default if needed"""
+        config_file = self.config_root / objective / f"{config_type.value}_configurations.xml"
 
-    def update_configuration_without_writing(self, configuration_id, attribute_name, new_value):
-        conf_list = self.config_xml_tree_root.xpath("//mode[contains(@ID," + "'" + str(configuration_id) + "')]")
-        mode_to_update = conf_list[0]
-        mode_to_update.set(attribute_name, str(new_value))
+        if not config_file.exists():
+            utils_config.generate_default_configuration(str(config_file))
+
+        xml_content = config_file.read_bytes()
+        self.all_configs[config_type][objective] = ChannelConfig.from_xml(xml_content)
+
+    def load_configurations(self, objective: str) -> None:
+        """Load available configurations for an objective"""
+        if ENABLE_SPINNING_DISK_CONFOCAL:
+            # Load both confocal and widefield configurations
+            self._load_xml_config(objective, ConfigType.CONFOCAL)
+            self._load_xml_config(objective, ConfigType.WIDEFIELD)
+        else:
+            # Load only channel configurations
+            self._load_xml_config(objective, ConfigType.CHANNEL)
+
+    def _save_xml_config(self, objective: str, config_type: ConfigType) -> None:
+        """Save XML configuration for a specific config type"""
+        if objective not in self.all_configs[config_type]:
+            return
+
+        config = self.all_configs[config_type][objective]
+        save_path = self.config_root / objective / f"{config_type.value}_configurations.xml"
+
+        if not save_path.parent.exists():
+            save_path.parent.mkdir(parents=True)
+
+        xml_str = config.to_xml(pretty_print=True, encoding="utf-8")
+        save_path.write_bytes(xml_str)
+
+    def save_configurations(self, objective: str) -> None:
+        """Save configurations based on spinning disk configuration"""
+        if ENABLE_SPINNING_DISK_CONFOCAL:
+            # Save both confocal and widefield configurations
+            self._save_xml_config(objective, ConfigType.CONFOCAL)
+            self._save_xml_config(objective, ConfigType.WIDEFIELD)
+        else:
+            # Save only channel configurations
+            self._save_xml_config(objective, ConfigType.CHANNEL)
+
+    def save_current_configuration_to_path(self, objective: str, path: Path) -> None:
+        """Only used in TrackingController. Might be temporary."""
+        config = self.all_configs[self.active_config_type][objective]
+        xml_str = config.to_xml(pretty_print=True, encoding="utf-8")
+        path.write_bytes(xml_str)
+
+    def get_configurations(self, objective: str) -> List[ChannelMode]:
+        """Get channel modes for current active type"""
+        config = self.all_configs[self.active_config_type].get(objective)
+        if not config:
+            return []
+        return config.modes
+
+    def update_configuration(self, objective: str, config_id: str, attr_name: str, value: Any) -> None:
+        """Update a specific configuration in current active type"""
+        config = self.all_configs[self.active_config_type].get(objective)
+        if not config:
+            self._log.error(f"Objective {objective} not found")
+            return
+
+        for mode in config.modes:
+            if mode.id == config_id:
+                setattr(mode, utils_config.get_attr_name(attr_name), value)
+                break
+
+        self.save_configurations(objective)
 
     def write_configuration_selected(
-        self, selected_configurations, filename
-    ):  # to be only used with a throwaway instance
-        for conf in self.configurations:
-            self.update_configuration_without_writing(conf.id, "Selected", 0)
-        for conf in selected_configurations:
-            self.update_configuration_without_writing(conf.id, "Selected", 1)
-        self.write_configuration(filename)
-        for conf in selected_configurations:
-            self.update_configuration_without_writing(conf.id, "Selected", 0)
+        self, objective: str, selected_configurations: List[ChannelMode], filename: str
+    ) -> None:
+        """Write selected configurations to a file"""
+        config = self.all_configs[self.active_config_type].get(objective)
+        if not config:
+            raise ValueError(f"Objective {objective} not found")
 
-    def get_channel_color(self, channel):
-        channel_info = CHANNEL_COLORS_MAP.get(self.extract_wavelength(channel), {"hex": 0xFFFFFF, "name": "gray"})
-        return channel_info["hex"]
+        # Update selected status
+        for mode in config.modes:
+            mode.selected = any(conf.id == mode.id for conf in selected_configurations)
 
-    def extract_wavelength(self, name):
-        # Split the string and find the wavelength number immediately after "Fluorescence"
-        parts = name.split()
-        if "Fluorescence" in parts:
-            index = parts.index("Fluorescence") + 1
-            if index < len(parts):
-                return parts[index].split()[0]  # Assuming 'Fluorescence 488 nm Ex' and taking '488'
-        for color in ["R", "G", "B"]:
-            if color in parts or "full_" + color in parts:
-                return color
-        return None
+        # Save to specified file
+        xml_str = config.to_xml(pretty_print=True, encoding="utf-8")
+        filename = Path(filename)
+        filename.write_bytes(xml_str)
+
+        # Reset selected status
+        for mode in config.modes:
+            mode.selected = False
+        self.save_configurations(objective)
+
+    def get_channel_configurations_for_objective(self, objective: str) -> List[ChannelMode]:
+        """Get Configuration objects for current active type (alias for get_configurations)"""
+        return self.get_configurations(objective)
+
+    def toggle_confocal_widefield(self, confocal: bool) -> None:
+        """Toggle between confocal and widefield configurations"""
+        self.active_config_type = ConfigType.CONFOCAL if confocal else ConfigType.WIDEFIELD
+
+
+class LaserAFSettingManager:
+    """Manages JSON-based laser autofocus configurations."""
+
+    def __init__(self):
+        self.autofocus_configurations: Dict[str, LaserAFConfig] = {}  # Dict[str, Dict[str, Any]]
+        self.current_profile_path = None
+
+    def set_profile_path(self, profile_path: Path) -> None:
+        self.current_profile_path = profile_path
+
+    def load_configurations(self, objective: str) -> None:
+        """Load autofocus configurations for a specific objective."""
+        config_file = self.current_profile_path / objective / "laser_af_settings.json"
+        if config_file.exists():
+            with open(config_file, "r") as f:
+                config_dict = json.load(f)
+                self.autofocus_configurations[objective] = LaserAFConfig(**config_dict)
+
+    def save_configurations(self, objective: str) -> None:
+        """Save autofocus configurations for a specific objective."""
+        if objective not in self.autofocus_configurations:
+            return
+
+        objective_path = self.current_profile_path / objective
+        if not objective_path.exists():
+            objective_path.mkdir(parents=True)
+        config_file = objective_path / "laser_af_settings.json"
+
+        config_dict = self.autofocus_configurations[objective].model_dump(serialize=True)
+        with open(config_file, "w") as f:
+            json.dump(config_dict, f, indent=4)
+
+    def get_settings_for_objective(self, objective: str) -> Dict[str, Any]:
+        if objective not in self.autofocus_configurations:
+            raise ValueError(f"No configuration found for objective {objective}")
+        return self.autofocus_configurations[objective]
+
+    def get_laser_af_settings(self) -> Dict[str, Any]:
+        return self.autofocus_configurations
+
+    def update_laser_af_settings(
+        self, objective: str, updates: Dict[str, Any], crop_image: Optional[np.ndarray] = None
+    ) -> None:
+        if objective not in self.autofocus_configurations:
+            self.autofocus_configurations[objective] = LaserAFConfig(**updates)
+        else:
+            config = self.autofocus_configurations[objective]
+            self.autofocus_configurations[objective] = config.model_copy(update=updates)
+        if crop_image is not None:
+            self.autofocus_configurations[objective].set_reference_image(crop_image)
+
+
+class ConfigurationManager(QObject):
+    """Main configuration manager that coordinates channel and autofocus configurations."""
+
+    signal_profile_loaded = Signal()
+
+    def __init__(
+        self,
+        channel_manager: ChannelConfigurationManager,
+        laser_af_manager: Optional[LaserAFSettingManager] = None,
+        base_config_path: Path = Path("acquisition_configurations"),
+        profile: str = "default_profile",
+    ):
+        super().__init__()
+        self.base_config_path = Path(base_config_path)
+        self.current_profile = profile
+        self.available_profiles = self._get_available_profiles()
+
+        self.channel_manager = channel_manager
+        self.laser_af_manager = laser_af_manager
+
+        self.load_profile(profile)
+
+    def _get_available_profiles(self) -> List[str]:
+        """Get all available user profile names in the base config path. Use default profile if no other profiles exist."""
+        if not self.base_config_path.exists():
+            os.makedirs(self.base_config_path)
+            os.makedirs(self.base_config_path / "default_profile")
+            for objective in OBJECTIVES:
+                os.makedirs(self.base_config_path / "default_profile" / objective)
+        return [d.name for d in self.base_config_path.iterdir() if d.is_dir()]
+
+    def _get_available_objectives(self, profile_path: Path) -> List[str]:
+        """Get all available objective names in a profile."""
+        return [d.name for d in profile_path.iterdir() if d.is_dir()]
+
+    def load_profile(self, profile_name: str) -> None:
+        """Load all configurations from a specific profile."""
+        profile_path = self.base_config_path / profile_name
+        if not profile_path.exists():
+            raise ValueError(f"Profile {profile_name} does not exist")
+
+        self.current_profile = profile_name
+        if self.channel_manager:
+            self.channel_manager.set_profile_path(profile_path)
+        if self.laser_af_manager:
+            self.laser_af_manager.set_profile_path(profile_path)
+
+        # Load configurations for each objective
+        for objective in self._get_available_objectives(profile_path):
+            if self.channel_manager:
+                self.channel_manager.load_configurations(objective)
+            if self.laser_af_manager:
+                self.laser_af_manager.load_configurations(objective)
+
+        self.signal_profile_loaded.emit()
+
+    def create_new_profile(self, profile_name: str) -> None:
+        """Create a new profile using current configurations."""
+        new_profile_path = self.base_config_path / profile_name
+        if new_profile_path.exists():
+            raise ValueError(f"Profile {profile_name} already exists")
+        os.makedirs(new_profile_path)
+
+        objectives = OBJECTIVES
+
+        self.current_profile = profile_name
+        if self.channel_manager:
+            self.channel_manager.set_profile_path(new_profile_path)
+        if self.laser_af_manager:
+            self.laser_af_manager.set_profile_path(new_profile_path)
+
+        for objective in objectives:
+            os.makedirs(new_profile_path / objective)
+            if self.channel_manager:
+                self.channel_manager.save_configurations(objective)
+            if self.laser_af_manager:
+                self.laser_af_manager.save_configurations(objective)
+
+        self.available_profiles = self._get_available_profiles()
 
 
 class ContrastManager:
@@ -3859,21 +4047,21 @@ class ScanCoordinates(QObject):
             # Use scan_size_mm as height, width is 0.6 * height
             height_mm = scan_size_mm
             width_mm = scan_size_mm * 0.6
-            
+
             # Calculate steps for height and width separately
             steps_height = math.floor(height_mm / step_size_mm)
             steps_width = math.floor(width_mm / step_size_mm)
-            
+
             # Calculate actual dimensions
             actual_scan_height_mm = (steps_height - 1) * step_size_mm + fov_size_mm
             actual_scan_width_mm = (steps_width - 1) * step_size_mm + fov_size_mm
-            
+
             steps_height = max(1, steps_height)
             steps_width = max(1, steps_width)
 
             half_steps_height = (steps_height - 1) / 2
             half_steps_width = (steps_width - 1) / 2
-            
+
             for i in range(steps_height):
                 row = []
                 y = center_y + (i - half_steps_height) * step_size_mm
@@ -3915,8 +4103,13 @@ class ScanCoordinates(QObject):
                 y = center_y + (i - half_steps) * step_size_mm
                 for j in range(steps):
                     x = center_x + (j - half_steps) * step_size_mm
-                    if shape == "Square" or shape == "Rectangle" or (
-                        shape == "Circle" and self._is_in_circle(x, y, center_x, center_y, radius_squared, fov_size_mm_half)
+                    if (
+                        shape == "Square"
+                        or shape == "Rectangle"
+                        or (
+                            shape == "Circle"
+                            and self._is_in_circle(x, y, center_x, center_y, radius_squared, fov_size_mm_half)
+                        )
                     ):
                         if self.validate_coordinates(x, y):
                             row.append((x, y))
@@ -4058,20 +4251,30 @@ class ScanCoordinates(QObject):
         # valid_points = grid_points[mask]
 
         def corners(x_mm, y_mm, fov):
-            center_to_corner = fov/2
+            center_to_corner = fov / 2
             return (
                 (x_mm + center_to_corner, y_mm + center_to_corner),
                 (x_mm - center_to_corner, y_mm + center_to_corner),
                 (x_mm - center_to_corner, y_mm - center_to_corner),
-                (x_mm + center_to_corner, y_mm - center_to_corner)
+                (x_mm + center_to_corner, y_mm - center_to_corner),
             )
+
         valid_points = []
         for x_center, y_center in grid_points:
             if not self.validate_coordinates(x_center, y_center):
-                self._log.debug(f"Manual coords: ignoring {x_center=},{y_center=} because it is outside our movement range.")
+                self._log.debug(
+                    f"Manual coords: ignoring {x_center=},{y_center=} because it is outside our movement range."
+                )
                 continue
-            if not self._is_in_polygon(x_center, y_center, shape_coords) and not any([self._is_in_polygon(x_corner, y_corner, shape_coords) for (x_corner, y_corner) in corners(x_center, y_center, fov_size_mm)]):
-                self._log.debug(f"Manual coords: ignoring {x_center=},{y_center=} because no corners or center are in poly. (corners={corners(x_center, y_center, fov_size_mm)}")
+            if not self._is_in_polygon(x_center, y_center, shape_coords) and not any(
+                [
+                    self._is_in_polygon(x_corner, y_corner, shape_coords)
+                    for (x_corner, y_corner) in corners(x_center, y_center, fov_size_mm)
+                ]
+            ):
+                self._log.debug(
+                    f"Manual coords: ignoring {x_center=},{y_center=} because no corners or center are in poly. (corners={corners(x_center, y_center, fov_size_mm)}"
+                )
                 continue
 
             valid_points.append((x_center, y_center))
@@ -4440,6 +4643,8 @@ class LaserAutofocusController(QObject):
 
     image_to_display = Signal(np.ndarray)
     signal_displacement_um = Signal(float)
+    signal_cross_correlation = Signal(float)
+    signal_piezo_position_update = Signal()  # Signal to emit piezo position updates
 
     def __init__(
         self,
@@ -4447,297 +4652,554 @@ class LaserAutofocusController(QObject):
         camera,
         liveController,
         stage: AbstractStage,
-        has_two_interfaces=True,
-        use_glass_top=True,
-        look_for_cache=True,
+        piezo: Optional[PiezoStage] = None,
+        objectiveStore: Optional[ObjectiveStore] = None,
+        laserAFSettingManager: Optional[LaserAFSettingManager] = None,
     ):
         QObject.__init__(self)
+        self._log = squid.logging.get_logger(__class__.__name__)
         self.microcontroller = microcontroller
         self.camera = camera
         self.liveController = liveController
         self.stage = stage
+        self.piezo = piezo
+        self.objectiveStore = objectiveStore
+        self.laserAFSettingManager = laserAFSettingManager
+        self.characterization_mode = LASER_AF_CHARACTERIZATION_MODE
 
         self.is_initialized = False
-        self.x_reference = 0
-        self.pixel_to_um = 1
-        self.x_offset = 0
-        self.y_offset = 0
+
+        self.laser_af_properties = LaserAFConfig()
+        self.reference_crop = None
+
         self.x_width = 3088
         self.y_width = 2064
 
-        self.has_two_interfaces = has_two_interfaces  # e.g. air-glass and glass water, set to false when (1) using oil immersion (2) using 1 mm thick slide (3) using metal coated slide or Si wafer
-        self.use_glass_top = use_glass_top
         self.spot_spacing_pixels = None  # spacing between the spots from the two interfaces (unit: pixel)
-
-        self.look_for_cache = look_for_cache
 
         self.image = None  # for saving the focus camera image for debugging when centroid cannot be found
 
-        if look_for_cache:
-            cache_path = "cache/laser_af_reference_plane.txt"
-            try:
-                with open(cache_path, "r") as cache_file:
-                    for line in cache_file:
-                        value_list = line.split(",")
-                        x_offset = float(value_list[0])
-                        y_offset = float(value_list[1])
-                        width = int(value_list[2])
-                        height = int(value_list[3])
-                        pixel_to_um = float(value_list[4])
-                        x_reference = float(value_list[5])
-                        self.initialize_manual(x_offset, y_offset, width, height, pixel_to_um, x_reference)
-                        break
-            except (FileNotFoundError, ValueError, IndexError) as e:
-                print("Unable to read laser AF state cache, exception below:")
-                print(e)
-                pass
+        # Load configurations if provided
+        if self.laserAFSettingManager:
+            self.load_cached_configuration()
 
-    def initialize_manual(self, x_offset, y_offset, width, height, pixel_to_um, x_reference, write_to_cache=True):
-        cache_string = ",".join(
-            [str(x_offset), str(y_offset), str(width), str(height), str(pixel_to_um), str(x_reference)]
+    def initialize_manual(self, config: LaserAFConfig) -> None:
+        """Initialize laser autofocus with manual parameters."""
+        adjusted_config = config.model_copy(
+            update={
+                "x_reference": config.x_reference
+                - config.x_offset,  # self.x_reference is relative to the cropped region
+                "x_offset": int((config.x_offset // 8) * 8),
+                "y_offset": int((config.y_offset // 2) * 2),
+                "width": int((config.width // 8) * 8),
+                "height": int((config.height // 2) * 2),
+            }
         )
-        if write_to_cache:
-            cache_path = Path("cache/laser_af_reference_plane.txt")
-            cache_path.parent.mkdir(parents=True, exist_ok=True)
-            cache_path.write_text(cache_string)
-        # x_reference is relative to the full sensor
-        self.pixel_to_um = pixel_to_um
-        self.x_offset = int((x_offset // 8) * 8)
-        self.y_offset = int((y_offset // 2) * 2)
-        self.width = int((width // 8) * 8)
-        self.height = int((height // 2) * 2)
-        self.x_reference = x_reference - self.x_offset  # self.x_reference is relative to the cropped region
-        self.camera.set_ROI(self.x_offset, self.y_offset, self.width, self.height)
+
+        self.laser_af_properties = adjusted_config
+
+        if self.laser_af_properties.has_reference:
+            self.reference_crop = self.laser_af_properties.reference_image_cropped
+
+        self.camera.set_ROI(
+            self.laser_af_properties.x_offset,
+            self.laser_af_properties.y_offset,
+            self.laser_af_properties.width,
+            self.laser_af_properties.height,
+        )
+
         self.is_initialized = True
 
-    def initialize_auto(self):
+        # Update cache if objective store and laser_af_settings is available
+        if self.objectiveStore and self.laserAFSettingManager and self.objectiveStore.current_objective:
+            self.laserAFSettingManager.update_laser_af_settings(
+                self.objectiveStore.current_objective, config.model_dump()
+            )
 
-        # first find the region to crop
-        # then calculate the convert factor
+    def load_cached_configuration(self):
+        """Load configuration from the cache if available."""
+        laser_af_settings = self.laserAFSettingManager.get_laser_af_settings()
+        current_objective = self.objectiveStore.current_objective if self.objectiveStore else None
+        if current_objective and current_objective in laser_af_settings:
+            config = self.laserAFSettingManager.get_settings_for_objective(current_objective)
 
+            # Update camera settings
+            self.camera.set_exposure_time(config.focus_camera_exposure_time_ms)
+            self.camera.set_analog_gain(config.focus_camera_analog_gain)
+
+            # Initialize with loaded config
+            self.initialize_manual(config)
+
+    def initialize_auto(self) -> bool:
+        """Automatically initialize laser autofocus by finding the spot and calibrating.
+
+        This method:
+        1. Finds the laser spot on full sensor
+        2. Sets up ROI around the spot
+        3. Calibrates pixel-to-um conversion using two z positions
+
+        Returns:
+            bool: True if initialization successful, False if any step fails
+        """
         # set camera to use full sensor
         self.camera.set_ROI(0, 0, None, None)  # set offset first
         self.camera.set_ROI(0, 0, 3088, 2064)
+
         # update camera settings
-        self.camera.set_exposure_time(FOCUS_CAMERA_EXPOSURE_TIME_MS)
-        self.camera.set_analog_gain(FOCUS_CAMERA_ANALOG_GAIN)
+        self.camera.set_exposure_time(self.laser_af_properties.focus_camera_exposure_time_ms)
+        self.camera.set_analog_gain(self.laser_af_properties.focus_camera_analog_gain)
 
-        # turn on the laser
+        # Find initial spot position
         self.microcontroller.turn_on_AF_laser()
         self.microcontroller.wait_till_operation_is_completed()
 
-        # get laser spot location
-        x, y = self._get_laser_spot_centroid()
+        result = self._get_laser_spot_centroid(remove_background=True)
+        if result is None:
+            self._log.error("Failed to find laser spot during initialization")
+            self.microcontroller.turn_off_AF_laser()
+            self.microcontroller.wait_till_operation_is_completed()
+            return False
+        x, y = result
 
-        # turn off the laser
         self.microcontroller.turn_off_AF_laser()
         self.microcontroller.wait_till_operation_is_completed()
 
-        x_offset = x - LASER_AF_CROP_WIDTH / 2
-        y_offset = y - LASER_AF_CROP_HEIGHT / 2
-        print("laser spot location on the full sensor is (" + str(int(x)) + "," + str(int(y)) + ")")
+        # Set up ROI around spot and clear reference
+        config = self.laser_af_properties.model_copy(
+            update={
+                "x_offset": x - self.laser_af_properties.width / 2,
+                "y_offset": y - self.laser_af_properties.height / 2,
+                "has_reference": False,
+            }
+        )
+        self.reference_crop = None
+        config.set_reference_image(None)
+        self._log.info(f"Laser spot location on the full sensor is ({int(x)}, {int(y)})")
 
-        # set camera crop
-        self.initialize_manual(x_offset, y_offset, LASER_AF_CROP_WIDTH, LASER_AF_CROP_HEIGHT, 1, x)
+        self.initialize_manual(config)
 
-        # turn on laser
+        # Calibrate pixel-to-um conversion
+        if not self._calibrate_pixel_to_um():
+            self._log.error("Failed to calibrate pixel-to-um conversion")
+            return False
+
+        self.laserAFSettingManager.save_configurations(self.objectiveStore.current_objective)
+
+        return True
+
+    def _calibrate_pixel_to_um(self) -> bool:
+        """Calibrate pixel-to-um conversion.
+
+        Returns:
+            bool: True if calibration successful, False otherwise
+        """
+        # Calibrate pixel-to-um conversion
         self.microcontroller.turn_on_AF_laser()
         self.microcontroller.wait_till_operation_is_completed()
 
-        # move z to - 6 um
-        self.stage.move_z(-0.018)
-        self.stage.move_z(0.012)
-        time.sleep(0.02)
-
-        # measure
-        x0, y0 = self._get_laser_spot_centroid()
-
-        # move z to 6 um
-        self.stage.move_z(0.006)
-        time.sleep(0.02)
-
-        # measure
-        x1, y1 = self._get_laser_spot_centroid()
-
-        # turn off laser
-        self.microcontroller.turn_off_AF_laser()
-        self.microcontroller.wait_till_operation_is_completed()
-
-        if x1 - x0 == 0:
-            # for simulation
-            self.pixel_to_um = 0.4
+        # Move to first position and measure
+        if self.piezo is not None:
+            self._move_z(-self.laser_af_properties.pixel_to_um_calibration_distance / 2)
+            time.sleep(MULTIPOINT_PIEZO_DELAY_MS / 1000)
         else:
-            # calculate the conversion factor
-            self.pixel_to_um = 6.0 / (x1 - x0)
-        print("pixel to um conversion factor is " + str(self.pixel_to_um) + " um/pixel")
+            # TODO: change to _move_z after backlash correction is absorbed into firmware
+            self.stage.move_z(-1.5 * self.laser_af_properties.pixel_to_um_calibration_distance / 1000)
+            self.stage.move_z(self.laser_af_properties.pixel_to_um_calibration_distance / 1000)
 
-        # set reference
-        self.x_reference = x1
+        result = self._get_laser_spot_centroid()
+        if result is None:
+            self._log.error("Failed to find laser spot during calibration (position 1)")
+            self.microcontroller.turn_off_AF_laser()
+            self.microcontroller.wait_till_operation_is_completed()
+            return False
+        x0, y0 = result
 
-        if self.look_for_cache:
-            cache_path = "cache/laser_af_reference_plane.txt"
-            try:
-                x_offset = None
-                y_offset = None
-                width = None
-                height = None
-                pixel_to_um = None
-                x_reference = None
-                with open(cache_path, "r") as cache_file:
-                    for line in cache_file:
-                        value_list = line.split(",")
-                        x_offset = float(value_list[0])
-                        y_offset = float(value_list[1])
-                        width = int(value_list[2])
-                        height = int(value_list[3])
-                        pixel_to_um = self.pixel_to_um
-                        x_reference = self.x_reference + self.x_offset
-                        break
-                cache_string = ",".join(
-                    [str(x_offset), str(y_offset), str(width), str(height), str(pixel_to_um), str(x_reference)]
-                )
-                cache_path = Path("cache/laser_af_reference_plane.txt")
-                cache_path.parent.mkdir(parents=True, exist_ok=True)
-                cache_path.write_text(cache_string)
-            except (FileNotFoundError, ValueError, IndexError) as e:
-                print("Unable to read laser AF state cache, exception below:")
-                print(e)
-                pass
+        # Move to second position and measure
+        self._move_z(self.laser_af_properties.pixel_to_um_calibration_distance)
+        time.sleep(MULTIPOINT_PIEZO_DELAY_MS / 1000)
 
-    def measure_displacement(self):
+        result = self._get_laser_spot_centroid()
+        if result is None:
+            self._log.error("Failed to find laser spot during calibration (position 2)")
+            self.microcontroller.turn_off_AF_laser()
+            self.microcontroller.wait_till_operation_is_completed()
+            return False
+        x1, y1 = result
+
+        self.microcontroller.turn_off_AF_laser()
+        self.microcontroller.wait_till_operation_is_completed()
+
+        # move back to initial position
+        if self.piezo is not None:
+            self._move_z(-self.laser_af_properties.pixel_to_um_calibration_distance / 2)
+            time.sleep(MULTIPOINT_PIEZO_DELAY_MS / 1000)
+        else:
+            # TODO: change to _move_z after backlash correction is absorbed into firmware
+            self.stage.move_z(-1.5 * self.laser_af_properties.pixel_to_um_calibration_distance / 1000)
+            self.stage.move_z(self.laser_af_properties.pixel_to_um_calibration_distance / 1000)
+
+        # Calculate conversion factor
+        if x1 - x0 == 0:
+            pixel_to_um = 0.4  # Simulation value
+            self._log.warning("Using simulation value for pixel_to_um conversion")
+        else:
+            pixel_to_um = self.laser_af_properties.pixel_to_um_calibration_distance / (x1 - x0)
+        self._log.info(f"Pixel to um conversion factor is {pixel_to_um:.3f} um/pixel")
+        calibration_timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+        # Update config with new calibration values
+        self.laser_af_properties = self.laser_af_properties.model_copy(
+            update={"pixel_to_um": pixel_to_um, "calibration_timestamp": calibration_timestamp}
+        )
+
+        # Update cache
+        if self.objectiveStore and self.laserAFSettingManager:
+            self.laserAFSettingManager.update_laser_af_settings(
+                self.objectiveStore.current_objective, self.laser_af_properties.model_dump()
+            )
+
+        return True
+
+    def set_laser_af_properties(self, updates: dict) -> None:
+        """Update laser autofocus properties. Used for updating settings from GUI."""
+        self.laser_af_properties = self.laser_af_properties.model_copy(update=updates)
+        self.is_initialized = False
+
+    def measure_displacement(self) -> float:
+        """Measure the displacement of the laser spot from the reference position.
+
+        Returns:
+            float: Displacement in micrometers, or float('nan') if measurement fails
+        """
         # turn on the laser
         self.microcontroller.turn_on_AF_laser()
         self.microcontroller.wait_till_operation_is_completed()
+
         # get laser spot location
-        x, y = self._get_laser_spot_centroid()
+        result = self._get_laser_spot_centroid()
+
         # turn off the laser
         self.microcontroller.turn_off_AF_laser()
         self.microcontroller.wait_till_operation_is_completed()
+
+        if result is None:
+            self._log.error("Failed to detect laser spot during displacement measurement")
+            self.signal_displacement_um.emit(float("nan"))  # Signal invalid measurement
+            return float("nan")
+
+        x, y = result
         # calculate displacement
-        displacement_um = (x - self.x_reference) * self.pixel_to_um
+        displacement_um = (x - self.laser_af_properties.x_reference) * self.laser_af_properties.pixel_to_um
         self.signal_displacement_um.emit(displacement_um)
         return displacement_um
 
-    def move_to_target(self, target_um):
+    def move_to_target(self, target_um: float) -> bool:
+        """Move the stage to reach a target displacement from reference position.
+
+        Args:
+            target_um: Target displacement in micrometers
+
+        Returns:
+            bool: True if move was successful, False if measurement failed or displacement was out of range
+        """
+        if not self.laser_af_properties.has_reference:
+            self._log.warning("Cannot move to target - reference not set")
+            return False
+
         current_displacement_um = self.measure_displacement()
-        print("Laser AF displacement: ", current_displacement_um)
+        self._log.info(f"Current laser AF displacement: {current_displacement_um:.1f} μm")
 
-        if abs(current_displacement_um) > LASER_AF_RANGE:
-            print(
-                f"Warning: Measured displacement ({current_displacement_um:.1f} μm) is unreasonably large, using previous z position"
+        if math.isnan(current_displacement_um):
+            self._log.error("Cannot move to target: failed to measure current displacement")
+            return False
+
+        if abs(current_displacement_um) > self.laser_af_properties.laser_af_range:
+            self._log.warning(
+                f"Measured displacement ({current_displacement_um:.1f} μm) is unreasonably large, using previous z position"
             )
-            um_to_move = 0
+            return False
+
+        um_to_move = target_um - current_displacement_um
+        self._move_z(um_to_move)
+
+        # Verify using cross-correlation that spot is in same location as reference
+        cc_result, correlation = self._verify_spot_alignment()
+        self.signal_cross_correlation.emit(correlation)
+        if not cc_result:
+            self._log.warning("Cross correlation check failed - spots not well aligned")
+            # move back to the current position
+            self._move_z(-um_to_move)
+            return False
         else:
-            um_to_move = target_um - current_displacement_um
+            self._log.info("Cross correlation check passed - spots are well aligned")
+            return True
 
-        self.stage.move_z(um_to_move / 1000)
+        """
+        # Verify we reached the target
+        final_displacement = self.measure_displacement()
+        if math.isnan(final_displacement):
+            self._log.error("Failed to verify final position")
+            # move back to the current position
+            self.stage.move_z(-um_to_move / 1000)
+            return False
+        if abs(final_displacement - target_um) > self.DISPLACEMENT_SUCCESS_WINDOW_UM:
+            self._log.warning(f"Final displacement ({final_displacement:.1f} μm) is out of the success window ({self.DISPLACEMENT_SUCCESS_WINDOW_UM:.1f} μm)")
+            # move back to the current position
+            self.stage.move_z(-um_to_move / 1000)
+            return False
+        else:
+            self._log.info(f"Final displacement ({final_displacement:.1f} μm) is within the success window ({self.DISPLACEMENT_SUCCESS_WINDOW_UM:.1f} μm)")
+            return True
+        """
 
-        # update the displacement measurement
-        self.measure_displacement()
+    def _move_z(self, um_to_move: float) -> None:
+        if self.piezo is not None:
+            # TODO: check if um_to_move is in the range of the piezo
+            self.piezo.move_relative(um_to_move)
+            self.signal_piezo_position_update.emit()
+        else:
+            self.stage.move_z(um_to_move / 1000)
 
-    def set_reference(self):
+    def set_reference(self) -> bool:
+        """Set the current spot position as the reference position.
+
+        Captures and stores both the spot position and a cropped reference image
+        around the spot for later alignment verification.
+
+        Returns:
+            bool: True if reference was set successfully, False if spot detection failed
+        """
         # turn on the laser
         self.microcontroller.turn_on_AF_laser()
         self.microcontroller.wait_till_operation_is_completed()
-        # get laser spot location
-        x, y = self._get_laser_spot_centroid()
+
+        # get laser spot location and image
+        result = self._get_laser_spot_centroid()
+        reference_image = self.image
+
         # turn off the laser
         self.microcontroller.turn_off_AF_laser()
         self.microcontroller.wait_till_operation_is_completed()
-        self.x_reference = x
+
+        if result is None or reference_image is None:
+            self._log.error("Failed to detect laser spot while setting reference")
+            return False
+
+        x, y = result
+
+        # Store cropped and normalized reference image
+        center_y = int(reference_image.shape[0] / 2)
+        x_start = max(0, int(x) - self.laser_af_properties.spot_crop_size // 2)
+        x_end = min(reference_image.shape[1], int(x) + self.laser_af_properties.spot_crop_size // 2)
+        y_start = max(0, center_y - self.laser_af_properties.spot_crop_size // 2)
+        y_end = min(reference_image.shape[0], center_y + self.laser_af_properties.spot_crop_size // 2)
+
+        reference_crop = reference_image[y_start:y_end, x_start:x_end].astype(np.float32)
+        self.reference_crop = (reference_crop - np.mean(reference_crop)) / np.max(reference_crop)
+
         self.signal_displacement_um.emit(0)
+        self._log.info(f"Set reference position to ({x:.1f}, {y:.1f})")
 
-    def _caculate_centroid(self, image):
-        if self.has_two_interfaces == False:
-            h, w = image.shape
-            x, y = np.meshgrid(range(w), range(h))
-            I = image.astype(float)
-            I = I - np.amin(I)
-            I[I / np.amax(I) < 0.2] = 0
-            x = np.sum(x * I) / np.sum(I)
-            y = np.sum(y * I) / np.sum(I)
-            return x, y
-        else:
-            I = image
-            # get the y position of the spots
-            tmp = np.sum(I, axis=1)
-            y0 = np.argmax(tmp)
-            # crop along the y axis
-            I = I[y0 - 96 : y0 + 96, :]
-            # signal along x
-            tmp = np.sum(I, axis=0)
-            # find peaks
-            peak_locations, _ = scipy.signal.find_peaks(tmp, distance=100)
-            idx = np.argsort(tmp[peak_locations])
-            peak_0_location = peak_locations[idx[-1]]
-            peak_1_location = peak_locations[
-                idx[-2]
-            ]  # for air-glass-water, the smaller peak corresponds to the glass-water interface
-            self.spot_spacing_pixels = peak_1_location - peak_0_location
-            """
-            # find peaks - alternative
-            if self.spot_spacing_pixels is not None:
-                peak_locations,_ = scipy.signal.find_peaks(tmp,distance=100)
-                idx = np.argsort(tmp[peak_locations])
-                peak_0_location = peak_locations[idx[-1]]
-                peak_1_location = peak_locations[idx[-2]] # for air-glass-water, the smaller peak corresponds to the glass-water interface
-                self.spot_spacing_pixels = peak_1_location-peak_0_location
-            else:
-                peak_0_location = np.argmax(tmp)
-                peak_1_location = peak_0_location + self.spot_spacing_pixels
-            """
-            # choose which surface to use
-            if self.use_glass_top:
-                x1 = peak_1_location
-            else:
-                x1 = peak_0_location
-            # find centroid
-            h, w = I.shape
-            x, y = np.meshgrid(range(w), range(h))
-            I = I[:, max(0, x1 - 64) : min(w - 1, x1 + 64)]
-            x = x[:, max(0, x1 - 64) : min(w - 1, x1 + 64)]
-            y = y[:, max(0, x1 - 64) : min(w - 1, x1 + 64)]
-            I = I.astype(float)
-            I = I - np.amin(I)
-            I[I / np.amax(I) < 0.1] = 0
-            x1 = np.sum(x * I) / np.sum(I)
-            y1 = np.sum(y * I) / np.sum(I)
-            return x1, y0 - 96 + y1
+        self.laser_af_properties = self.laser_af_properties.model_copy(
+            update={"x_reference": x, "has_reference": True}
+        )  # We don't keep reference_crop here to avoid serializing it
 
-    def _get_laser_spot_centroid(self):
+        # Update cached file. reference_crop needs to be saved.
+        self.laserAFSettingManager.update_laser_af_settings(
+            self.objectiveStore.current_objective,
+            {"x_reference": x + self.laser_af_properties.x_offset, "has_reference": True},
+            crop_image=self.reference_crop,
+        )
+        self.laserAFSettingManager.save_configurations(self.objectiveStore.current_objective)
+
+        self._log.info("Reference spot position set")
+
+        return True
+
+    def on_settings_changed(self) -> None:
+        """Handle objective change or profile load event.
+
+        This method is called when the objective changes. It resets the initialization
+        status and loads the cached configuration for the new objective.
+        """
+        self.is_initialized = False
+        self.load_cached_configuration()
+
+    def _verify_spot_alignment(self) -> Tuple[bool, float]:
+        """Verify laser spot alignment using cross-correlation with reference image.
+
+        Captures current laser spot image and compares it with the reference image
+        using normalized cross-correlation. Images are cropped around the expected
+        spot location and normalized by maximum intensity before comparison.
+
+        Returns:
+            bool: True if spots are well aligned (correlation > CORRELATION_THRESHOLD), False otherwise
+        """
+        # Get current spot image
+        self.microcontroller.turn_on_AF_laser()
+        self.microcontroller.wait_till_operation_is_completed()
+
+        # TODO: create a function to get the current image (taking care of trigger mode checking and laser on/off switching)
+        """
+        self.camera.send_trigger()
+        current_image = self.camera.read_frame()
+        """
+        self._get_laser_spot_centroid()
+        current_image = self.image
+
+        self.microcontroller.turn_off_AF_laser()
+        self.microcontroller.wait_till_operation_is_completed()
+
+        if self.reference_crop is None:
+            self._log.warning("No reference crop stored")
+            return False, 0.0
+
+        if current_image is None:
+            self._log.error("Failed to get images for cross-correlation check")
+            return False, 0.0
+
+        # Crop and normalize current image
+        center_x = int(self.laser_af_properties.x_reference)
+        center_y = int(current_image.shape[0] / 2)
+
+        x_start = max(0, center_x - self.laser_af_properties.spot_crop_size // 2)
+        x_end = min(current_image.shape[1], center_x + self.laser_af_properties.spot_crop_size // 2)
+        y_start = max(0, center_y - self.laser_af_properties.spot_crop_size // 2)
+        y_end = min(current_image.shape[0], center_y + self.laser_af_properties.spot_crop_size // 2)
+
+        current_crop = current_image[y_start:y_end, x_start:x_end].astype(np.float32)
+        current_norm = (current_crop - np.mean(current_crop)) / np.max(current_crop)
+
+        # Calculate normalized cross correlation
+        correlation = np.corrcoef(current_norm.ravel(), self.reference_crop.ravel())[0, 1]
+
+        self._log.info(f"Cross correlation with reference: {correlation:.3f}")
+
+        # Check if correlation exceeds threshold
+        if correlation < self.laser_af_properties.correlation_threshold:
+            self._log.warning("Cross correlation check failed - spots not well aligned")
+            return False, correlation
+
+        return True, correlation
+
+    def _get_laser_spot_centroid(self, remove_background: bool = False) -> Optional[Tuple[float, float]]:
+        """Get the centroid location of the laser spot.
+
+        Averages multiple measurements to improve accuracy. The number of measurements
+        is controlled by LASER_AF_AVERAGING_N.
+
+        Returns:
+            Optional[Tuple[float, float]]: (x,y) coordinates of spot centroid, or None if detection fails
+        """
         # disable camera callback
         self.camera.disable_callback()
+
+        successful_detections = 0
         tmp_x = 0
         tmp_y = 0
-        for i in range(LASER_AF_AVERAGING_N):
-            # send camera trigger
-            if self.liveController.trigger_mode == TriggerMode.SOFTWARE:
-                self.camera.send_trigger()
-            elif self.liveController.trigger_mode == TriggerMode.HARDWARE:
-                # self.microcontroller.send_hardware_trigger(control_illumination=True,illumination_on_time_us=self.camera.exposure_time*1000)
-                pass  # to edit
-            # read camera frame
-            image = self.camera.read_frame()
-            self.image = image
-            # optionally display the image
-            if LASER_AF_DISPLAY_SPOT_IMAGE:
-                self.image_to_display.emit(image)
-            # calculate centroid
-            x, y = self._caculate_centroid(image)
-            tmp_x = tmp_x + x
-            tmp_y = tmp_y + y
-        x = tmp_x / LASER_AF_AVERAGING_N
-        y = tmp_y / LASER_AF_AVERAGING_N
-        return x, y
 
-    def get_image(self):
+        for i in range(self.laser_af_properties.laser_af_averaging_n):
+            try:
+                # send camera trigger
+                if self.liveController.trigger_mode == TriggerMode.SOFTWARE:
+                    self.camera.send_trigger()
+                elif self.liveController.trigger_mode == TriggerMode.HARDWARE:
+                    # self.microcontroller.send_hardware_trigger(control_illumination=True,illumination_on_time_us=self.camera.exposure_time*1000)
+                    pass  # to edit
+
+                # read camera frame
+                image = self.camera.read_frame()
+                if image is None:
+                    self._log.warning(f"Failed to read frame {i+1}/{self.laser_af_properties.laser_af_averaging_n}")
+                    continue
+
+                self.image = image  # store for debugging # TODO: add to return instead of storing
+
+                if remove_background:
+                    # remove background using top hat filter
+                    kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (50, 50))  # TODO: tmp hard coded value
+                    image = cv2.morphologyEx(image, cv2.MORPH_TOPHAT, kernel)
+
+                # calculate centroid
+                spot_detection_params = {
+                    "y_window": self.laser_af_properties.y_window,
+                    "x_window": self.laser_af_properties.x_window,
+                    "peak_width": self.laser_af_properties.min_peak_width,
+                    "peak_distance": self.laser_af_properties.min_peak_distance,
+                    "peak_prominence": self.laser_af_properties.min_peak_prominence,
+                    "spot_spacing": self.laser_af_properties.spot_spacing,
+                }
+                result = utils.find_spot_location(
+                    image, mode=self.laser_af_properties.spot_detection_mode, params=spot_detection_params
+                )
+                if result is None:
+                    self._log.warning(
+                        f"No spot detected in frame {i+1}/{self.laser_af_properties.laser_af_averaging_n}"
+                    )
+                    continue
+
+                x, y = result
+                tmp_x += x
+                tmp_y += y
+                successful_detections += 1
+
+            except Exception as e:
+                self._log.error(
+                    f"Error processing frame {i+1}/{self.laser_af_properties.laser_af_averaging_n}: {str(e)}"
+                )
+                continue
+
+        # optionally display the image
+        if LASER_AF_DISPLAY_SPOT_IMAGE:
+            self.image_to_display.emit(image)
+
+        # Check if we got enough successful detections
+        if successful_detections <= 0:
+            self._log.error(f"No successful detections")
+            return None
+
+        # Calculate average position from successful detections
+        x = tmp_x / successful_detections
+        y = tmp_y / successful_detections
+
+        self._log.debug(f"Spot centroid found at ({x:.1f}, {y:.1f}) from {successful_detections} detections")
+        return (x, y)
+
+    def get_image(self) -> Optional[np.ndarray]:
+        """Capture and display a single image from the laser autofocus camera.
+
+        Turns the laser on, captures an image, displays it, then turns the laser off.
+
+        Returns:
+            Optional[np.ndarray]: The captured image, or None if capture failed
+        """
         # turn on the laser
         self.microcontroller.turn_on_AF_laser()
-        self.microcontroller.wait_till_operation_is_completed()  # send trigger, grab image and display image
-        self.camera.send_trigger()
-        image = self.camera.read_frame()
-        self.image_to_display.emit(image)
-        # turn off the laser
-        self.microcontroller.turn_off_AF_laser()
         self.microcontroller.wait_till_operation_is_completed()
-        return image
+
+        try:
+            # send trigger, grab image and display image
+            self.camera.send_trigger()
+            image = self.camera.read_frame()
+
+            if image is None:
+                self._log.error("Failed to read frame in get_image")
+                return None
+
+            self.image_to_display.emit(image)
+            return image
+
+        except Exception as e:
+            self._log.error(f"Error capturing image: {str(e)}")
+            return None
+
+        finally:
+            # turn off the laser
+            self.microcontroller.turn_off_AF_laser()
+            self.microcontroller.wait_till_operation_is_completed()
+
+    def clear_reference(self):
+        """Clear reference position"""
+        self.has_reference = False
+        self.reference_crop = None
+        self._log.info("Reference spot position cleared")
