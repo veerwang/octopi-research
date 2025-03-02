@@ -1,4 +1,6 @@
 import serial
+import re
+import math
 
 from PyQt5.QtCore import QObject
 
@@ -32,6 +34,7 @@ else:
 import control.microcontroller as microcontroller
 from control.piezo import PiezoStage
 import control.serial_peripherals as serial_peripherals
+
 if SUPPORT_LASER_AUTOFOCUS:
     import control.core_displacement_measurement as core_displacement_measurement
 
@@ -73,10 +76,14 @@ class Microscope(QObject):
 
         if SUPPORT_LASER_AUTOFOCUS:
             if is_simulation:
-                self.camera_focus = camera_fc.Camera_Simulation(rotate_image_angle=ROTATE_IMAGE_ANGLE, flip_image=FLIP_IMAGE)
+                self.camera_focus = camera_fc.Camera_Simulation(
+                    rotate_image_angle=ROTATE_IMAGE_ANGLE, flip_image=FLIP_IMAGE
+                )
             else:
                 sn_camera_focus = camera_fc.get_sn_by_model(FOCUS_CAMERA_MODEL)
-                self.camera_focus = camera_fc.Camera(sn=sn_camera_focus, rotate_image_angle=ROTATE_IMAGE_ANGLE, flip_image=FLIP_IMAGE)
+                self.camera_focus = camera_fc.Camera(
+                    sn=sn_camera_focus, rotate_image_angle=ROTATE_IMAGE_ANGLE, flip_image=FLIP_IMAGE
+                )
             self.camera_focus.open()
             self.camera_focus.set_pixel_format("MONO8")
             self.camera_focus.set_software_triggered_acquisition()
@@ -123,7 +130,7 @@ class Microscope(QObject):
             self.camera, self.stage, self.liveController, self.microcontroller
         )
         self.slidePositionController = core.SlidePositionController(self.stage, self.liveController)
-        
+
         self.multipointController = core.MultiPointController(
             self.camera,
             self.stage,
@@ -255,3 +262,209 @@ class Microscope(QObject):
         self.microcontroller.close()
         if USE_ZABER_EMISSION_FILTER_WHEEL or USE_OPTOSPIN_EMISSION_FILTER_WHEEL:
             self.emission_filter_wheel.close()
+
+    # ===============================================
+    # Methods for SiLA2
+    # ===============================================
+    def to_loading_position(self):
+        # retract z
+        self.move_z_to(1.0)
+        self.move_x_to(30.0)
+        self.move_y_to(30.0)
+
+    def move_to_position(self, x, y, z):
+        self.move_x_to(x)
+        self.move_y_to(y)
+        self.move_z_to(z)
+
+    def get_scan_coordinates_from_selected_wells(
+        self, wellplate_format, selected, scan_size_mm=None, overlap_percent=10
+    ):
+        self.scanCoordinates = ScanCoordinatesSiLA2(self.objectiveStore)
+        self.scanCoordinates.get_scan_coordinates_from_selected_wells(
+            self, wellplate_format, selected, scan_size_mm=scan_size_mm, overlap_percent=overlap_percent
+        )
+
+    def perform_scanning(self, path, experiment_ID, z_pos_um, objective, channels, use_laser_af=False):
+        if self.scanCoordinates is not None:
+            self.multipointController.scanCoordinates = self.scanCoordinates
+        self.move_z_to(z_pos_um)
+        self.objectiveStore.set_current_objective(objective)
+        self.multipointController.set_base_path(path)
+        self.multipointController.start_new_experiment(experiment_ID)
+        if use_laser_af:
+            self.multipointController.set_reflection_af_flag(True)
+        self.multipointController.set_selected_configurations(channels)
+        self.multipointController.start_acquisition()
+
+
+class ScanCoordinatesSiLA2:
+    def __init__(self, objectiveStore):
+        self.objectiveStore = objectiveStore
+        self.region_centers = {}
+        self.region_fov_coordinates = {}
+        self.wellplate_settings = None
+
+    def get_scan_coordinates_from_selected_wells(
+        self, wellplate_format, selected, scan_size_mm=None, overlap_percent=10
+    ):
+        self.wellplate_settings = self.get_wellplate_settings(wellplate_format)
+        self.get_selected_well_coordinates(selected, self.wellplate_settings)
+
+        if wellplate_format == "384 well plate" or "1536 well plate":
+            well_shape = "Square"
+        else:
+            well_shape = "Circle"
+
+        if scan_size_mm is None:
+            scan_size_mm = self.wellplate_settings["well_size_mm"]
+
+        for k, v in self.region_centers.items():
+            coords = self.create_region_coordinates(v[0], v[1], scan_size_mm, overlap_percent, well_shape)
+            self.region_fov_coordinates[k] = coords
+
+    def get_selected_well_coordinates(self, selected, wellplate_settings):
+        pattern = r"([A-Za-z]+)(\d+):?([A-Za-z]*)(\d*)"
+        descriptions = selected.split(",")
+        for desc in descriptions:
+            match = re.match(pattern, desc.strip())
+            if match:
+                start_row, start_col, end_row, end_col = match.groups()
+                start_row_index = self._row_to_index(start_row)
+                start_col_index = int(start_col) - 1
+
+                if end_row and end_col:  # It's a range
+                    end_row_index = self._row_to_index(end_row)
+                    end_col_index = int(end_col) - 1
+                    for row in range(min(start_row_index, end_row_index), max(start_row_index, end_row_index) + 1):
+                        cols = range(min(start_col_index, end_col_index), max(start_col_index, end_col_index) + 1)
+                        # Reverse column order for alternating rows if needed
+                        if (row - start_row_index) % 2 == 1:
+                            cols = reversed(cols)
+
+                        for col in cols:
+                            x_mm = (
+                                wellplate_settings["a1_x_mm"]
+                                + col * wellplate_settings["well_spacing_mm"]
+                                + WELLPLATE_OFFSET_X_mm
+                            )
+                            y_mm = (
+                                wellplate_settings["a1_y_mm"]
+                                + row * wellplate_settings["well_spacing_mm"]
+                                + WELLPLATE_OFFSET_Y_mm
+                            )
+                            self.region_centers[self._index_to_row(row) + str(col + 1)] = (x_mm, y_mm)
+                else:
+                    x_mm = (
+                        wellplate_settings["a1_x_mm"]
+                        + start_col_index * wellplate_settings["well_spacing_mm"]
+                        + WELLPLATE_OFFSET_X_mm
+                    )
+                    y_mm = (
+                        wellplate_settings["a1_y_mm"]
+                        + start_row_index * wellplate_settings["well_spacing_mm"]
+                        + WELLPLATE_OFFSET_Y_mm
+                    )
+                    self.region_centers[start_row + start_col] = (x_mm, y_mm)
+
+    def _row_to_index(self, row):
+        index = 0
+        for char in row:
+            index = index * 26 + (ord(char.upper()) - ord("A") + 1)
+        return index - 1
+
+    def _index_to_row(self, index):
+        index += 1
+        row = ""
+        while index > 0:
+            index -= 1
+            row = chr(index % 26 + ord("A")) + row
+            index //= 26
+        return row
+
+    def get_wellplate_settings(self, wellplate_format):
+        if wellplate_format in WELLPLATE_FORMAT_SETTINGS:
+            settings = WELLPLATE_FORMAT_SETTINGS[wellplate_format]
+        elif wellplate_format == "0":
+            settings = {
+                "format": "0",
+                "a1_x_mm": 0,
+                "a1_y_mm": 0,
+                "a1_x_pixel": 0,
+                "a1_y_pixel": 0,
+                "well_size_mm": 0,
+                "well_spacing_mm": 0,
+                "number_of_skip": 0,
+                "rows": 1,
+                "cols": 1,
+            }
+        else:
+            return None
+        return settings
+
+    def create_region_coordinates(self, center_x, center_y, scan_size_mm, overlap_percent=10, shape="Square"):
+        # if shape == 'Manual':
+        #    return self.create_manual_region_coordinates(objectiveStore, self.manual_shapes, overlap_percent)
+
+        # if scan_size_mm is None:
+        #    scan_size_mm = self.wellplate_settings.well_size_mm
+        pixel_size_um = self.objectiveStore.get_pixel_size()
+        fov_size_mm = (pixel_size_um / 1000) * Acquisition.CROP_WIDTH
+        step_size_mm = fov_size_mm * (1 - overlap_percent / 100)
+
+        steps = math.floor(scan_size_mm / step_size_mm)
+        if shape == "Circle":
+            tile_diagonal = math.sqrt(2) * fov_size_mm
+            if steps % 2 == 1:  # for odd steps
+                actual_scan_size_mm = (steps - 1) * step_size_mm + tile_diagonal
+            else:  # for even steps
+                actual_scan_size_mm = math.sqrt(
+                    ((steps - 1) * step_size_mm + fov_size_mm) ** 2 + (step_size_mm + fov_size_mm) ** 2
+                )
+
+            if actual_scan_size_mm > scan_size_mm:
+                actual_scan_size_mm -= step_size_mm
+                steps -= 1
+        else:
+            actual_scan_size_mm = (steps - 1) * step_size_mm + fov_size_mm
+
+        steps = max(1, steps)  # Ensure at least one step
+        # print(f"steps: {steps}, step_size_mm: {step_size_mm}")
+        # print(f"scan size mm: {scan_size_mm}")
+        # print(f"actual scan size mm: {actual_scan_size_mm}")
+
+        scan_coordinates = []
+        half_steps = (steps - 1) / 2
+        radius_squared = (scan_size_mm / 2) ** 2
+        fov_size_mm_half = fov_size_mm / 2
+
+        for i in range(steps):
+            row = []
+            y = center_y + (i - half_steps) * step_size_mm
+            for j in range(steps):
+                x = center_x + (j - half_steps) * step_size_mm
+                if shape == "Square" or (
+                    shape == "Circle" and self._is_in_circle(x, y, center_x, center_y, radius_squared, fov_size_mm_half)
+                ):
+                    row.append((x, y))
+                    # self.navigationViewer.register_fov_to_image(x, y)
+
+            if FOV_PATTERN == "S-Pattern" and i % 2 == 1:
+                row.reverse()
+            scan_coordinates.extend(row)
+
+        if not scan_coordinates and shape == "Circle":
+            scan_coordinates.append((center_x, center_y))
+            # self.navigationViewer.register_fov_to_image(center_x, center_y)
+
+        # self.signal_update_navigation_viewer.emit()
+        return scan_coordinates
+
+    def _is_in_circle(self, x, y, center_x, center_y, radius_squared, fov_size_mm_half):
+        corners = [
+            (x - fov_size_mm_half, y - fov_size_mm_half),
+            (x + fov_size_mm_half, y - fov_size_mm_half),
+            (x - fov_size_mm_half, y + fov_size_mm_half),
+            (x + fov_size_mm_half, y + fov_size_mm_half),
+        ]
+        return all((cx - center_x) ** 2 + (cy - center_y) ** 2 <= radius_squared for cx, cy in corners)
