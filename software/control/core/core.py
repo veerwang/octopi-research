@@ -1923,7 +1923,7 @@ class MultiPointWorker(QObject):
             self.merged_image = image
         else:
             self.merged_image = np.maximum(self.merged_image, image)
-            
+
             if self.image_count == len(self.selected_configurations):
                 if image.dtype == np.uint16:
                     saving_path = os.path.join(current_path, file_ID + "_merged" + ".tiff")
