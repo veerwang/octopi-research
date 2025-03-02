@@ -3771,7 +3771,7 @@ class LaserAFSettingManager:
             self.autofocus_configurations[objective].set_reference_image(crop_image)
 
 
-class ConfigurationManager(QObject):
+class ConfigurationManager:
     """Main configuration manager that coordinates channel and autofocus configurations."""
 
     def __init__(
