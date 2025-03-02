@@ -1908,10 +1908,10 @@ class MultiPointWorker(QObject):
                 elif MULTIPOINT_BF_SAVING_OPTION == "Green Channel Only":
                     image = image[:, :, 1]
 
-        if Acquisition.PSEUDO_COLOR:
+        if SAVE_IN_PSEUDO_COLOR:
             image = self.return_pseudo_colored_image(image, config)
 
-        if Acquisition.MERGE_CHANNELS:
+        if MERGE_CHANNELS:
             self._save_merged_image(image, file_ID, current_path)
 
         iio.imwrite(saving_path, image)
@@ -1937,15 +1937,15 @@ class MultiPointWorker(QObject):
 
     def return_pseudo_colored_image(self, image, config):
         if "405 nm" in config.name:
-            image = self.grayscale_to_rgb(image, Acquisition.PSEUDO_COLOR_MAP["405"]["hex"])
+            image = self.grayscale_to_rgb(image, CHANNEL_COLORS_MAP["405"]["hex"])
         elif "488 nm" in config.name:
-            image = self.grayscale_to_rgb(image, Acquisition.PSEUDO_COLOR_MAP["488"]["hex"])
+            image = self.grayscale_to_rgb(image, CHANNEL_COLORS_MAP["488"]["hex"])
         elif "561 nm" in config.name:
-            image = self.grayscale_to_rgb(image, Acquisition.PSEUDO_COLOR_MAP["561"]["hex"])
+            image = self.grayscale_to_rgb(image, CHANNEL_COLORS_MAP["561"]["hex"])
         elif "638 nm" in config.name:
-            image = self.grayscale_to_rgb(image, Acquisition.PSEUDO_COLOR_MAP["638"]["hex"])
+            image = self.grayscale_to_rgb(image, CHANNEL_COLORS_MAP["638"]["hex"])
         elif "730 nm" in config.name:
-            image = self.grayscale_to_rgb(image, Acquisition.PSEUDO_COLOR_MAP["730"]["hex"])
+            image = self.grayscale_to_rgb(image, CHANNEL_COLORS_MAP["730"]["hex"])
         else:
             image = np.stack([image] * 3, axis=-1)
 
@@ -3774,8 +3774,6 @@ class LaserAFSettingManager:
 class ConfigurationManager(QObject):
     """Main configuration manager that coordinates channel and autofocus configurations."""
 
-    signal_profile_loaded = Signal()
-
     def __init__(
         self,
         channel_manager: ChannelConfigurationManager,
@@ -3824,8 +3822,6 @@ class ConfigurationManager(QObject):
                 self.channel_manager.load_configurations(objective)
             if self.laser_af_manager:
                 self.laser_af_manager.load_configurations(objective)
-
-        self.signal_profile_loaded.emit()
 
     def create_new_profile(self, profile_name: str) -> None:
         """Create a new profile using current configurations."""
