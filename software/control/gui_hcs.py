@@ -174,7 +174,7 @@ class HighContentScreeningGui(QMainWindow):
 
         self.makeConnections()
 
-        self.microscope = control.microscope.Microscope(self.stage, self, is_simulation=is_simulation)
+        self.microscope = control.microscope.Microscope(self, is_simulation=is_simulation)
 
         # TODO(imo): Why is moving to the cached position after boot hidden behind homing?
         if HOMING_ENABLED_X and HOMING_ENABLED_Y and HOMING_ENABLED_Z:
@@ -249,12 +249,6 @@ class HighContentScreeningGui(QMainWindow):
             self.camera, self.microcontroller, self.illuminationController, parent=self
         )
 
-        self.slidePositionController = core.SlidePositionController(
-            self.stage, self.liveController, is_for_wellplate=True
-        )
-        self.autofocusController = core.AutoFocusController(
-            self.camera, self.stage, self.liveController, self.microcontroller
-        )
         self.slidePositionController = core.SlidePositionController(
             self.stage, self.liveController, is_for_wellplate=True
         )
