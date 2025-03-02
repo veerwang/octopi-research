@@ -661,7 +661,7 @@ CHANNEL_COLORS_MAP = {
     "B": {"hex": 0x3300FF, "name": "blue"},
 }
 SAVE_IN_PSEUDO_COLOR = False
-MERGE_CHANNELS = True
+MERGE_CHANNELS = False
 
 # Emission filter wheel
 USE_ZABER_EMISSION_FILTER_WHEEL = False
