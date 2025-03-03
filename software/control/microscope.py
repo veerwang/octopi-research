@@ -276,8 +276,11 @@ class Microscope(QObject):
         self.move_x_to(x)
         self.move_y_to(y)
         self.move_z_to(z)
+    
+    def set_objective(self, objective):
+        self.objectiveStore.set_current_objective(objective)
 
-    def get_scan_coordinates_from_selected_wells(
+    def set_coordinates(
         self, wellplate_format, selected, scan_size_mm=None, overlap_percent=10
     ):
         self.scanCoordinates = ScanCoordinatesSiLA2(self.objectiveStore)
@@ -285,11 +288,10 @@ class Microscope(QObject):
             self, wellplate_format, selected, scan_size_mm=scan_size_mm, overlap_percent=overlap_percent
         )
 
-    def perform_scanning(self, path, experiment_ID, z_pos_um, objective, channels, use_laser_af=False):
+    def perform_scanning(self, path, experiment_ID, z_pos_um, channels, use_laser_af=False):
         if self.scanCoordinates is not None:
             self.multipointController.scanCoordinates = self.scanCoordinates
         self.move_z_to(z_pos_um)
-        self.objectiveStore.set_current_objective(objective)
         self.multipointController.set_base_path(path)
         self.multipointController.start_new_experiment(experiment_ID)
         if use_laser_af:
