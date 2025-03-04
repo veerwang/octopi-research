@@ -2368,7 +2368,7 @@ class MultiPointController(QObject):
                 self.usb_spectrometer_was_streaming = False
 
         # set current tabs
-        if self.parent and self.parent.performance_mode:
+        if self.parent and hasattr(self.parent, "performance_mode") and self.parent.performance_mode:
             self.parent.imageDisplayTabs.setCurrentIndex(0)
 
         elif self.parent is not None and not self.parent.live_only_mode:
