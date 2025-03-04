@@ -283,10 +283,10 @@ class Microscope(QObject):
     def set_objective(self, objective):
         self.objectiveStore.set_current_objective(objective)
 
-    def set_coordinates(self, wellplate_format, selected, scan_size_mm=None, overlap_percent=10):
+    def set_coordinates(self, wellplate_format, selected, scan_size_mm, overlap_percent):
         self.scanCoordinates = ScanCoordinatesSiLA2(self.objectiveStore)
         self.scanCoordinates.get_scan_coordinates_from_selected_wells(
-            self, wellplate_format, selected, scan_size_mm=scan_size_mm, overlap_percent=overlap_percent
+            wellplate_format, selected, scan_size_mm, overlap_percent
         )
 
     def perform_scanning(self, path, experiment_ID, z_pos_um, channels, use_laser_af=False):
