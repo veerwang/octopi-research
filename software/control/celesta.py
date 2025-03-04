@@ -16,6 +16,7 @@ import squid.logging
 
 log = squid.logging.get_logger(__name__)
 
+
 def lumencor_httpcommand(command="GET IP", ip="192.168.201.200"):
     """
     Sends commands to the lumencor system via http.
