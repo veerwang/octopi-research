@@ -56,7 +56,8 @@ class Microscope(QObject):
             self.objectiveStore = microscope.objectiveStore
             self.streamHandler = microscope.streamHandler
             self.liveController = microscope.liveController
-            self.autofocusController = microscope.autofocusController
+            if SUPPORT_LASER_AUTOFOCUS:
+                self.laserAutofocusController = microscope.laserAutofocusController
             self.slidePositionController = microscope.slidePositionController
             if USE_ZABER_EMISSION_FILTER_WHEEL:
                 self.emission_filter_wheel = microscope.emission_filter_wheel
@@ -126,9 +127,12 @@ class Microscope(QObject):
         )
         self.streamHandler = core.StreamHandler()
         self.liveController = core.LiveController(self.camera, self.microcontroller, None, self)
-        self.autofocusController = core.AutoFocusController(
-            self.camera, self.stage, self.liveController, self.microcontroller
-        )
+        if SUPPORT_LASER_AUTOFOCUS:
+            self.laserAutofocusController = core.LaserAutofocusController(
+                self.microcontroller, self.camera, self.liveController, self.stage, None, self.objectiveStore, None
+            )
+        else:
+            self.laserAutofocusController = None
         self.slidePositionController = core.SlidePositionController(self.stage, self.liveController)
 
         self.multipointController = core.MultiPointController(
@@ -137,7 +141,7 @@ class Microscope(QObject):
             self.piezo,
             self.microcontroller,
             self.liveController,
-            self.autofocusController,
+            self.laserAutofocusController,
             self.objectiveStore,
             self.channelConfigurationManager,
             scanCoordinates=None,
@@ -153,7 +157,6 @@ class Microscope(QObject):
                 control_illumination=False,
                 for_displacement_measurement=True,
             )
-            self.imageDisplayWindow_focus = core.ImageDisplayWindow(show_LUT=False, autoLevels=False)
             self.displacementMeasurementController = core_displacement_measurement.DisplacementMeasurementController()
             self.laserAutofocusController = core.LaserAutofocusController(
                 self.microcontroller,
@@ -276,13 +279,11 @@ class Microscope(QObject):
         self.move_x_to(x)
         self.move_y_to(y)
         self.move_z_to(z)
-    
+
     def set_objective(self, objective):
         self.objectiveStore.set_current_objective(objective)
 
-    def set_coordinates(
-        self, wellplate_format, selected, scan_size_mm=None, overlap_percent=10
-    ):
+    def set_coordinates(self, wellplate_format, selected, scan_size_mm=None, overlap_percent=10):
         self.scanCoordinates = ScanCoordinatesSiLA2(self.objectiveStore)
         self.scanCoordinates.get_scan_coordinates_from_selected_wells(
             self, wellplate_format, selected, scan_size_mm=scan_size_mm, overlap_percent=overlap_percent
