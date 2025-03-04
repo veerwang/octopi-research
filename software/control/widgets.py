@@ -5270,6 +5270,7 @@ class StitcherWidget(QFrame):
         self.output_path = output_path
 
     def extractWavelength(self, name):
+        # TODO: Use the 'color' attribute of the ChannelMode object
         # Split the string and find the wavelength number immediately after "Fluorescence"
         parts = name.split()
         if "Fluorescence" in parts:
