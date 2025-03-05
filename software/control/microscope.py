@@ -292,13 +292,13 @@ class Microscope(QObject):
     def perform_scanning(self, path, experiment_ID, z_pos_um, channels, use_laser_af=False):
         if self.scanCoordinates is not None:
             self.multipointController.scanCoordinates = self.scanCoordinates
-        self.move_z_to(z_pos_um)
+        self.move_z_to(z_pos_um / 1000)
         self.multipointController.set_base_path(path)
         self.multipointController.start_new_experiment(experiment_ID)
         if use_laser_af:
             self.multipointController.set_reflection_af_flag(True)
         self.multipointController.set_selected_configurations(channels)
-        self.multipointController.start_acquisition()
+        self.multipointController.run_acquisition()
 
 
 class ScanCoordinatesSiLA2:
@@ -314,7 +314,7 @@ class ScanCoordinatesSiLA2:
         self.wellplate_settings = self.get_wellplate_settings(wellplate_format)
         self.get_selected_well_coordinates(selected, self.wellplate_settings)
 
-        if wellplate_format == "384 well plate" or "1536 well plate":
+        if wellplate_format in ["384 well plate", "1536 well plate"]:
             well_shape = "Square"
         else:
             well_shape = "Circle"
@@ -369,6 +369,8 @@ class ScanCoordinatesSiLA2:
                         + WELLPLATE_OFFSET_Y_mm
                     )
                     self.region_centers[start_row + start_col] = (x_mm, y_mm)
+            else:
+                raise ValueError(f"Invalid well format: {desc}. Expected format is 'A1' or 'A1:B2' for ranges.")
 
     def _row_to_index(self, row):
         index = 0
@@ -402,7 +404,7 @@ class ScanCoordinatesSiLA2:
                 "cols": 1,
             }
         else:
-            return None
+            raise ValueError(f"Invalid wellplate format: {wellplate_format}. Expected formats are: {list(WELLPLATE_FORMAT_SETTINGS.keys())} or '0'")
         return settings
 
     def create_region_coordinates(self, center_x, center_y, scan_size_mm, overlap_percent=10, shape="Square"):
