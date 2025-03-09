@@ -48,6 +48,7 @@ class Microscope(QObject):
             self.initialize_microcontroller(is_simulation=is_simulation)
             self.initialize_core_components()
             self.initialize_peripherals()
+            self.performance_mode = True
         else:
             self.camera = microscope.camera
             self.stage = microscope.stage
@@ -57,6 +58,8 @@ class Microscope(QObject):
             self.streamHandler = microscope.streamHandler
             self.liveController = microscope.liveController
             self.multipointController = microscope.multipointController
+            self.performance_mode = microscope.performance_mode
+
             if SUPPORT_LASER_AUTOFOCUS:
                 self.laserAutofocusController = microscope.laserAutofocusController
             self.slidePositionController = microscope.slidePositionController
