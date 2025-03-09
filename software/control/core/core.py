@@ -2106,6 +2106,7 @@ class MultiPointController(QObject):
     napari_rtp_layers_update = Signal(np.ndarray, str)
     napari_layers_init = Signal(int, int, object)
     napari_layers_update = Signal(np.ndarray, float, float, int, str)  # image, x_mm, y_mm, k, channel
+    signal_set_display_tabs = Signal(list, int)
     signal_z_piezo_um = Signal(float)
     signal_acquisition_progress = Signal(int, int, int)
     signal_region_progress = Signal(int, int)
@@ -2368,31 +2369,7 @@ class MultiPointController(QObject):
                 self.usb_spectrometer_was_streaming = False
 
         # set current tabs
-        if self.parent and hasattr(self.parent, "performance_mode") and self.parent.performance_mode:
-            self.parent.imageDisplayTabs.setCurrentIndex(0)
-
-        elif self.parent is not None and not self.parent.live_only_mode:
-            configs = [config.name for config in self.selected_configurations]
-            print(configs)
-            if (
-                DO_FLUORESCENCE_RTP
-                and "BF LED matrix left half" in configs
-                and "BF LED matrix right half" in configs
-                and "Fluorescence 405 nm Ex" in configs
-            ):
-                self.parent.recordTabWidget.setCurrentWidget(self.parent.statsDisplayWidget)
-                if USE_NAPARI_FOR_MULTIPOINT:
-                    self.parent.imageDisplayTabs.setCurrentWidget(self.parent.napariRTPWidget)
-                else:
-                    self.parent.imageDisplayTabs.setCurrentWidget(self.parent.imageArrayDisplayWindow.widget)
-
-            elif USE_NAPARI_FOR_MOSAIC_DISPLAY and self.NZ == 1:
-                self.parent.imageDisplayTabs.setCurrentWidget(self.parent.napariMosaicDisplayWidget)
-
-            elif USE_NAPARI_FOR_MULTIPOINT:
-                self.parent.imageDisplayTabs.setCurrentWidget(self.parent.napariMultiChannelWidget)
-            else:
-                self.parent.imageDisplayTabs.setCurrentIndex(0)
+        self.signal_set_display_tabs.emit(self.selected_configurations, self.NZ)
 
         # run the acquisition
         self.timestamp_acquisition_started = time.time()
