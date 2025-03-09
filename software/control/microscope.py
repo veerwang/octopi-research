@@ -56,6 +56,7 @@ class Microscope(QObject):
             self.objectiveStore = microscope.objectiveStore
             self.streamHandler = microscope.streamHandler
             self.liveController = microscope.liveController
+            self.multipointController = microscope.multipointController
             if SUPPORT_LASER_AUTOFOCUS:
                 self.laserAutofocusController = microscope.laserAutofocusController
             self.slidePositionController = microscope.slidePositionController
