@@ -132,9 +132,9 @@ class MovementUpdater(QObject):
         abs_delta_y = abs(self.previous_pos.y_mm - pos.y_mm)
 
         if (
-            abs_delta_y < self.movement_threshhold_mm
-            and abs_delta_x < self.movement_threshhold_mm
-            and not self.stage.get_state().busy
+                abs_delta_y < self.movement_threshhold_mm
+                and abs_delta_x < self.movement_threshhold_mm
+                and not self.stage.get_state().busy
         ):
             # In here, send all the signals that must be sent once per stop of movement.  AKA once per arriving at a
             # new position for a while.
@@ -512,9 +512,28 @@ class HighContentScreeningGui(QMainWindow):
             raise ValueError("Microcontroller must be none-None for hardware setup.")
 
         try:
+            x_config = self.stage.get_config().X_AXIS
+            y_config = self.stage.get_config().Y_AXIS
+            z_config = self.stage.get_config().Z_AXIS
+            self.log.info(
+                f"Setting stage limits to:"
+                f" x=[{x_config.MIN_POSITION},{x_config.MAX_POSITION}],"
+                f" y=[{y_config.MIN_POSITION},{y_config.MAX_POSITION}],"
+                f" z=[{z_config.MIN_POSITION},{z_config.MAX_POSITION}]")
+
+            self.stage.set_limits(
+                x_pos_mm=x_config.MAX_POSITION,
+                x_neg_mm=x_config.MIN_POSITION,
+                y_pos_mm=y_config.MAX_POSITION,
+                y_neg_mm=y_config.MIN_POSITION,
+                z_pos_mm=z_config.MAX_POSITION,
+                z_neg_mm=z_config.MIN_POSITION)
+
             if HOMING_ENABLED_Z:
+                self.log.info("Homing the Z axis...")
                 self.stage.home(x=False, y=False, z=True, theta=False)
             if HOMING_ENABLED_X and HOMING_ENABLED_Y:
+                self.log.info("Homing the X and Y axes...")
                 self.stage.home(x=False, y=True, z=False, theta=False)
                 self.stage.home(x=True, y=False, z=False, theta=False)
                 self.slidePositionController.homing_done = True
