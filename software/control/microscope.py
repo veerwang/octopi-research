@@ -129,34 +129,17 @@ class Microscope(QObject):
         self.configurationManager = core.ConfigurationManager(
             self.channelConfigurationManager, self.laserAFSettingManager
         )
+
         self.streamHandler = core.StreamHandler()
         self.liveController = core.LiveController(self.camera, self.microcontroller, None, self)
-        if SUPPORT_LASER_AUTOFOCUS:
-            self.laserAutofocusController = core.LaserAutofocusController(
-                self.microcontroller, self.camera, self.liveController, self.stage, None, self.objectiveStore, None
-            )
-        else:
-            self.laserAutofocusController = None
         self.slidePositionController = core.SlidePositionController(self.stage, self.liveController)
-
-        self.multipointController = core.MultiPointController(
-            self.camera,
-            self.stage,
-            self.piezo,
-            self.microcontroller,
-            self.liveController,
-            self.laserAutofocusController,
-            self.objectiveStore,
-            self.channelConfigurationManager,
-            scanCoordinates=None,
-            parent=self,
-        )
 
         if SUPPORT_LASER_AUTOFOCUS:
             self.streamHandler_focus_camera = core.StreamHandler()
             self.liveController_focus_camera = core.LiveController(
                 self.camera_focus,
                 self.microcontroller,
+                None,
                 self,
                 control_illumination=False,
                 for_displacement_measurement=True,
@@ -171,6 +154,21 @@ class Microscope(QObject):
                 self.objectiveStore,
                 self.laserAFSettingManager,
             )
+        else:
+            self.laserAutofocusController = None
+
+        self.multipointController = core.MultiPointController(
+            self.camera,
+            self.stage,
+            self.piezo,
+            self.microcontroller,
+            self.liveController,
+            self.laserAutofocusController,
+            self.objectiveStore,
+            self.channelConfigurationManager,
+            scanCoordinates=None,
+            parent=self,
+        )
 
     def initialize_peripherals(self):
         if USE_ZABER_EMISSION_FILTER_WHEEL:
@@ -297,11 +295,16 @@ class Microscope(QObject):
         if self.scanCoordinates is not None:
             self.multipointController.scanCoordinates = self.scanCoordinates
         self.move_z_to(z_pos_um / 1000)
+        dz = 1.5  # um
+        Nz = 1
+        self.multipointController.set_deltaZ(dz)
+        self.multipointController.set_NZ(Nz)
+        self.multipointController.set_z_range(z_pos_um / 1000, z_pos_um / 1000 + dz / 1000 * (Nz - 1))
         self.multipointController.set_base_path(path)
-        self.multipointController.start_new_experiment(experiment_ID)
         if use_laser_af:
             self.multipointController.set_reflection_af_flag(True)
         self.multipointController.set_selected_configurations(channels)
+        self.multipointController.start_new_experiment(experiment_ID)
         self.multipointController.run_acquisition()
 
 

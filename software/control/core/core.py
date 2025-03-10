@@ -1772,8 +1772,18 @@ class MultiPointWorker(QObject):
 
     def acquire_camera_image(self, config, file_ID, current_path, current_round_images, k):
         # update the current configuration
-        self.signal_current_configuration.emit(config)
-        self.wait_till_operation_is_completed()
+        if not self.performance_mode:
+            self.signal_current_configuration.emit(config)
+            self.wait_till_operation_is_completed()
+        else:
+            # set channel mode directly if in performance mode
+            self.liveController.set_microscope_mode(config)
+            self.liveController.camera.set_exposure_time(config.exposure_time)
+            self.liveController.camera.set_analog_gain(config.analog_gain)
+            self.liveController.set_illumination(
+                config.illumination_source, config.illumination_intensity
+            )
+            self.wait_till_operation_is_completed()
 
         # trigger acquisition (including turning on the illumination) and read frame
         if self.liveController.trigger_mode == TriggerMode.SOFTWARE:
@@ -1835,8 +1845,18 @@ class MultiPointWorker(QObject):
         ):
             if config_.name in rgb_channels:
                 # update the current configuration
-                self.signal_current_configuration.emit(config_)
-                self.wait_till_operation_is_completed()
+                if not self.performance_mode:
+                    self.signal_current_configuration.emit(config)
+                    self.wait_till_operation_is_completed()
+                else:
+                    # set channel mode directly if in performance mode
+                    self.liveController.set_microscope_mode(config)
+                    self.liveController.camera.set_exposure_time(config.exposure_time)
+                    self.liveController.camera.set_analog_gain(config.analog_gain)
+                    self.liveController.set_illumination(
+                        config.illumination_source, config.illumination_intensity
+                    )
+                    self.wait_till_operation_is_completed()
 
                 # trigger acquisition (including turning on the illumination)
                 if self.liveController.trigger_mode == TriggerMode.SOFTWARE:

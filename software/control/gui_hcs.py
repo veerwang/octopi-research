@@ -294,6 +294,7 @@ class HighContentScreeningGui(QMainWindow):
             self.liveController_focus_camera = core.LiveController(
                 self.camera_focus,
                 self.microcontroller,
+                None,
                 self,
                 control_illumination=False,
                 for_displacement_measurement=True,
