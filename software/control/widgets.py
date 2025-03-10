@@ -2968,7 +2968,7 @@ class FlexibleMultiPointWidget(QFrame):
                 z = self.stage.get_pos().z_mm
                 dz = self.entry_deltaZ.value()
                 Nz = self.entry_NZ.value()
-                self.multipointController.set_z_range(z, z + dz * (Nz - 1))
+                self.multipointController.set_z_range(z, z + dz / 1000 * (Nz - 1))
 
             if self.checkbox_useFocusMap.isChecked():
                 self.focusMapWidget.fit_surface()
