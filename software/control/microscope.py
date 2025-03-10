@@ -426,7 +426,9 @@ class ScanCoordinatesSiLA2:
                 "cols": 1,
             }
         else:
-            raise ValueError(f"Invalid wellplate format: {wellplate_format}. Expected formats are: {list(WELLPLATE_FORMAT_SETTINGS.keys())} or '0'")
+            raise ValueError(
+                f"Invalid wellplate format: {wellplate_format}. Expected formats are: {list(WELLPLATE_FORMAT_SETTINGS.keys())} or '0'"
+            )
         return settings
 
     def create_region_coordinates(self, center_x, center_y, scan_size_mm, overlap_percent=10, shape="Square"):
