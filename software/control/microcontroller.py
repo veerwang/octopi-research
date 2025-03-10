@@ -592,7 +592,6 @@ class Microcontroller:
         self.send_command(cmd)
 
     def _move_axis_usteps(self, usteps, axis_command_code):
-        self.log.debug(f"move_axis_usteps:{axis_command_code=} {usteps=}")
         direction = np.sign(usteps)
         n_microsteps_abs = abs(usteps)
         # if n_microsteps_abs exceed the max value that can be sent in one go
@@ -690,8 +689,6 @@ class Microcontroller:
         cmd[6] = payload & 0xFF
         self.send_command(cmd)
 
-    # IMPORTANT / NOTE / WARNING: The STAGE_MOVEMENT_SIGN_* circumvent whatever the CephlaStage config has for
-    # direction.  We should add a homing direction argument to all of the
     def home_x(self, homing_direction: HomingDirection = _default_x_homing_direction):
         cmd = bytearray(self.tx_buffer_length)
         cmd[1] = CMD_SET.HOME_OR_ZERO
