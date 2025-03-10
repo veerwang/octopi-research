@@ -185,16 +185,12 @@ def test_microcontroller_reconnects_serial():
 def test_home_directions():
     test_micro = get_test_micro()
 
-    dirs = (control.microcontroller.HomingDirection.HOMING_DIRECTION_FORWARD,
-            control.microcontroller.HomingDirection.HOMING_DIRECTION_BACKWARD)
-
-    home_methods = (
-        test_micro.home_x,
-        test_micro.home_y,
-        test_micro.home_z,
-        test_micro.home_w,
-        test_micro.home_theta
+    dirs = (
+        control.microcontroller.HomingDirection.HOMING_DIRECTION_FORWARD,
+        control.microcontroller.HomingDirection.HOMING_DIRECTION_BACKWARD,
     )
+
+    home_methods = (test_micro.home_x, test_micro.home_y, test_micro.home_z, test_micro.home_w, test_micro.home_theta)
 
     def wait():
         test_micro.wait_till_operation_is_completed()

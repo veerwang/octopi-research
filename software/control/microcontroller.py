@@ -25,21 +25,25 @@ from control._def import *
 # We have a few top level functions here, so we have this module level log instance.  Classes should make their own!
 _log = squid.logging.get_logger("microcontroller")
 
+
 # "move backward" if SIGN is 1, "move forward" if SIGN is -1
 class HomingDirection(enum.Enum):
     HOMING_DIRECTION_FORWARD = 0
     HOMING_DIRECTION_BACKWARD = 1
+
 
 def movement_sign_to_homing_direction(sign: int) -> HomingDirection:
     if sign not in (-1, 1):
         raise ValueError("Only -1 and 1 are valid movement signs.")
     return HomingDirection(int((sign + 1) / 2))
 
+
 _default_x_homing_direction = movement_sign_to_homing_direction(STAGE_MOVEMENT_SIGN_X)
 _default_y_homing_direction = movement_sign_to_homing_direction(STAGE_MOVEMENT_SIGN_Y)
 _default_z_homing_direction = movement_sign_to_homing_direction(STAGE_MOVEMENT_SIGN_Z)
 _default_theta_homing_direction = movement_sign_to_homing_direction(STAGE_MOVEMENT_SIGN_THETA)
 _default_w_homing_direction = movement_sign_to_homing_direction(STAGE_MOVEMENT_SIGN_W)
+
 
 # to do (7/28/2021) - add functions for configuring the stepper motors
 class CommandAborted(RuntimeError):
@@ -716,7 +720,11 @@ class Microcontroller:
         cmd[3] = homing_direction.value
         self.send_command(cmd)
 
-    def home_xy(self, homing_direction_x: HomingDirection = _default_x_homing_direction, homing_direction_y: HomingDirection = _default_y_homing_direction):
+    def home_xy(
+        self,
+        homing_direction_x: HomingDirection = _default_x_homing_direction,
+        homing_direction_y: HomingDirection = _default_y_homing_direction,
+    ):
         cmd = bytearray(self.tx_buffer_length)
         cmd[1] = CMD_SET.HOME_OR_ZERO
         cmd[2] = AXIS.XY

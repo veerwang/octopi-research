@@ -132,9 +132,9 @@ class MovementUpdater(QObject):
         abs_delta_y = abs(self.previous_pos.y_mm - pos.y_mm)
 
         if (
-                abs_delta_y < self.movement_threshhold_mm
-                and abs_delta_x < self.movement_threshhold_mm
-                and not self.stage.get_state().busy
+            abs_delta_y < self.movement_threshhold_mm
+            and abs_delta_x < self.movement_threshhold_mm
+            and not self.stage.get_state().busy
         ):
             # In here, send all the signals that must be sent once per stop of movement.  AKA once per arriving at a
             # new position for a while.
@@ -179,7 +179,9 @@ class HighContentScreeningGui(QMainWindow):
         # TODO(imo): Why is moving to the cached position after boot hidden behind homing?
         if HOMING_ENABLED_X and HOMING_ENABLED_Y and HOMING_ENABLED_Z:
             if cached_pos := squid.stage.utils.get_cached_position():
-                self.log.info(f"Cache position exists.  Moving to: ({cached_pos.x_mm},{cached_pos.y_mm},{cached_pos.z_mm}) [mm]")
+                self.log.info(
+                    f"Cache position exists.  Moving to: ({cached_pos.x_mm},{cached_pos.y_mm},{cached_pos.z_mm}) [mm]"
+                )
                 self.stage.move_x_to(cached_pos.x_mm)
                 self.stage.move_y_to(cached_pos.y_mm)
                 self.stage.move_z_to(cached_pos.z_mm)
@@ -520,7 +522,8 @@ class HighContentScreeningGui(QMainWindow):
                 f"Setting stage limits to:"
                 f" x=[{x_config.MIN_POSITION},{x_config.MAX_POSITION}],"
                 f" y=[{y_config.MIN_POSITION},{y_config.MAX_POSITION}],"
-                f" z=[{z_config.MIN_POSITION},{z_config.MAX_POSITION}]")
+                f" z=[{z_config.MIN_POSITION},{z_config.MAX_POSITION}]"
+            )
 
             self.stage.set_limits(
                 x_pos_mm=x_config.MAX_POSITION,
@@ -528,7 +531,8 @@ class HighContentScreeningGui(QMainWindow):
                 y_pos_mm=y_config.MAX_POSITION,
                 y_neg_mm=y_config.MIN_POSITION,
                 z_pos_mm=z_config.MAX_POSITION,
-                z_neg_mm=z_config.MIN_POSITION)
+                z_neg_mm=z_config.MIN_POSITION,
+            )
 
             if HOMING_ENABLED_Z:
                 self.log.info("Homing the Z axis...")
