@@ -48,6 +48,7 @@ class Microscope(QObject):
             self.initialize_microcontroller(is_simulation=is_simulation)
             self.initialize_core_components()
             self.initialize_peripherals()
+            self.setup_hardware()
             self.performance_mode = True
         else:
             self.camera = microscope.camera
@@ -169,6 +170,20 @@ class Microscope(QObject):
             scanCoordinates=None,
             parent=self,
         )
+
+    def setup_hardware(self):
+        self.camera.set_software_triggered_acquisition()
+        self.camera.set_callback(self.streamHandler.on_new_frame)
+        self.camera.enable_callback()
+
+        if CAMERA_TYPE == "Toupcam":
+            self.camera.set_reset_strobe_delay_function(self.liveController.reset_strobe_arugment)
+
+        if SUPPORT_LASER_AUTOFOCUS:
+            self.camera_focus.set_software_triggered_acquisition()  # self.camera.set_continuous_acquisition()
+            self.camera_focus.set_callback(self.streamHandler_focus_camera.on_new_frame)
+            self.camera_focus.enable_callback()
+            self.camera_focus.start_streaming()
 
     def initialize_peripherals(self):
         if USE_ZABER_EMISSION_FILTER_WHEEL:
