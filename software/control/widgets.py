@@ -4604,7 +4604,7 @@ class MultiPointWithFluidicsWidget(QFrame):
             self.multipointController.set_NZ(self.entry_NZ.value())
             self.multipointController.set_use_piezo(self.checkbox_usePiezo.isChecked())
             self.multipointController.set_reflection_af_flag(self.checkbox_withReflectionAutofocus.isChecked())
-            self.multipointController.set_use_fluidics(True)
+            self.multipointController.set_use_fluidics(True)  # may be set to False from other widgets
             self.multipointController.set_selected_configurations(
                 [item.text() for item in self.list_configurations.selectedItems()]
             )
