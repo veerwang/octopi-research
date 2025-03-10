@@ -1360,6 +1360,18 @@ class HighContentScreeningGui(QMainWindow):
             if not is_laser_focus_tab:
                 self.laserAutofocusSettingWidget.stop_live()
 
+        is_wellplate_acquisition = (
+            (index == self.recordTabWidget.indexOf(self.wellplateMultiPointWidget))
+            if ENABLE_WELLPLATE_MULTIPOINT
+            else False
+        )
+        if self.imageDisplayTabs.tabText(index) != "Live View" or not (
+            is_wellplate_acquisition and self.wellSelectionWidget.format != "glass slide"
+        ):
+            self.toggleWellSelector(False)
+        else:
+            self.toggleWellSelector(True)
+
     def onWellplateChanged(self, format_):
         if isinstance(format_, QVariant):
             format_ = format_.value()
@@ -1501,6 +1513,8 @@ class HighContentScreeningGui(QMainWindow):
         )
         if is_wellplate_acquisition and self.wellSelectionWidget.format != "glass slide":
             self.toggleWellSelector(not acquisition_started)
+        else:
+            self.toggleWellSelector(False)
 
         # display acquisition progress bar during acquisition
         self.recordTabWidget.currentWidget().display_progress_bar(acquisition_started)
