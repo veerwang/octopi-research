@@ -116,22 +116,29 @@ class CephlaStage(AbstractStage):
             self.get_config().Z_AXIS.MAX_SPEED / 5.0,
         )
         theta_timeout = self._calc_move_timeout(2.0 * math.pi, self.get_config().THETA_AXIS.MAX_SPEED / 5.0)
+
+        x_dir = control.microcontroller.movement_sign_to_homing_direction(self.get_config().X_AXIS.MOVEMENT_SIGN)
+        y_dir = control.microcontroller.movement_sign_to_homing_direction(self.get_config().Y_AXIS.MOVEMENT_SIGN)
+        z_dir = control.microcontroller.movement_sign_to_homing_direction(self.get_config().Z_AXIS.MOVEMENT_SIGN)
+        theta_dir = control.microcontroller.movement_sign_to_homing_direction(
+            self.get_config().THETA_AXIS.MOVEMENT_SIGN)
+
         if x and y:
-            self._microcontroller.home_xy()
+            self._microcontroller.home_xy(homing_direction_x=x_dir, homing_direction_y=y_dir)
         elif x:
-            self._microcontroller.home_x()
+            self._microcontroller.home_x(homing_direction=x_dir)
         elif y:
-            self._microcontroller.home_y()
+            self._microcontroller.home_y(homing_direction=y_dir)
         if blocking:
             self._microcontroller.wait_till_operation_is_completed(max(x_timeout, y_timeout))
 
         if z:
-            self._microcontroller.home_z()
+            self._microcontroller.home_z(homing_direction=z_dir)
         if blocking:
             self._microcontroller.wait_till_operation_is_completed(z_timeout)
 
         if theta:
-            self._microcontroller.home_theta()
+            self._microcontroller.home_theta(homing_direction=theta_dir)
         if blocking:
             self._microcontroller.wait_till_operation_is_completed(theta_timeout)
 
@@ -157,44 +164,63 @@ class CephlaStage(AbstractStage):
             self._microcontroller.wait_till_operation_is_completed()
 
     def set_limits(
-        self,
-        x_pos_mm: Optional[float] = None,
-        x_neg_mm: Optional[float] = None,
-        y_pos_mm: Optional[float] = None,
-        y_neg_mm: Optional[float] = None,
-        z_pos_mm: Optional[float] = None,
-        z_neg_mm: Optional[float] = None,
-        theta_pos_rad: Optional[float] = None,
-        theta_neg_rad: Optional[float] = None,
+            self,
+            x_pos_mm: Optional[float] = None,
+            x_neg_mm: Optional[float] = None,
+            y_pos_mm: Optional[float] = None,
+            y_neg_mm: Optional[float] = None,
+            z_pos_mm: Optional[float] = None,
+            z_neg_mm: Optional[float] = None,
+            theta_pos_rad: Optional[float] = None,
+            theta_neg_rad: Optional[float] = None,
     ):
+        # Our underlying movement direction might be switched.  If it is, then the positive movements here at
+        # the AbstractStage level will result in negative movements on the real hardware (and vice versa).  This means
+        # that if our movement sign is swapped, we need to swap pos/neg limits at the lower level here.
+        def limit_codes_for(movement_sign, non_inverted_neg, non_inverted_pos):
+            # Return the limit codes to use for pos and neg limits in the form of (neg, pos)
+            if movement_sign == 1:
+                return non_inverted_neg, non_inverted_pos
+            elif movement_sign == -1:
+                return non_inverted_pos, non_inverted_neg
+            else:
+                raise ValueError(f"Only 1 and -1 are valid movement signs, but got: {movement_sign}")
+
+        (x_neg_code, x_pos_code) = limit_codes_for(self._config.X_AXIS.MOVEMENT_SIGN, _def.LIMIT_CODE.X_NEGATIVE,
+                                                   _def.LIMIT_CODE.X_POSITIVE)
+        (y_neg_code, y_pos_code) = limit_codes_for(self._config.Y_AXIS.MOVEMENT_SIGN, _def.LIMIT_CODE.Y_NEGATIVE,
+                                                   _def.LIMIT_CODE.Y_POSITIVE)
+        (z_neg_code, z_pos_code) = limit_codes_for(self._config.Z_AXIS.MOVEMENT_SIGN, _def.LIMIT_CODE.Z_NEGATIVE,
+                                                   _def.LIMIT_CODE.Z_POSITIVE)
+
         if x_pos_mm is not None:
             self._microcontroller.set_lim(
-                _def.LIMIT_CODE.X_POSITIVE, self._config.X_AXIS.convert_real_units_to_ustep(x_pos_mm)
+                x_pos_code, self._config.X_AXIS.convert_real_units_to_ustep(x_pos_mm)
             )
 
         if x_neg_mm is not None:
             self._microcontroller.set_lim(
-                _def.LIMIT_CODE.X_NEGATIVE, self._config.X_AXIS.convert_real_units_to_ustep(x_neg_mm)
+                x_neg_code, self._config.X_AXIS.convert_real_units_to_ustep(x_neg_mm)
             )
 
         if y_pos_mm is not None:
             self._microcontroller.set_lim(
-                _def.LIMIT_CODE.Y_POSITIVE, self._config.Y_AXIS.convert_real_units_to_ustep(y_pos_mm)
+                y_pos_code, self._config.Y_AXIS.convert_real_units_to_ustep(y_pos_mm)
             )
 
         if y_neg_mm is not None:
             self._microcontroller.set_lim(
-                _def.LIMIT_CODE.Y_NEGATIVE, self._config.Y_AXIS.convert_real_units_to_ustep(y_neg_mm)
+                y_neg_code, self._config.Y_AXIS.convert_real_units_to_ustep(y_neg_mm)
             )
 
         if z_pos_mm is not None:
             self._microcontroller.set_lim(
-                _def.LIMIT_CODE.Z_POSITIVE, self._config.Z_AXIS.convert_real_units_to_ustep(z_pos_mm)
+                z_pos_code, self._config.Z_AXIS.convert_real_units_to_ustep(z_pos_mm)
             )
 
         if z_neg_mm is not None:
             self._microcontroller.set_lim(
-                _def.LIMIT_CODE.Z_NEGATIVE, self._config.Z_AXIS.convert_real_units_to_ustep(z_neg_mm)
+                z_neg_code, self._config.Z_AXIS.convert_real_units_to_ustep(z_neg_mm)
             )
 
         if theta_neg_rad or theta_pos_rad:
