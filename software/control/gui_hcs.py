@@ -179,6 +179,9 @@ class HighContentScreeningGui(QMainWindow):
         # TODO(imo): Why is moving to the cached position after boot hidden behind homing?
         if HOMING_ENABLED_X and HOMING_ENABLED_Y and HOMING_ENABLED_Z:
             if cached_pos := squid.stage.utils.get_cached_position():
+                self.log.info(
+                    f"Cache position exists.  Moving to: ({cached_pos.x_mm},{cached_pos.y_mm},{cached_pos.z_mm}) [mm]"
+                )
                 self.stage.move_x_to(cached_pos.x_mm)
                 self.stage.move_y_to(cached_pos.y_mm)
                 self.stage.move_z_to(cached_pos.z_mm)
@@ -512,9 +515,30 @@ class HighContentScreeningGui(QMainWindow):
             raise ValueError("Microcontroller must be none-None for hardware setup.")
 
         try:
+            x_config = self.stage.get_config().X_AXIS
+            y_config = self.stage.get_config().Y_AXIS
+            z_config = self.stage.get_config().Z_AXIS
+            self.log.info(
+                f"Setting stage limits to:"
+                f" x=[{x_config.MIN_POSITION},{x_config.MAX_POSITION}],"
+                f" y=[{y_config.MIN_POSITION},{y_config.MAX_POSITION}],"
+                f" z=[{z_config.MIN_POSITION},{z_config.MAX_POSITION}]"
+            )
+
+            self.stage.set_limits(
+                x_pos_mm=x_config.MAX_POSITION,
+                x_neg_mm=x_config.MIN_POSITION,
+                y_pos_mm=y_config.MAX_POSITION,
+                y_neg_mm=y_config.MIN_POSITION,
+                z_pos_mm=z_config.MAX_POSITION,
+                z_neg_mm=z_config.MIN_POSITION,
+            )
+
             if HOMING_ENABLED_Z:
+                self.log.info("Homing the Z axis...")
                 self.stage.home(x=False, y=False, z=True, theta=False)
             if HOMING_ENABLED_X and HOMING_ENABLED_Y:
+                self.log.info("Homing the X and Y axes...")
                 self.stage.home(x=False, y=True, z=False, theta=False)
                 self.stage.home(x=True, y=False, z=False, theta=False)
                 self.slidePositionController.homing_done = True
