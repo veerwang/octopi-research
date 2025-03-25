@@ -5082,7 +5082,7 @@ class FluidicsWidget(QWidget):
         try:
             ports_str = text.strip()
             if not ports_str:
-                return []
+                return [i for i in range(1, len(self.fluidics.available_port_names) + 1)]
 
             port_list = []
 
