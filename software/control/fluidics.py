@@ -27,6 +27,7 @@ class Fluidics:
         self.config_path = config_path
         self.simulation = simulation
         self.port_list = None
+        self.available_port_names = None
 
         # Initialize member variables
         self.config = None
@@ -50,9 +51,10 @@ class Fluidics:
             "on_estimate": lambda time, n: print(f"Est. time: {time}s, Sequences: {n}"),
         }
 
+        self._load_config()
+
     def initialize(self):
         # Initialize everything
-        self._load_config()
         self._initialize_hardware()
         self._initialize_control_objects()
 
@@ -60,6 +62,19 @@ class Fluidics:
         """Load configuration from JSON file"""
         with open(self.config_path, "r") as f:
             self.config = json.load(f)
+
+        available_ports = 0
+        for id, num_ports in self.config["selector_valves"]["number_of_ports"].items():
+            if int(id) in self.config["selector_valves"]["valve_ids_allowed"]:
+                available_ports += int(num_ports) - 1
+        available_ports += 1
+
+        self.available_port_names = []
+        for i in range(1, available_ports + 1):
+            self.available_port_names.append(
+                "Port " + str(i) + ": " + self.config["selector_valves"]["reagent_name_mapping"]["port_" + str(i)]
+            )
+        print(self.available_port_names)
 
     def _initialize_hardware(self):
         """Initialize hardware controllers based on simulation mode"""
@@ -125,6 +140,7 @@ class Fluidics:
         else:
             self.sequences_before_imaging = slice(0, len(self.sequences))
             self.sequences_after_imaging = slice(0, 0)
+        return self.sequences
 
     def run_before_imaging(self):
         """Run the sequences before imaging"""
@@ -152,7 +168,7 @@ class Fluidics:
         )
         self.run_sequences(priming_seq)
 
-    def clean_up(self, last_port: int, volume_ul: int, repeat: int, flow_rate: int = 10000):
+    def clean_up(self, ports: list, last_port: int, volume_ul: int, repeat: int, flow_rate: int = 10000):
         """Clean up the fluidics system"""
         cleanup_seq = pd.DataFrame(
             {
@@ -164,6 +180,7 @@ class Fluidics:
                 "repeat": [repeat],
                 "fill_tubing_with": [0],
                 "include": [1],
+                "ports_used": [ports],
             }
         )
         self.run_sequences(cleanup_seq)
@@ -183,6 +200,14 @@ class Fluidics:
             }
         )
         self.run_sequences(flow_seq)
+
+    def run_before_imaging(self):
+        """Run the sequences before imaging"""
+        self.run_sequences(self.sequences.iloc[self.sequences_before_imaging])
+
+    def run_after_imaging(self):
+        """Run the sequences after imaging"""
+        self.run_sequences(self.sequences.iloc[self.sequences_after_imaging])
 
     def run_sequences(self, sequences: pd.DataFrame):
         """Start running the sequences in a separate thread"""

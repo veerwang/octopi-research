@@ -369,7 +369,6 @@ class HighContentScreeningGui(QMainWindow):
         if RUN_FLUIDICS:
             self.fluidics = Fluidics(
                 config_path=FLUIDICS_CONFIG_PATH,
-                sequence_path=FLUIDICS_SEQUENCE_PATH,
                 simulation=True,
             )
         else:
@@ -495,7 +494,6 @@ class HighContentScreeningGui(QMainWindow):
             try:
                 self.fluidics = Fluidics(
                     config_path=FLUIDICS_CONFIG_PATH,
-                    sequence_path=FLUIDICS_SEQUENCE_PATH,
                     simulation=False,
                 )
             except Exception:
@@ -701,6 +699,9 @@ class HighContentScreeningGui(QMainWindow):
             )
             self.imageDisplayWindow_focus = core.ImageDisplayWindow()
 
+        if RUN_FLUIDICS:
+            self.fluidicsWidget = widgets.FluidicsWidget(self.fluidics)
+
         self.imageDisplayTabs = QTabWidget()
         if self.live_only_mode:
             if ENABLE_TRACKING:
@@ -835,6 +836,11 @@ class HighContentScreeningGui(QMainWindow):
                 laserfocus_dockArea.addDock(dock_displayMeasurement, "bottom", relativeTo=dock_waveform)
 
             self.imageDisplayTabs.addTab(laserfocus_dockArea, "Laser-Based Focus")
+
+        if RUN_FLUIDICS:
+            # self.fluidics_dockArea = dock.DockArea()
+            # self.fluidics_dockArea.addDock(self.fluidicsWidget, "bottom")
+            self.imageDisplayTabs.addTab(self.fluidicsWidget, "Fluidics")
 
     def setupRecordTabWidget(self):
         if ENABLE_WELLPLATE_MULTIPOINT:
