@@ -2,6 +2,7 @@ import pandas as pd
 import threading
 from typing import Dict, Optional
 import sys
+
 sys.path.append("fluidics_v2/software")
 
 from fluidics.control.controller import FluidControllerSimulation, FluidController
@@ -165,7 +166,7 @@ class Fluidics:
                 "repeat": [1],
                 "fill_tubing_with": [0],
                 "include": [1],
-                "ports_used": [ports],
+                "use_ports": [ports],
             }
         )
         self.run_sequences(priming_seq)
@@ -182,7 +183,7 @@ class Fluidics:
                 "repeat": [repeat],
                 "fill_tubing_with": [0],
                 "include": [1],
-                "ports_used": [ports],
+                "use_ports": [ports],
             }
         )
         self.run_sequences(cleanup_seq)
