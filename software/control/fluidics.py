@@ -1,16 +1,18 @@
 import pandas as pd
 import threading
 from typing import Dict, Optional
+import sys
+sys.path.append("fluidics_v2/software")
 
-from fluidics_v2.software.control.controller import FluidControllerSimulation, FluidController
-from fluidics_v2.software.control.syringe_pump import SyringePumpSimulation, SyringePump
-from fluidics_v2.software.control.selector_valve import SelectorValveSystem
-from fluidics_v2.software.control.disc_pump import DiscPump
-from fluidics_v2.software.control.temperature_controller import TCMControllerSimulation, TCMController
-from fluidics_v2.software.merfish_operations import MERFISHOperations
-from fluidics_v2.software.open_chamber_operations import OpenChamberOperations
-from fluidics_v2.software.experiment_worker import ExperimentWorker
-from fluidics_v2.software.control._def import CMD_SET
+from fluidics.control.controller import FluidControllerSimulation, FluidController
+from fluidics.control.syringe_pump import SyringePumpSimulation, SyringePump
+from fluidics.control.selector_valve import SelectorValveSystem
+from fluidics.control.disc_pump import DiscPump
+from fluidics.control.temperature_controller import TCMControllerSimulation, TCMController
+from fluidics.merfish_operations import MERFISHOperations
+from fluidics.open_chamber_operations import OpenChamberOperations
+from fluidics.experiment_worker import ExperimentWorker
+from fluidics.control._def import CMD_SET
 
 import json
 

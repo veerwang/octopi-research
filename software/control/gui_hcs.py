@@ -1673,7 +1673,7 @@ class HighContentScreeningGui(QMainWindow):
             self.cellx.close()
 
         if RUN_FLUIDICS:
-            self.fluidics.cleanup()
+            self.fluidics.close()
 
         self.imageSaver.close()
         self.imageDisplay.close()
