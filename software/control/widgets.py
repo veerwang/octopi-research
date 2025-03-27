@@ -4492,7 +4492,7 @@ class MultiPointWithFluidicsWidget(QFrame):
         exp_id_layout.addWidget(self.btn_load_coordinates)
 
         self.btn_init_fluidics = QPushButton("Init Fluidics")
-        # exp_id_layout.addWidget(self.btn_init_fluidics)
+        exp_id_layout.addWidget(self.btn_init_fluidics)
 
         main_layout.addLayout(exp_id_layout)
 
@@ -5000,7 +5000,7 @@ class FluidicsWidget(QWidget):
         callbacks = {
             "on_finished": self.on_finish,
             "on_error": self.on_finish,
-            "on_estimate": self.log_status,
+            "on_estimate": self.on_estimate,
             "update_progress": self.update_progress,
         }
         self.fluidics.callbacks = callbacks
@@ -5124,6 +5124,9 @@ class FluidicsWidget(QWidget):
             status = "Round completed"
         self.log_status(status)
 
+    def on_estimate(self, time, n):
+        self.log_status(f"Estimated time: {time}s, Sequences: {n}")
+
     def enable_controls(self, enabled: bool):
         self.btn_load_sequences.setEnabled(enabled)
         self.btn_prime_start.setEnabled(enabled)
@@ -5168,6 +5171,8 @@ class PandasTableModel(QAbstractTableModel):
     def data(self, index, role=Qt.DisplayRole):
         if role == Qt.DisplayRole:
             value = self._data.iloc[index.row(), index.column()]
+            if pd.isna(value):
+                return ""
 
             # Map port numbers to names for specific columns
             column_name = self._data.columns[index.column()]
