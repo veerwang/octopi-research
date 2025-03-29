@@ -4841,7 +4841,8 @@ class MultiPointWithFluidicsWidget(QFrame):
 
 
 class FluidicsWidget(QWidget):
-    """Widget for controlling fluidics operations"""
+
+    log_message_signal = Signal(str)
 
     def __init__(self, fluidics, parent=None):
         super().__init__(parent)
@@ -4853,6 +4854,7 @@ class FluidicsWidget(QWidget):
 
         # Set up the UI
         self.setup_ui()
+        self.log_message_signal.connect(self.log_status)
 
     def setup_ui(self):
         # Main layout
@@ -5034,6 +5036,7 @@ class FluidicsWidget(QWidget):
             return
 
         self.log_status(f"Starting prime: Ports {ports}, Fill with {fill_port}, Volume {volume}µL")
+        self.log_message_signal.disconnect()
         self.fluidics.priming(ports, fill_port, volume)
         self.enable_controls(False)
 
@@ -5048,6 +5051,7 @@ class FluidicsWidget(QWidget):
             return
 
         self.log_status(f"Starting cleanup: Ports {ports}, Fill with {fill_port}, Volume {volume}µL, Repeat {repeat}x")
+        self.log_message_signal.disconnect()
         self.fluidics.clean_up(ports, fill_port, volume, repeat)
         self.enable_controls(False)
 
@@ -5061,6 +5065,7 @@ class FluidicsWidget(QWidget):
             return
 
         self.log_status(f"Flow reagent: Port {port}, Flow rate {flow_rate}µL/min, Volume {volume}µL")
+        self.log_message_signal.disconnect()
         self.fluidics.manual_flow(port, flow_rate, volume)
         self.enable_controls(False)
 
@@ -5115,17 +5120,18 @@ class FluidicsWidget(QWidget):
 
     def update_progress(self, idx, seq_num, status):
         self.sequences_table.model().set_current_row(idx)
-        self.log_status(f"Sequence {self.sequence_df.iloc[idx]['name']} {status}")
+        self.log_message_signal.emit(f"Sequence {self.sequence_df.iloc[idx]['sequence_name']} {status}")
 
     def on_finish(self, status=None):
         self.enable_controls(True)
         self.sequences_table.model().set_current_row(-1)
         if status is None:
             status = "Round completed"
-        self.log_status(status)
+        self.log_message_signal.emit(status)
+        self.log_message_signal.connect()
 
     def on_estimate(self, time, n):
-        self.log_status(f"Estimated time: {time}s, Sequences: {n}")
+        self.log_message_signal.emit(f"Estimated time: {time}s, Sequences: {n}")
 
     def enable_controls(self, enabled: bool):
         self.btn_load_sequences.setEnabled(enabled)
@@ -5205,7 +5211,10 @@ class PandasTableModel(QAbstractTableModel):
 
     def set_current_row(self, row_index):
         self._current_row = row_index
-        self.dataChanged.emit()
+        self.dataChanged.emit(
+            self.index(0, 0),
+            self.index(self.rowCount() - 1, self.columnCount() - 1)
+        )
 
 
 class FocusMapWidget(QFrame):

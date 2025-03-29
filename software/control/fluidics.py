@@ -130,6 +130,13 @@ class Fluidics:
     def load_sequences(self, sequence_path: str):
         """Load and filter sequences from CSV file"""
         df = pd.read_csv(sequence_path)
+        for col in df.columns:
+            try:
+                # Try to convert to Int64 (pandas extension type that supports NaN)
+                if df[col].dtype.kind in "fi":  # float or int
+                    df[col] = df[col].astype("Int64")
+            except:
+                pass
         # Keep sequences that are either included or are imaging steps
         mask = (df["include"] == 1) | (df["sequence_name"] == "Imaging")
         self.sequences = df[mask].reset_index(drop=True)
@@ -143,7 +150,7 @@ class Fluidics:
         else:
             self.sequences_before_imaging = slice(0, len(self.sequences))
             self.sequences_after_imaging = slice(0, 0)
-        return self.sequences
+        return self.sequences.copy()
 
     def run_before_imaging(self):
         """Run the sequences before imaging"""
