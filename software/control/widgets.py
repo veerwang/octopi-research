@@ -4851,11 +4851,12 @@ class FluidicsWidget(QWidget):
 
         # Initialize data structures
         self.fluidics = fluidics
-        self.set_callbacks()
+        self.set_sequence_callbacks()
 
         # Set up the UI
         self.setup_ui()
         self.log_message_signal.connect(self.log_status)
+        self.log_status_connected = True
 
     def setup_ui(self):
         # Main layout
@@ -5005,12 +5006,22 @@ class FluidicsWidget(QWidget):
         self.btn_emergency_stop.setEnabled(True)
         self.fluidics_initialized_signal.emit()
 
-    def set_callbacks(self):
+    def set_sequence_callbacks(self):
         callbacks = {
             "on_finished": self.on_finish,
             "on_error": self.on_finish,
             "on_estimate": self.on_estimate,
             "update_progress": self.update_progress,
+        }
+        self.fluidics.callbacks = callbacks
+
+    def set_manual_control_callbacks(self):
+        # TODO: use better logging description
+        callbacks = {
+            "on_finished": self.on_finish,
+            "on_error": self.on_finish,
+            "on_estimate": None,
+            "update_progress": None,
         }
         self.fluidics.callbacks = callbacks
 
@@ -5034,50 +5045,59 @@ class FluidicsWidget(QWidget):
                 self.log_status(f"Error loading sequences: {str(e)}")
 
     def start_prime(self):
-        """Start the priming process"""
+        self.set_manual_control_callbacks()
         ports = self.get_port_list(self.txt_prime_ports.text())
         fill_port = self.prime_fill_combo.currentIndex() + 1
-        volume = self.txt_prime_volume.text()
+        volume = int(self.txt_prime_volume.text())
 
         if not ports or not fill_port or not volume:
             return
 
         self.log_status(f"Starting prime: Ports {ports}, Fill with {fill_port}, Volume {volume}µL")
-        self.log_message_signal.disconnect()
+        if self.log_status_connected:
+            self.log_message_signal.disconnect()
+            self.log_status_connected = False
         self.fluidics.priming(ports, fill_port, volume)
         self.enable_controls(False)
+        self.set_sequence_callbacks()
 
     def start_cleanup(self):
-        """Start the cleanup process"""
+        self.set_manual_control_callbacks()
         ports = self.get_port_list(self.txt_cleanup_ports.text())
         fill_port = self.cleanup_fill_combo.currentIndex() + 1
-        volume = self.txt_cleanup_volume.text()
-        repeat = self.txt_cleanup_repeat.text()
+        volume = int(self.txt_cleanup_volume.text())
+        repeat = int(self.txt_cleanup_repeat.text())
 
         if not ports or not fill_port or not volume or not repeat:
             return
 
         self.log_status(f"Starting cleanup: Ports {ports}, Fill with {fill_port}, Volume {volume}µL, Repeat {repeat}x")
-        self.log_message_signal.disconnect()
+        if self.log_status_connected:
+            self.log_message_signal.disconnect()
+            self.log_status_connected = False
         self.fluidics.clean_up(ports, fill_port, volume, repeat)
         self.enable_controls(False)
+        self.set_sequence_callbacks()
 
     def start_manual_flow(self):
-        """Start manual flow"""
+        self.set_manual_control_callbacks()
         port = self.manual_port_combo.currentIndex() + 1
-        flow_rate = self.txt_manual_flow_rate.text()
-        volume = self.txt_manual_volume.text()
+        flow_rate = int(self.txt_manual_flow_rate.text())
+        volume = int(self.txt_manual_volume.text())
 
         if not port or not flow_rate or not volume:
             return
 
         self.log_status(f"Flow reagent: Port {port}, Flow rate {flow_rate}µL/min, Volume {volume}µL")
-        self.log_message_signal.disconnect()
+        if self.log_status_connected:
+            self.log_message_signal.disconnect()
+            self.log_status_connected = False
         self.fluidics.manual_flow(port, flow_rate, volume)
         self.enable_controls(False)
+        self.set_sequence_callbacks()
 
     def emergency_stop(self):
-        """Emergency stop all fluidics operations"""
+        self.log_status("Emergency stop requested")
         self.fluidics.emergency_stop()
 
     def get_port_list(self, text: str) -> list:
@@ -5131,11 +5151,17 @@ class FluidicsWidget(QWidget):
 
     def on_finish(self, status=None):
         self.enable_controls(True)
-        self.sequences_table.model().set_current_row(-1)
+        try:
+            self.sequences_table.model().set_current_row(-1)
+        except:
+            pass
         if status is None:
-            status = "Round completed"
+            status = "Sequence section completed"
+        self.fluidics.reset_abort()
         self.log_message_signal.emit(status)
-        self.log_message_signal.connect()
+        if not self.log_status_connected:
+            self.log_message_signal.connect(self.log_status)
+            self.log_status_connected = True
 
     def on_estimate(self, time, n):
         self.log_message_signal.emit(f"Estimated time: {time}s, Sequences: {n}")
@@ -5147,7 +5173,6 @@ class FluidicsWidget(QWidget):
         self.btn_manual_flow.setEnabled(enabled)
 
     def log_status(self, message):
-        """Add a message to the status text box"""
         current_time = QDateTime.currentDateTime().toString("hh:mm:ss")
         self.status_text.append(f"[{current_time}] {message}")
         # Scroll to bottom

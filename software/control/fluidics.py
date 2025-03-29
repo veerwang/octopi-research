@@ -28,7 +28,7 @@ class Fluidics:
             callbacks: Optional dictionary of callback functions
         """
         self.config_path = config_path
-        self.simulation = simulation
+        self.simulation = False
         self.port_list = None
         self.available_port_names = None
 
@@ -227,7 +227,11 @@ class Fluidics:
 
     def emergency_stop(self):
         """Stop syringe pump operation immediately"""
-        pass
+        self.syringe_pump.abort()
+        self.worker.abort()
+
+    def reset_abort(self):
+        self.syringe_pump.reset_abort()
 
     def wait_for_completion(self):
         """Wait for the sequence thread to complete"""
