@@ -838,8 +838,6 @@ class HighContentScreeningGui(QMainWindow):
             self.imageDisplayTabs.addTab(laserfocus_dockArea, "Laser-Based Focus")
 
         if RUN_FLUIDICS:
-            # self.fluidics_dockArea = dock.DockArea()
-            # self.fluidics_dockArea.addDock(self.fluidicsWidget, "bottom")
             self.imageDisplayTabs.addTab(self.fluidicsWidget, "Fluidics")
 
     def setupRecordTabWidget(self):
@@ -989,6 +987,7 @@ class HighContentScreeningGui(QMainWindow):
 
         if RUN_FLUIDICS:
             self.multiPointWithFluidicsWidget.signal_acquisition_started.connect(self.toggleAcquisitionStart)
+            self.fluidicsWidget.fluidics_initialized_signal.connect(self.multiPointWithFluidicsWidget.init_fluidics)
 
         self.profileWidget.signal_profile_changed.connect(self.liveControlWidget.refresh_mode_list)
 

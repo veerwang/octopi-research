@@ -4492,7 +4492,7 @@ class MultiPointWithFluidicsWidget(QFrame):
         exp_id_layout.addWidget(self.btn_load_coordinates)
 
         self.btn_init_fluidics = QPushButton("Init Fluidics")
-        exp_id_layout.addWidget(self.btn_init_fluidics)
+        # exp_id_layout.addWidget(self.btn_init_fluidics)
 
         main_layout.addLayout(exp_id_layout)
 
@@ -4557,7 +4557,7 @@ class MultiPointWithFluidicsWidget(QFrame):
         self.btn_setSavingDir.clicked.connect(self.set_saving_dir)
         self.btn_startAcquisition.clicked.connect(self.toggle_acquisition)
         self.btn_load_coordinates.clicked.connect(self.on_load_coordinates_clicked)
-        self.btn_init_fluidics.clicked.connect(self.init_fluidics)
+        # self.btn_init_fluidics.clicked.connect(self.init_fluidics)
         self.entry_deltaZ.valueChanged.connect(self.set_deltaZ)
         self.entry_NZ.valueChanged.connect(self.multipointController.set_NZ)
         self.checkbox_withReflectionAutofocus.toggled.connect(self.multipointController.set_reflection_af_flag)
@@ -4791,7 +4791,7 @@ class MultiPointWithFluidicsWidget(QFrame):
 
     def init_fluidics(self):
         """Initialize the fluidics system"""
-        self.multipointController.fluidics.initialize()
+        # self.multipointController.fluidics.initialize()
         self.btn_startAcquisition.setEnabled(True)
 
     def get_rounds(self) -> list:
@@ -4843,6 +4843,7 @@ class MultiPointWithFluidicsWidget(QFrame):
 class FluidicsWidget(QWidget):
 
     log_message_signal = Signal(str)
+    fluidics_initialized_signal = Signal()
 
     def __init__(self, fluidics, parent=None):
         super().__init__(parent)
@@ -4992,11 +4993,17 @@ class FluidicsWidget(QWidget):
         self.btn_manual_flow.clicked.connect(self.start_manual_flow)
         self.btn_emergency_stop.clicked.connect(self.emergency_stop)
 
+        self.enable_controls(False)
+        self.btn_emergency_stop.setEnabled(False)
+
     def initialize_fluidics(self):
         """Initialize the fluidics system"""
         self.log_status("Initializing fluidics system...")
         self.fluidics.initialize()
         self.btn_initialize.setEnabled(False)
+        self.enable_controls(True)
+        self.btn_emergency_stop.setEnabled(True)
+        self.fluidics_initialized_signal.emit()
 
     def set_callbacks(self):
         callbacks = {
@@ -5211,10 +5218,7 @@ class PandasTableModel(QAbstractTableModel):
 
     def set_current_row(self, row_index):
         self._current_row = row_index
-        self.dataChanged.emit(
-            self.index(0, 0),
-            self.index(self.rowCount() - 1, self.columnCount() - 1)
-        )
+        self.dataChanged.emit(self.index(0, 0), self.index(self.rowCount() - 1, self.columnCount() - 1))
 
 
 class FocusMapWidget(QFrame):
