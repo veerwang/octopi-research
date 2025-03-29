@@ -4856,7 +4856,6 @@ class FluidicsWidget(QWidget):
         # Set up the UI
         self.setup_ui()
         self.log_message_signal.connect(self.log_status)
-        self.log_status_connected = True
 
     def setup_ui(self):
         # Main layout
@@ -5054,9 +5053,6 @@ class FluidicsWidget(QWidget):
             return
 
         self.log_status(f"Starting prime: Ports {ports}, Fill with {fill_port}, Volume {volume}µL")
-        if self.log_status_connected:
-            self.log_message_signal.disconnect()
-            self.log_status_connected = False
         self.fluidics.priming(ports, fill_port, volume)
         self.enable_controls(False)
         self.set_sequence_callbacks()
@@ -5072,9 +5068,6 @@ class FluidicsWidget(QWidget):
             return
 
         self.log_status(f"Starting cleanup: Ports {ports}, Fill with {fill_port}, Volume {volume}µL, Repeat {repeat}x")
-        if self.log_status_connected:
-            self.log_message_signal.disconnect()
-            self.log_status_connected = False
         self.fluidics.clean_up(ports, fill_port, volume, repeat)
         self.enable_controls(False)
         self.set_sequence_callbacks()
@@ -5089,15 +5082,11 @@ class FluidicsWidget(QWidget):
             return
 
         self.log_status(f"Flow reagent: Port {port}, Flow rate {flow_rate}µL/min, Volume {volume}µL")
-        if self.log_status_connected:
-            self.log_message_signal.disconnect()
-            self.log_status_connected = False
         self.fluidics.manual_flow(port, flow_rate, volume)
         self.enable_controls(False)
         self.set_sequence_callbacks()
 
     def emergency_stop(self):
-        self.log_status("Emergency stop requested")
         self.fluidics.emergency_stop()
 
     def get_port_list(self, text: str) -> list:
@@ -5159,9 +5148,6 @@ class FluidicsWidget(QWidget):
             status = "Sequence section completed"
         self.fluidics.reset_abort()
         self.log_message_signal.emit(status)
-        if not self.log_status_connected:
-            self.log_message_signal.connect(self.log_status)
-            self.log_status_connected = True
 
     def on_estimate(self, time, n):
         self.log_message_signal.emit(f"Estimated time: {time}s, Sequences: {n}")
