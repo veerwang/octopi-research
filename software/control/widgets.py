@@ -5113,16 +5113,16 @@ class FluidicsWidget(QWidget):
                 if "-" in part:
                     # Handle range (e.g., "1-3")
                     start, end = map(int, part.split("-"))
-                    if start < 1 or end > 24 or start > end:
+                    if start < 1 or end > 28 or start > end:
                         raise ValueError(
-                            f"Invalid range {part}: Numbers must be between 1 and 24, and start must be <= end"
+                            f"Invalid range {part}: Numbers must be between 1 and 28, and start must be <= end"
                         )
                     port_list.extend(range(start, end + 1))
                 else:
                     # Handle single number
                     num = int(part)
-                    if num < 1 or num > 24:
-                        raise ValueError(f"Invalid number {num}: Must be between 1 and 24")
+                    if num < 1 or num > 28:
+                        raise ValueError(f"Invalid number {num}: Must be between 1 and 28")
                     port_list.append(num)
 
             return port_list
