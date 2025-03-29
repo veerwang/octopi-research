@@ -28,7 +28,7 @@ class Fluidics:
             callbacks: Optional dictionary of callback functions
         """
         self.config_path = config_path
-        self.simulation = False
+        self.simulation = simulation
         self.port_list = None
         self.available_port_names = None
 
