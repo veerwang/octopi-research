@@ -395,6 +395,9 @@ def get_available_disk_space(directory: pathlib.Path) -> int:
 
     Raises: ValueError if directory is not a directory, or doesn't exist.  PermissionError if you do not have access.
     """
+    if not isinstance(directory, pathlib.Path):
+        directory = pathlib.Path(directory)
+
     if not directory.exists():
         raise ValueError(f"Cannot check for free space in '{directory}' because it does not exist.")
 
