@@ -404,3 +404,22 @@ def get_available_disk_space(directory: pathlib.Path) -> int:
     (total, used, free) = shutil.disk_usage(directory)
 
     return free
+
+
+def get_directory_disk_usage(directory: pathlib.Path) -> int:
+    """
+    Returns the total disk size used by the contents of this directory in bytes.
+
+    Cribbed from the interwebs here: https://stackoverflow.com/a/1392549
+    """
+    total_size = 0
+    if isinstance(directory, str):
+        directory = pathlib.Path(directory)
+    for dirpath, _, filenames in os.walk(directory.absolute()):
+        for f in filenames:
+            fp = os.path.join(dirpath, f)
+            # skip if it is symbolic link
+            if not os.path.islink(fp):
+                total_size += os.path.getsize(fp)
+
+    return total_size

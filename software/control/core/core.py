@@ -1,7 +1,9 @@
 # set QT_API environment variable
 import os
 import sys
+import tempfile
 
+import control._def
 from control.microcontroller import Microcontroller
 from control.piezo import PiezoStage
 from squid.abc import AbstractStage
@@ -24,6 +26,7 @@ if DO_FLUORESCENCE_RTP:
     from control.multipoint_built_in_functionalities import malaria_rtp
 
 import control.utils as utils
+import control.utils_acquisition as utils_acquisition
 import control.utils_channel as utils_channel
 import control.utils_config as utils_config
 import control.tracking as tracking
@@ -1893,30 +1896,15 @@ class MultiPointWorker(QObject):
                 )
                 np.savetxt(saving_path, data, delimiter=",")
 
-    def save_image(self, image, file_ID, config, current_path):
-        if image.dtype == np.uint16:
-            saving_path = os.path.join(current_path, file_ID + "_" + str(config.name).replace(" ", "_") + ".tiff")
-        else:
-            saving_path = os.path.join(
-                current_path, file_ID + "_" + str(config.name).replace(" ", "_") + "." + Acquisition.IMAGE_FORMAT
-            )
-
-        if self.camera.is_color:
-            if "BF LED matrix" in config.name:
-                if MULTIPOINT_BF_SAVING_OPTION == "RGB2GRAY":
-                    image = cv2.cvtColor(image, cv2.COLOR_RGB2GRAY)
-                elif MULTIPOINT_BF_SAVING_OPTION == "Green Channel Only":
-                    image = image[:, :, 1]
-
-        if SAVE_IN_PSEUDO_COLOR:
-            image = self.return_pseudo_colored_image(image, config)
+    def save_image(self, image: np.array, file_ID: str, config: ChannelMode, current_path: str):
+        saved_image = utils_acquisition.save_image(
+            image=image, file_id=file_ID, save_directory=current_path, config=config, is_color=self.camera.is_color
+        )
 
         if MERGE_CHANNELS:
-            self._save_merged_image(image, file_ID, current_path)
+            self._save_merged_image(saved_image, file_ID, current_path)
 
-        iio.imwrite(saving_path, image)
-
-    def _save_merged_image(self, image, file_ID, current_path):
+    def _save_merged_image(self, image: np.array, file_ID: str, current_path: str):
         self.image_count += 1
 
         if self.image_count == 1:
@@ -1934,27 +1922,6 @@ class MultiPointWorker(QObject):
                 self.image_count = 0
 
         return
-
-    def return_pseudo_colored_image(self, image, config):
-        if "405 nm" in config.name:
-            image = self.grayscale_to_rgb(image, CHANNEL_COLORS_MAP["405"]["hex"])
-        elif "488 nm" in config.name:
-            image = self.grayscale_to_rgb(image, CHANNEL_COLORS_MAP["488"]["hex"])
-        elif "561 nm" in config.name:
-            image = self.grayscale_to_rgb(image, CHANNEL_COLORS_MAP["561"]["hex"])
-        elif "638 nm" in config.name:
-            image = self.grayscale_to_rgb(image, CHANNEL_COLORS_MAP["638"]["hex"])
-        elif "730 nm" in config.name:
-            image = self.grayscale_to_rgb(image, CHANNEL_COLORS_MAP["730"]["hex"])
-        else:
-            image = np.stack([image] * 3, axis=-1)
-
-        return image
-
-    def grayscale_to_rgb(self, image, hex_color):
-        rgb_ratios = np.array([(hex_color >> 16) & 0xFF, (hex_color >> 8) & 0xFF, hex_color & 0xFF]) / 255
-        rgb = np.stack([image] * 3, axis=-1) * rgb_ratios
-        return rgb.astype(image.dtype)
 
     def update_napari(self, image, config_name, k):
         if not self.performance_mode and (USE_NAPARI_FOR_MOSAIC_DISPLAY or USE_NAPARI_FOR_MULTIPOINT):
@@ -2339,6 +2306,8 @@ class MultiPointController(QObject):
 
         NOTE: This does not cover debug images (eg: auto focus) or user created images (eg: custom scripts).
 
+        NOTE: This does attempt to include the "merged" image if that config is enabled.
+
         Raises a ValueError if the class is not configured for a valid acquisition.
         """
         try:
@@ -2351,11 +2320,58 @@ class MultiPointController(QObject):
             ]
             all_regions_coord_count = sum(coords_per_region)
 
-            return self.Nt * self.NZ * all_regions_coord_count * len(self.selected_configurations)
+            non_merged_images = self.Nt * self.NZ * all_regions_coord_count * len(self.selected_configurations)
+            # When capturing merged images, we capture 1 per fov (where all the configurations are merged)
+            merged_images = self.Nt * self.NZ * all_regions_coord_count if control._def.MERGE_CHANNELS else 0
+
+            return non_merged_images + merged_images
         except AttributeError:
             # We don't init all fields in __init__, so it's easy to get attribute errors.  We consider
             # this "not configured" and want it to be a ValueError.
             raise ValueError("Not properly configured for an acquisition, cannot calculate image count.")
+
+    def get_estimated_acquisition_disk_storage(self):
+        """
+        This does its best to return the number of bytes needed to store the settings for the currently
+        configured acquisition on disk.  If you don't have at least this amount of disk space available
+        when starting this acquisition, it is likely it will fail with an "out of disk space" error.
+        """
+        # TODO(imo): This needs updating for AbstractCamera
+        is_color = self.camera.is_color
+        if not len(self.channelConfigurationManager.get_configurations(self.objectiveStore.current_objective)):
+            raise ValueError("Cannot calculate disk space requirements without any valid configurations.")
+        first_config = self.channelConfigurationManager.get_configurations(self.objectiveStore.current_objective)[0]
+
+        # Our best bet is to grab an image, and use that for our size estimate.
+        test_image = None
+        try:
+            test_image = self.camera.read_frame()
+        except Exception as e:
+            # Not ideal that we need to catch Exception, but the camera implementations vary wildly...
+            pass
+
+        if test_image is None:
+            # Do our best to create a fake image with the correct properties.
+            # TODO(imo): It'd be better to pull this from our camera but need to wait for AbstractCamera for a consistent way to do that.
+            width = self.crop_width
+            height = self.crop_height
+            bytes_per_pixel = 3 if is_color else 2  # Worst case assumptions: 24 bit color, 16 bit grayscale
+
+            test_image = np.random.randint(2**16 - 1, size=(height, width, (3 if is_color else 1)), dtype=np.uint16)
+
+        # Depending on settings, we modify the image before saving.  This means we need to actually save an image
+        # to see how much disk space it takes up.  This can be very wrong (eg: if we compress during saving, then
+        # it is dependent on the data), but is better than just guessing based on raw image size.
+        with tempfile.TemporaryDirectory() as temp_save_dir:
+            file_id = "test_id"
+            test_config = first_config
+            size_before = utils.get_directory_disk_usage(temp_save_dir)
+            saved_image = utils_acquisition.save_image(test_image, file_id, temp_save_dir, test_config, is_color)
+            size_after = utils.get_directory_disk_usage(temp_save_dir)
+
+            size_per_image = size_after - size_before
+
+        return size_per_image * self.get_acquisition_image_count()
 
     def run_acquisition(self):
 
