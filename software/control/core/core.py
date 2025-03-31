@@ -2332,6 +2332,31 @@ class MultiPointController(QObject):
                 )
             )
 
+    def get_acquisition_image_count(self):
+        """
+        Given the current settings on this controller, return how many images an acquisition will
+        capture and save to disk.
+
+        NOTE: This does not cover debug images (eg: auto focus) or user created images (eg: custom scripts).
+
+        Raises a ValueError if the class is not configured for a valid acquisition.
+        """
+        try:
+            # We have Nt timepoints.  For each timepoint, we capture images at all the regions.  Each
+            # region has a list of coordinates that we capture at, and at each coordinate we need to
+            # do a capture for each requested camera + lighting + other configuration selected.  So
+            # total image count is:
+            coords_per_region = [
+                len(region_coords) for (region_id, region_coords) in self.scanCoordinates.region_fov_coordinates.items()
+            ]
+            all_regions_coord_count = sum(coords_per_region)
+
+            return self.Nt * self.NZ * all_regions_coord_count * len(self.selected_configurations)
+        except AttributeError:
+            # We don't init all fields in __init__, so it's easy to get attribute errors.  We consider
+            # this "not configured" and want it to be a ValueError.
+            raise ValueError("Not properly configured for an acquisition, cannot calculate image count.")
+
     def run_acquisition(self):
 
         if not self.validate_acquisition_settings():
