@@ -1,6 +1,5 @@
 import os
-import sys
-from typing import Optional
+import logging
 
 import squid.logging
 from control.core.core import TrackingController, MultiPointController
@@ -35,6 +34,7 @@ import shutil
 from control._def import *
 from PIL import Image, ImageDraw, ImageFont
 
+
 def error_dialog(message: str, title: str = "Error"):
     msg = QMessageBox()
     msg.setIcon(QMessageBox.Warning)
@@ -45,25 +45,32 @@ def error_dialog(message: str, title: str = "Error"):
     retval = msg.exec_()
     return
 
-def check_space_available_with_error_dialog(multi_point_controller: MultiPointController, logger) -> bool:
+
+def check_space_available_with_error_dialog(
+    multi_point_controller: MultiPointController, logger: logging.Logger, factor_of_safecty: float = 1.03
+) -> bool:
     # To check how much disk space is required, we need to have the MultiPointController all configured.  So
     # we need to do that all the way down here.
     save_directory = multi_point_controller.base_path
     available_disk_space = utils.get_available_disk_space(save_directory)
-    space_factor_of_safety = 1.1
-    space_required = 1.1 * multi_point_controller.get_estimated_acquisition_disk_storage()
+    space_required = factor_of_safecty * multi_point_controller.get_estimated_acquisition_disk_storage()
     image_count = multi_point_controller.get_acquisition_image_count()
 
-    logger.info(f"Checking space available: {space_required=}, {available_disk_space=}, {image_count=}, {save_directory=}")
+    logger.info(
+        f"Checking space available: {space_required=}, {available_disk_space=}, {image_count=}, {save_directory=}"
+    )
     if space_required > available_disk_space:
         megabytes_required = int(space_required / 1024 / 1024)
         megabytes_available = int(available_disk_space / 1024 / 1024)
-        error_message = (f"This acquisition will capture {image_count:,} images, which will"
-                          f" require {megabytes_required:,} [MB], but '{save_directory}' only has {megabytes_available:,} [MB] available.")
+        error_message = (
+            f"This acquisition will capture {image_count:,} images, which will"
+            f" require {megabytes_required:,} [MB], but '{save_directory}' only has {megabytes_available:,} [MB] available."
+        )
         logger.error(error_message)
         error_dialog(error_message, title="Not Enough Disk Space")
         return False
     return True
+
 
 class WrapperWindow(QMainWindow):
     def __init__(self, content_widget, *args, **kwargs):

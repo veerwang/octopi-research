@@ -73,8 +73,8 @@ def test_multi_point_controller_disk_space_esimate(qtbot):
     mpc.set_selected_configurations(all_configuration_names[0:1])
     mpc.scanCoordinates.clear_regions()
 
-    # No images -> no bytes needed
-    assert mpc.get_estimated_acquisition_disk_storage() == 0
+    # No images -> no bytes needed (except admin bytes, which is < 200kB)
+    assert mpc.get_estimated_acquisition_disk_storage() < 200 * 1024
 
     # Add a single region with 1 fov
     # NOTE: If the coordinates below aren't in the valid range for our stage, it silently fails to add regions.

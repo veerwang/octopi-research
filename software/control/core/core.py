@@ -161,8 +161,7 @@ class StreamHandler(QObject):
 
     def on_new_frame(self, camera):
 
-        if camera.is_live:
-
+        if self.is_live:
             camera.image_locked = True
             self.handler_busy = True
             self.signal_new_frame_received.emit()  # self.liveController.turn_off_illumination()
@@ -614,7 +613,6 @@ class LiveController(QObject):
 
     def start_live(self):
         self.is_live = True
-        self.camera.is_live = True
         self.camera.start_streaming()
         if self.trigger_mode == TriggerMode.SOFTWARE or (
             self.trigger_mode == TriggerMode.HARDWARE and self.use_internal_timer_for_hardware_trigger
@@ -628,7 +626,6 @@ class LiveController(QObject):
     def stop_live(self):
         if self.is_live:
             self.is_live = False
-            self.camera.is_live = False
             if hasattr(self.camera, "stop_exposure"):
                 self.camera.stop_exposure()
             if self.trigger_mode == TriggerMode.SOFTWARE:
@@ -2330,6 +2327,39 @@ class MultiPointController(QObject):
             # this "not configured" and want it to be a ValueError.
             raise ValueError("Not properly configured for an acquisition, cannot calculate image count.")
 
+    def _temporary_get_an_image_hack(self):
+        # TODO(imo): Replace with send_trigger() only once AbstractCamera lands!
+        was_streaming = self.camera.is_streaming
+        callbacks_were_enabled = self.camera.callback_is_enabled
+        test_image = None
+        self.camera.disable_callback()
+        if not was_streaming:
+            self.camera.start_streaming()
+        try:
+            if self.liveController.trigger_mode == TriggerMode.SOFTWARE:
+                self.liveController.turn_on_illumination()
+                self.microcontroller.wait_till_operation_is_completed()
+                self.camera.send_trigger()
+                test_image = self.camera.read_frame()
+            elif self.liveController.trigger_mode == TriggerMode.HARDWARE:
+                if "Fluorescence" in config.name and ENABLE_NL5 and NL5_USE_DOUT:
+                    self.camera.image_is_ready = False  # to remove
+                    self.microscope.nl5.start_acquisition()
+                    test_image = self.camera.read_frame(reset_image_ready_flag=False)
+                else:
+                    self.microcontroller.send_hardware_trigger(
+                        control_illumination=True, illumination_on_time_us=self.camera.exposure_time * 1000
+                    )
+                    test_image = self.camera.read_frame()
+            else:  # continuous acquisition
+                test_image = self.camera.read_frame()
+        finally:
+            if not was_streaming:
+                self.camera.stop_streaming()
+            if callbacks_were_enabled:
+                self.camera.enable_callback()
+        return test_image
+
     def get_estimated_acquisition_disk_storage(self):
         """
         This does its best to return the number of bytes needed to store the settings for the currently
@@ -2345,8 +2375,9 @@ class MultiPointController(QObject):
         # Our best bet is to grab an image, and use that for our size estimate.
         test_image = None
         try:
-            test_image = self.camera.read_frame()
+            test_image = self._temporary_get_an_image_hack()
         except Exception as e:
+            self._log.exception("Couldn't capture image from camera for size estimate, using worst cast image.")
             # Not ideal that we need to catch Exception, but the camera implementations vary wildly...
             pass
 
@@ -2371,7 +2402,10 @@ class MultiPointController(QObject):
 
             size_per_image = size_after - size_before
 
-        return size_per_image * self.get_acquisition_image_count()
+        # Add in 100kB for non-image files.  This is normally more like 10k total, so this gives us extra.
+        non_image_file_size = 100 * 1024
+
+        return size_per_image * self.get_acquisition_image_count() + non_image_file_size
 
     def run_acquisition(self):
 
