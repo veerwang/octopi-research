@@ -160,67 +160,65 @@ class StreamHandler(QObject):
         print(self.display_resolution_scaling)
 
     def on_new_frame(self, camera):
+        camera.image_locked = True
+        self.handler_busy = True
+        self.signal_new_frame_received.emit()  # self.liveController.turn_off_illumination()
 
-        if self.is_live:
-            camera.image_locked = True
-            self.handler_busy = True
-            self.signal_new_frame_received.emit()  # self.liveController.turn_off_illumination()
+        # measure real fps
+        timestamp_now = round(time.time())
+        if timestamp_now == self.timestamp_last:
+            self.counter = self.counter + 1
+        else:
+            self.timestamp_last = timestamp_now
+            self.fps_real = self.counter
+            self.counter = 0
+            if PRINT_CAMERA_FPS:
+                print("real camera fps is " + str(self.fps_real))
 
-            # measure real fps
-            timestamp_now = round(time.time())
-            if timestamp_now == self.timestamp_last:
-                self.counter = self.counter + 1
-            else:
-                self.timestamp_last = timestamp_now
-                self.fps_real = self.counter
-                self.counter = 0
-                if PRINT_CAMERA_FPS:
-                    print("real camera fps is " + str(self.fps_real))
+        # moved down (so that it does not modify the camera.current_frame, which causes minor problems for simulation) - 1/30/2022
+        # # rotate and flip - eventually these should be done in the camera
+        # camera.current_frame = utils.rotate_and_flip_image(camera.current_frame,rotate_image_angle=camera.rotate_image_angle,flip_image=camera.flip_image)
 
-            # moved down (so that it does not modify the camera.current_frame, which causes minor problems for simulation) - 1/30/2022
-            # # rotate and flip - eventually these should be done in the camera
-            # camera.current_frame = utils.rotate_and_flip_image(camera.current_frame,rotate_image_angle=camera.rotate_image_angle,flip_image=camera.flip_image)
+        # crop image
+        image_cropped = utils.crop_image(camera.current_frame, self.crop_width, self.crop_height)
+        image_cropped = np.squeeze(image_cropped)
 
-            # crop image
-            image_cropped = utils.crop_image(camera.current_frame, self.crop_width, self.crop_height)
-            image_cropped = np.squeeze(image_cropped)
+        # # rotate and flip - moved up (1/10/2022)
+        # image_cropped = utils.rotate_and_flip_image(image_cropped,rotate_image_angle=ROTATE_IMAGE_ANGLE,flip_image=FLIP_IMAGE)
+        # added on 1/30/2022
+        # @@@ to move to camera
+        image_cropped = utils.rotate_and_flip_image(
+            image_cropped, rotate_image_angle=camera.rotate_image_angle, flip_image=camera.flip_image
+        )
 
-            # # rotate and flip - moved up (1/10/2022)
-            # image_cropped = utils.rotate_and_flip_image(image_cropped,rotate_image_angle=ROTATE_IMAGE_ANGLE,flip_image=FLIP_IMAGE)
-            # added on 1/30/2022
-            # @@@ to move to camera
-            image_cropped = utils.rotate_and_flip_image(
-                image_cropped, rotate_image_angle=camera.rotate_image_angle, flip_image=camera.flip_image
-            )
-
-            # send image to display
-            time_now = time.time()
-            if time_now - self.timestamp_last_display >= 1 / self.fps_display:
-                self.image_to_display.emit(
-                    utils.crop_image(
-                        image_cropped,
-                        round(self.crop_width * self.display_resolution_scaling),
-                        round(self.crop_height * self.display_resolution_scaling),
-                    )
+        # send image to display
+        time_now = time.time()
+        if time_now - self.timestamp_last_display >= 1 / self.fps_display:
+            self.image_to_display.emit(
+                utils.crop_image(
+                    image_cropped,
+                    round(self.crop_width * self.display_resolution_scaling),
+                    round(self.crop_height * self.display_resolution_scaling),
                 )
-                self.timestamp_last_display = time_now
+            )
+            self.timestamp_last_display = time_now
 
-            # send image to write
-            if self.save_image_flag and time_now - self.timestamp_last_save >= 1 / self.fps_save:
-                if camera.is_color:
-                    image_cropped = cv2.cvtColor(image_cropped, cv2.COLOR_RGB2BGR)
-                self.packet_image_to_write.emit(image_cropped, camera.frame_ID, camera.timestamp)
-                self.timestamp_last_save = time_now
+        # send image to write
+        if self.save_image_flag and time_now - self.timestamp_last_save >= 1 / self.fps_save:
+            if camera.is_color:
+                image_cropped = cv2.cvtColor(image_cropped, cv2.COLOR_RGB2BGR)
+            self.packet_image_to_write.emit(image_cropped, camera.frame_ID, camera.timestamp)
+            self.timestamp_last_save = time_now
 
-            # send image to track
-            if self.track_flag and time_now - self.timestamp_last_track >= 1 / self.fps_track:
-                # track is a blocking operation - it needs to be
-                # @@@ will cropping before emitting the signal lead to speedup?
-                self.packet_image_for_tracking.emit(image_cropped, camera.frame_ID, camera.timestamp)
-                self.timestamp_last_track = time_now
+        # send image to track
+        if self.track_flag and time_now - self.timestamp_last_track >= 1 / self.fps_track:
+            # track is a blocking operation - it needs to be
+            # @@@ will cropping before emitting the signal lead to speedup?
+            self.packet_image_for_tracking.emit(image_cropped, camera.frame_ID, camera.timestamp)
+            self.timestamp_last_track = time_now
 
-            self.handler_busy = False
-            camera.image_locked = False
+        self.handler_busy = False
+        camera.image_locked = False
 
 
 class ImageSaver(QObject):
@@ -2336,6 +2334,7 @@ class MultiPointController(QObject):
         if not was_streaming:
             self.camera.start_streaming()
         try:
+            config = self.channelConfigurationManager.get_configurations(self.objectiveStore.current_objective)[0]
             if self.liveController.trigger_mode == TriggerMode.SOFTWARE:
                 self.liveController.turn_on_illumination()
                 self.microcontroller.wait_till_operation_is_completed()
