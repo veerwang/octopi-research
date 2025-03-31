@@ -211,6 +211,12 @@ class Fluidics:
         )
         self.run_sequences(flow_seq)
 
+    def empty_syringe_pump(self):
+        # TODO: May be useful to start this in a separate thread
+        self.syringe_pump.reset_chain()
+        self.syringe_pump.dispense_to_waste()
+        self.syringe_pump.execute()
+
     def run_before_imaging(self):
         """Run the sequences before imaging"""
         self.run_sequences(self.sequences.iloc[self.sequences_before_imaging])

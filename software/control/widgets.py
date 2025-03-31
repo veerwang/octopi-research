@@ -4926,7 +4926,7 @@ class FluidicsWidget(QWidget):
         manual_control_group = QGroupBox("Manual Control")
         manual_control_layout = QVBoxLayout()
 
-        # First row - Port, Flow Rate, Volume
+        # First row - Port, Flow Rate, Volume, Flow button
         manual_row1 = QHBoxLayout()
         manual_row1.addWidget(QLabel("Port"))
         self.manual_port_combo = QComboBox()
@@ -4939,12 +4939,14 @@ class FluidicsWidget(QWidget):
         manual_row1.addWidget(QLabel("Volume (µL)"))
         self.txt_manual_volume = QLineEdit()
         manual_row1.addWidget(self.txt_manual_volume)
+        self.btn_manual_flow = QPushButton("Flow")
+        manual_row1.addWidget(self.btn_manual_flow)
         manual_control_layout.addLayout(manual_row1)
 
-        # Second row - Flow button
+        # Second row - Empty Syringe Pump button
         manual_row2 = QHBoxLayout()
-        self.btn_manual_flow = QPushButton("Flow")
-        manual_row2.addWidget(self.btn_manual_flow)
+        self.btn_empty_syringe_pump = QPushButton("Empty Syringe Pump To Waste")
+        manual_row2.addWidget(self.btn_empty_syringe_pump)
         manual_control_layout.addLayout(manual_row2)
 
         manual_control_group.setLayout(manual_control_layout)
@@ -4991,6 +4993,7 @@ class FluidicsWidget(QWidget):
         self.btn_prime_start.clicked.connect(self.start_prime)
         self.btn_cleanup_start.clicked.connect(self.start_cleanup)
         self.btn_manual_flow.clicked.connect(self.start_manual_flow)
+        self.btn_empty_syringe_pump.clicked.connect(self.empty_syringe_pump)
         self.btn_emergency_stop.clicked.connect(self.emergency_stop)
 
         self.enable_controls(False)
@@ -5017,7 +5020,7 @@ class FluidicsWidget(QWidget):
     def set_manual_control_callbacks(self):
         # TODO: use better logging description
         callbacks = {
-            "on_finished": self.on_finish,
+            "on_finished": lambda: self.on_finish("Operation completed"),
             "on_error": self.on_finish,
             "on_estimate": None,
             "update_progress": None,
@@ -5085,6 +5088,13 @@ class FluidicsWidget(QWidget):
         self.fluidics.manual_flow(port, flow_rate, volume)
         self.enable_controls(False)
         self.set_sequence_callbacks()
+
+    def empty_syringe_pump(self):
+        self.log_status("Empty syringe pump to waste")
+        self.enable_controls(False)
+        self.fluidics.empty_syringe_pump()
+        self.log_status("Operation completed")
+        self.enable_controls(True)
 
     def emergency_stop(self):
         self.fluidics.emergency_stop()
@@ -5157,6 +5167,7 @@ class FluidicsWidget(QWidget):
         self.btn_prime_start.setEnabled(enabled)
         self.btn_cleanup_start.setEnabled(enabled)
         self.btn_manual_flow.setEnabled(enabled)
+        self.btn_empty_syringe_pump.setEnabled(enabled)
 
     def log_status(self, message):
         current_time = QDateTime.currentDateTime().toString("hh:mm:ss")
