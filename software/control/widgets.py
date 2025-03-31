@@ -49,8 +49,8 @@ def error_dialog(message: str, title: str = "Error"):
 def check_space_available_with_error_dialog(
     multi_point_controller: MultiPointController, logger: logging.Logger, factor_of_safecty: float = 1.03
 ) -> bool:
-    # To check how much disk space is required, we need to have the MultiPointController all configured.  So
-    # we need to do that all the way down here.
+    # To check how much disk space is required, we need to have the MultiPointController all configured.  That is
+    # a precondition of this function.
     save_directory = multi_point_controller.base_path
     available_disk_space = utils.get_available_disk_space(save_directory)
     space_required = factor_of_safecty * multi_point_controller.get_estimated_acquisition_disk_storage()
@@ -3012,15 +3012,14 @@ class FlexibleMultiPointWidget(QFrame):
             self.multipointController.set_use_piezo(self.checkbox_usePiezo.isChecked())
             self.multipointController.set_af_flag(self.checkbox_withAutofocus.isChecked())
             self.multipointController.set_reflection_af_flag(self.checkbox_withReflectionAutofocus.isChecked())
-            save_directory = self.lineEdit_savingDir.text()
-            self.multipointController.set_base_path(save_directory)
+            self.multipointController.set_base_path(self.lineEdit_savingDir.text())
             self.multipointController.set_use_fluidics(False)
             self.multipointController.set_selected_configurations(
                 (item.text() for item in self.list_configurations.selectedItems())
             )
             self.multipointController.start_new_experiment(self.lineEdit_experimentID.text())
 
-            if not check_space_available_with_error_dialog(self.multipointController, self._log, save_directory):
+            if not check_space_available_with_error_dialog(self.multipointController, self._log):
                 self._log.error("Failed to start acquisition.  Not enough disk space available.")
                 self.btn_startAcquisition.setChecked(False)
                 return
