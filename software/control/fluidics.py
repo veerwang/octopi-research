@@ -262,7 +262,7 @@ class Fluidics:
     def close(self):
         """Clean up hardware resources"""
         if self.syringe_pump:
-            self.syringe_pump.close()
+            self.syringe_pump.close(True)
 
     def __enter__(self):
         return self
