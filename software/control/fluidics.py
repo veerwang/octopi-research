@@ -141,6 +141,20 @@ class Fluidics:
         mask = (df["include"] == 1) | (df["sequence_name"] == "Imaging")
         self.sequences = df[mask].reset_index(drop=True)
 
+        # Validate sequence names
+        valid_sequence_names = ["Imaging", "Priming", "Clean Up"]
+        for idx, sequence_name in enumerate(self.sequences["sequence_name"]):
+            if sequence_name not in valid_sequence_names and not sequence_name.startswith("Flow "):
+                raise ValueError(
+                    f"Invalid sequence name at row {idx+1}: '{sequence_name}'. "
+                    f"Must be one of {valid_sequence_names} or start with 'Flow '"
+                )
+
+        if "Imaging" not in self.sequences["sequence_name"].values:
+            raise ValueError(
+                "Missing required 'Imaging' sequence. Please insert an 'Imaging' sequence where you want the acquisition to happen."
+            )
+
         # Find indices before and after imaging
         imaging_idx = self.sequences[self.sequences["sequence_name"] == "Imaging"].index
         if len(imaging_idx) > 0:
