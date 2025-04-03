@@ -616,19 +616,19 @@ class LaserAutofocusSettingWidget(QWidget):
         # Get current frame from live controller
         frame = self.liveController.camera.current_frame
         if frame is not None:
-            result = utils.find_spot_location(frame, mode=mode, params=params)
-            if result is not None:
-                x, y = result
-                self.signal_laser_spot_location.emit(frame, x, y)
-            else:
+            try:
+                result = utils.find_spot_location(frame, mode=mode, params=params, debug_plot=True)
+                if result is not None:
+                    x, y = result
+                    self.signal_laser_spot_location.emit(frame, x, y)
+            except Exception as e:
                 # Show error message
-                # Clear previous error label if it exists
-                if hasattr(self, "spot_detection_error_label"):
-                    self.spot_detection_error_label.deleteLater()
-
-                # Create and add new error label
-                self.spot_detection_error_label = QLabel("Spot detection failed!")
-                self.layout().addWidget(self.spot_detection_error_label)
+                error_box = QMessageBox()
+                error_box.setIcon(QMessageBox.Critical)
+                error_box.setText("Spot Detection Failed!")
+                error_box.setInformativeText(str(e))
+                error_box.setWindowTitle("Error")
+                error_box.exec_()
 
     def show_cross_correlation_result(self, value):
         """Show cross-correlation value from validating laser af images"""
