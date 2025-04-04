@@ -141,19 +141,7 @@ class Fluidics:
         mask = (df["include"] == 1) | (df["sequence_name"] == "Imaging")
         self.sequences = df[mask].reset_index(drop=True)
 
-        # Validate sequence names
-        valid_sequence_names = ["Imaging", "Priming", "Clean Up"]
-        for idx, sequence_name in enumerate(self.sequences["sequence_name"]):
-            if sequence_name not in valid_sequence_names and not sequence_name.startswith("Flow "):
-                raise ValueError(
-                    f"Invalid sequence name at row {idx+1}: '{sequence_name}'. "
-                    f"Must be one of {valid_sequence_names} or start with 'Flow '"
-                )
-
-        if "Imaging" not in self.sequences["sequence_name"].values:
-            raise ValueError(
-                "Missing required 'Imaging' sequence. Please insert an 'Imaging' sequence where you want the acquisition to happen."
-            )
+        self._validate_sequences()
 
         # Find indices before and after imaging
         imaging_idx = self.sequences[self.sequences["sequence_name"] == "Imaging"].index
@@ -165,6 +153,60 @@ class Fluidics:
             self.sequences_before_imaging = slice(0, len(self.sequences))
             self.sequences_after_imaging = slice(0, 0)
         return self.sequences.copy()
+
+    def _validate_sequences(self):
+        valid_sequence_names = ["Imaging", "Priming", "Clean Up"]
+        for idx, sequence_name in enumerate(self.sequences["sequence_name"]):
+            if sequence_name not in valid_sequence_names and not sequence_name.startswith("Flow "):
+                raise ValueError(
+                    f"Invalid sequence name at row {idx+1}: '{sequence_name}'. "
+                    f"Must be one of {valid_sequence_names} or start with 'Flow '"
+                )
+
+        imaging_count = (self.sequences["sequence_name"] == "Imaging").sum()
+        if imaging_count == 0:
+            raise ValueError(
+                "Missing required 'Imaging' sequence. Please insert an 'Imaging' sequence where you want the acquisition to happen."
+            )
+        elif imaging_count > 1:
+            raise ValueError("Multiple 'Imaging' sequences found. There should be exactly one 'Imaging' sequence.")
+
+        for idx, row in self.sequences[self.sequences["sequence_name"] != "Imaging"].iterrows():
+            if not (
+                isinstance(row["fluidic_port"], (int, pd.Int64Dtype))
+                and 1 <= row["fluidic_port"] <= len(self.available_port_names)
+            ):
+                raise ValueError(
+                    f"Invalid fluidic_port at row {idx+1}: {row['fluidic_port']}. "
+                    f"Must be an integer in range [1, {len(self.available_port_names)}]."
+                )
+
+            if not (isinstance(row["flow_rate"], (int, pd.Int64Dtype)) and row["flow_rate"] > 0):
+                raise ValueError(
+                    f"Invalid flow_rate at row {idx+1}: {row['flow_rate']}. " f"Must be a positive integer."
+                )
+
+            if not (isinstance(row["volume"], (int, pd.Int64Dtype)) and 0 < row["volume"] < self.syringe_pump.volume):
+                raise ValueError(
+                    f"Invalid volume at row {idx+1}: {row['volume']}. "
+                    f"Must be an integer in range (0, {self.syringe_pump.volume})."
+                )
+
+            for field in ["incubation_time", "repeat"]:
+                if not (isinstance(row[field], (int, pd.Int64Dtype)) and row[field] >= 0):
+                    raise ValueError(f"Invalid {field} at row {idx+1}: {row[field]}. " f"Must be an integer >= 0.")
+
+            if not (
+                isinstance(row["fill_tubing_with"], (int, pd.Int64Dtype))
+                and 0 <= row["fill_tubing_with"] <= len(self.available_port_names)
+            ):
+                raise ValueError(
+                    f"Invalid fill_tubing_with at row {idx+1}: {row['fill_tubing_with']}. "
+                    f"Must be an integer in range [0, {len(self.available_port_names)}]."
+                )
+
+            if not (isinstance(row["include"], (int, pd.Int64Dtype)) and row["include"] in [0, 1]):
+                raise ValueError(f"Invalid include at row {idx+1}: {row['include']}. " f"Must be either 0 or 1.")
 
     def run_before_imaging(self):
         """Run the sequences before imaging"""
