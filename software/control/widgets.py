@@ -413,6 +413,18 @@ class LaserAutofocusSettingWidget(QWidget):
         live_layout.addLayout(analog_gain_layout)
         live_group.setLayout(live_layout)
 
+        # Non-threshold property group
+        non_threshold_group = QFrame()
+        non_threshold_group.setFrameStyle(QFrame.Panel | QFrame.Raised)
+        non_threshold_layout = QVBoxLayout()
+
+        # Add non-threshold property spinboxes
+        self._add_spinbox(non_threshold_layout, "Spot Crop Size (pixels):", "spot_crop_size", 1, 500, 0)
+        self._add_spinbox(
+            non_threshold_layout, "Calibration Distance (μm):", "pixel_to_um_calibration_distance", 0.1, 20.0, 2
+        )
+        non_threshold_group.setLayout(non_threshold_layout)
+
         # Settings group
         settings_group = QFrame()
         settings_group.setFrameStyle(QFrame.Panel | QFrame.Raised)
@@ -421,25 +433,20 @@ class LaserAutofocusSettingWidget(QWidget):
         # Create spinboxes for numerical parameters
         self.spinboxes = {}
 
-        # Add non-spot detection related spinboxes
+        # Add threshold property spinboxes
         self._add_spinbox(settings_layout, "Laser AF Averaging N:", "laser_af_averaging_n", 1, 100, 0)
         self._add_spinbox(
             settings_layout, "Displacement Success Window (μm):", "displacement_success_window_um", 0.1, 10.0, 2
         )
-        self._add_spinbox(settings_layout, "Spot Crop Size (pixels):", "spot_crop_size", 1, 500, 0)
         self._add_spinbox(settings_layout, "Correlation Threshold:", "correlation_threshold", 0.1, 1.0, 2)
-        self._add_spinbox(
-            settings_layout, "Calibration Distance (μm):", "pixel_to_um_calibration_distance", 0.1, 20.0, 2
-        )
         self._add_spinbox(settings_layout, "Laser AF Range (μm):", "laser_af_range", 1, 1000, 1)
+        self.apply_button = QPushButton("Apply without Re-initialization")
+        settings_layout.addWidget(self.apply_button)
+        settings_group.setLayout(settings_layout)
 
         # Create spot detection group
         spot_detection_group = QFrame()
-        spot_detection_group.setFrameStyle(QFrame.StyledPanel | QFrame.Plain)
-        spot_detection_group.setAutoFillBackground(True)
-        palette = spot_detection_group.palette()
-        palette.setColor(spot_detection_group.backgroundRole(), QColor("#ffffff"))
-        spot_detection_group.setPalette(palette)
+        spot_detection_group.setFrameStyle(QFrame.Panel | QFrame.Raised)
         spot_detection_layout = QVBoxLayout()
 
         # Add spot detection related spinboxes
@@ -467,14 +474,15 @@ class LaserAutofocusSettingWidget(QWidget):
         self.run_spot_detection_button = QPushButton("Run Spot Detection")
         self.run_spot_detection_button.setEnabled(False)  # Disabled by default
         spot_detection_layout.addWidget(self.run_spot_detection_button)
-
         spot_detection_group.setLayout(spot_detection_layout)
-        settings_layout.addWidget(spot_detection_group)
 
-        # Apply button
-        self.apply_button = QPushButton("Apply and Initialize")
-        settings_layout.addWidget(self.apply_button)
-        settings_group.setLayout(settings_layout)
+        # Initialize button
+        initialize_group = QFrame()
+        initialize_layout = QVBoxLayout()
+        self.initialize_button = QPushButton("Initialize")
+        self.initialize_button.setStyleSheet("background-color: #C2C2FF")
+        initialize_layout.addWidget(self.initialize_button)
+        initialize_group.setLayout(initialize_layout)
 
         # Add Laser AF Characterization Mode checkbox
         characterization_group = QFrame()
@@ -486,7 +494,10 @@ class LaserAutofocusSettingWidget(QWidget):
 
         # Add to main layout
         layout.addWidget(live_group)
+        layout.addWidget(non_threshold_group)
         layout.addWidget(settings_group)
+        layout.addWidget(spot_detection_group)
+        layout.addWidget(initialize_group)
         layout.addWidget(characterization_group)
         self.setLayout(layout)
 
@@ -497,8 +508,9 @@ class LaserAutofocusSettingWidget(QWidget):
         self.btn_live.clicked.connect(self.toggle_live)
         self.exposure_spinbox.valueChanged.connect(self.update_exposure_time)
         self.analog_gain_spinbox.valueChanged.connect(self.update_analog_gain)
-        self.apply_button.clicked.connect(self.apply_settings)
+        self.apply_button.clicked.connect(self.update_threshold_settings)
         self.run_spot_detection_button.clicked.connect(self.run_spot_detection)
+        self.initialize_button.clicked.connect(self.apply_settings)
         self.characterization_checkbox.toggled.connect(self.toggle_characterization_mode)
 
     def _add_spinbox(
@@ -562,6 +574,7 @@ class LaserAutofocusSettingWidget(QWidget):
         if index >= 0:
             self.spot_mode_combo.setCurrentIndex(index)
 
+        self.apply_button.setEnabled(self.laserAutofocusController.is_initialized)
         self.update_calibration_label()
 
     def apply_settings(self):
@@ -586,7 +599,17 @@ class LaserAutofocusSettingWidget(QWidget):
         self.laserAutofocusController.set_laser_af_properties(updates)
         self.laserAutofocusController.initialize_auto()
         self.signal_apply_settings.emit()
+        self.apply_button.setEnabled(True)
         self.update_calibration_label()
+
+    def update_threshold_settings(self):
+        updates = {
+            "laser_af_averaging_n": int(self.spinboxes["laser_af_averaging_n"].value()),
+            "displacement_success_window_um": self.spinboxes["displacement_success_window_um"].value(),
+            "correlation_threshold": self.spinboxes["correlation_threshold"].value(),
+            "laser_af_range": self.spinboxes["laser_af_range"].value(),
+        }
+        self.laserAutofocusController.update_threshold_properties(updates)
 
     def update_calibration_label(self):
         # Show calibration result
