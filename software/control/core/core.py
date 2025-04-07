@@ -2553,9 +2553,12 @@ class MultiPointController(QObject):
         # move back to the center of the current region if using "glass slide"
         if "current" in self.scanCoordinates.region_centers:
             region_center = self.scanCoordinates.region_centers["current"]
-            self.stage.move_x_to(region_center[0])
-            self.stage.move_y_to(region_center[1])
-            self.stage.move_z_to(region_center[2])
+            try:
+                self.stage.move_x_to(region_center[0])
+                self.stage.move_y_to(region_center[1])
+                self.stage.move_z_to(region_center[2])
+            except:
+                self._log.error("Failed to move to center of current region")
 
         self.acquisitionFinished.emit()
         if not self.abort_acqusition_requested:
