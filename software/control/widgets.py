@@ -440,8 +440,8 @@ class LaserAutofocusSettingWidget(QWidget):
         )
         self._add_spinbox(settings_layout, "Correlation Threshold:", "correlation_threshold", 0.1, 1.0, 2)
         self._add_spinbox(settings_layout, "Laser AF Range (μm):", "laser_af_range", 1, 1000, 1)
-        self.apply_button = QPushButton("Apply without Re-initialization")
-        settings_layout.addWidget(self.apply_button)
+        self.update_threshold_button = QPushButton("Apply without Re-initialization")
+        settings_layout.addWidget(self.update_threshold_button)
         settings_group.setLayout(settings_layout)
 
         # Create spot detection group
@@ -508,9 +508,9 @@ class LaserAutofocusSettingWidget(QWidget):
         self.btn_live.clicked.connect(self.toggle_live)
         self.exposure_spinbox.valueChanged.connect(self.update_exposure_time)
         self.analog_gain_spinbox.valueChanged.connect(self.update_analog_gain)
-        self.apply_button.clicked.connect(self.update_threshold_settings)
+        self.update_threshold_button.clicked.connect(self.update_threshold_settings)
         self.run_spot_detection_button.clicked.connect(self.run_spot_detection)
-        self.initialize_button.clicked.connect(self.apply_settings)
+        self.initialize_button.clicked.connect(self.apply_and_initialize)
         self.characterization_checkbox.toggled.connect(self.toggle_characterization_mode)
 
     def _add_spinbox(
@@ -574,10 +574,10 @@ class LaserAutofocusSettingWidget(QWidget):
         if index >= 0:
             self.spot_mode_combo.setCurrentIndex(index)
 
-        self.apply_button.setEnabled(self.laserAutofocusController.is_initialized)
+        self.update_threshold_button.setEnabled(self.laserAutofocusController.is_initialized)
         self.update_calibration_label()
 
-    def apply_settings(self):
+    def apply_and_initialize(self):
         updates = {
             "laser_af_averaging_n": int(self.spinboxes["laser_af_averaging_n"].value()),
             "displacement_success_window_um": self.spinboxes["displacement_success_window_um"].value(),
@@ -599,7 +599,7 @@ class LaserAutofocusSettingWidget(QWidget):
         self.laserAutofocusController.set_laser_af_properties(updates)
         self.laserAutofocusController.initialize_auto()
         self.signal_apply_settings.emit()
-        self.apply_button.setEnabled(True)
+        self.update_threshold_button.setEnabled(True)
         self.update_calibration_label()
 
     def update_threshold_settings(self):
@@ -644,6 +644,8 @@ class LaserAutofocusSettingWidget(QWidget):
                 if result is not None:
                     x, y = result
                     self.signal_laser_spot_location.emit(frame, x, y)
+                else:
+                    raise Exception("No spot detection result returned")
             except Exception as e:
                 # Show error message
                 error_box = QMessageBox()
