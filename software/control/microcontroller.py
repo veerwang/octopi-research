@@ -15,8 +15,6 @@ from serial.serialutil import SerialException
 import squid.logging
 from control._def import *
 
-import traceback
-import pdb
 
 # add user to the dialout group to avoid the need to use sudo
 
