@@ -15,6 +15,8 @@ from serial.serialutil import SerialException
 import squid.logging
 from control._def import *
 
+import traceback
+import pdb
 
 # add user to the dialout group to avoid the need to use sudo
 
@@ -308,6 +310,14 @@ class MicrocontrollerSerial(AbstractCephlaMicroSerial):
 
     def close(self) -> None:
         return self._serial.close()
+
+    def reset_input_buffer(self) -> None:
+        try:
+            self._serial.reset_input_buffer()
+            return True
+        except Exception as e:
+            self.log.error(f"Failed to clear input buffer: {e}")
+            return False
 
     def write(self, data: bytearray, reconnect_tries: int = 0) -> int:
         # the is_open attribute is unreliable - if a device just recently dropped out, it may not be up to date.
@@ -1008,7 +1018,11 @@ class Microcontroller:
                     # Sleep a negligible amount of time just to give other threads time to run.  Otherwise,
                     # we run the rise of spinning forever here and not letting progress happen elsewhere.
                     time.sleep(0.0001)
-
+                    if self._serial.bytes_available() == BUFFER_SIZE_LIMIT:
+                        try:
+                            self._serial.reset_input_buffer()
+                        except:
+                            self.log.error("Failed to reset input buffer")
                     if not self._serial.is_open():
                         if not self._serial.reconnect(attempts=Microcontroller.MAX_RECONNECT_COUNT):
                             self.log.error(
