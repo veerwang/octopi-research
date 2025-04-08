@@ -1017,10 +1017,7 @@ class Microcontroller:
                     # we run the rise of spinning forever here and not letting progress happen elsewhere.
                     time.sleep(0.0001)
                     if self._serial.bytes_available() == BUFFER_SIZE_LIMIT:
-                        try:
-                            self._serial.reset_input_buffer()
-                        except:
-                            self.log.error("Failed to reset input buffer")
+                        self._serial.reset_input_buffer()
                     if not self._serial.is_open():
                         if not self._serial.reconnect(attempts=Microcontroller.MAX_RECONNECT_COUNT):
                             self.log.error(
