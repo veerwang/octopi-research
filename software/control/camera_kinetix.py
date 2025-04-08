@@ -23,7 +23,7 @@ class Camera(object):
         pvc.init_pvcam()
         self.cam = None
 
-        self.exposure_time = 1  # ms
+        self.exposure_time = None  # ms
         self.analog_gain = 0
         self.is_streaming = False
         self.pixel_format = None
@@ -164,6 +164,8 @@ class Camera(object):
         pass
 
     def set_exposure_time(self, exposure_time: float):
+        if exposure_time == self.exposure_time:
+            return
         if self.trigger_mode == TriggerMode.SOFTWARE:
             adjusted = exposure_time * 1000
         elif self.trigger_mode == TriggerMode.HARDWARE:
@@ -171,7 +173,7 @@ class Camera(object):
         try:
             has_callback = self.callback_is_enabled
             self.stop_streaming()
-            print("setting exposure time")
+            self.log.info(f"setting exposure time: {adjusted} us")
             self.cam.exp_time = int(adjusted)  # us
             self.exposure_time = exposure_time  # ms
             if has_callback:
@@ -189,7 +191,7 @@ class Camera(object):
         try:
             has_callback = self.callback_is_enabled
             self.stop_streaming()
-            print("setting temperature")
+            self.log.info(f"setting temperature: {temperature} C")
             self.cam.temp_setpoint = int(temperature)
             if has_callback:
                 self.enable_callback()
