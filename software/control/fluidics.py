@@ -1,6 +1,6 @@
 import pandas as pd
 import threading
-from typing import Dict, Optional
+from typing import Dict, Optional, Callable
 import sys
 
 sys.path.append("fluidics_v2/software")
@@ -19,7 +19,13 @@ import json
 
 
 class Fluidics:
-    def __init__(self, config_path: str, simulation: bool = False, callbacks: Optional[Dict] = None):
+    def __init__(
+        self,
+        config_path: str,
+        simulation: bool = False,
+        worker_callbacks: Optional[Dict] = None,
+        log_callback: Optional[Callable] = None,
+    ):
         """Initialize the fluidics runner
 
         Args:
@@ -47,12 +53,13 @@ class Fluidics:
         self.thread = None
 
         # Set default callbacks if none provided
-        self.callbacks = callbacks or {
+        self.worker_callbacks = worker_callbacks or {
             "update_progress": lambda idx, seq_num, status: print(f"Sequence {idx} ({seq_num}): {status}"),
             "on_error": lambda msg: print(f"Error: {msg}"),
             "on_finished": lambda: print("Experiment completed"),
             "on_estimate": lambda time, n: print(f"Est. time: {time}s, Sequences: {n}"),
         }
+        self.log_callback = log_callback
 
         self._load_config()
 
@@ -208,14 +215,6 @@ class Fluidics:
             if not (isinstance(row["include"], (int, pd.Int64Dtype)) and row["include"] in [0, 1]):
                 raise ValueError(f"Invalid include at row {idx+1}: {row['include']}. " f"Must be either 0 or 1.")
 
-    def run_before_imaging(self):
-        """Run the sequences before imaging"""
-        self.run_sequences(self.sequences.iloc[self.sequences_before_imaging])
-
-    def run_after_imaging(self):
-        """Run the sequences after imaging"""
-        self.run_sequences(self.sequences.iloc[self.sequences_after_imaging])
-
     def priming(self, ports: list, last_port: int, volume_ul: int, flow_rate: int = 5000):
         """Priming the fluidics system"""
         # Create priming sequence dataframe
@@ -275,15 +274,17 @@ class Fluidics:
 
     def run_before_imaging(self):
         """Run the sequences before imaging"""
+        self.log_callback("Running sequences before imaging")
         self.run_sequences(self.sequences.iloc[self.sequences_before_imaging])
 
     def run_after_imaging(self):
         """Run the sequences after imaging"""
+        self.log_callback("Running sequences after imaging")
         self.run_sequences(self.sequences.iloc[self.sequences_after_imaging])
 
     def run_sequences(self, sequences: pd.DataFrame):
         """Start running the sequences in a separate thread"""
-        self.worker = ExperimentWorker(self.experiment_ops, sequences, self.config, self.callbacks)
+        self.worker = ExperimentWorker(self.experiment_ops, sequences, self.config, self.worker_callbacks)
         self.thread = threading.Thread(target=self.worker.run)
         self.thread.start()
 
@@ -309,6 +310,7 @@ class Fluidics:
         # Find Flow Reagent sequences with port <= 24
         mask = (self.sequences["sequence_name"] == "Flow Probe") & (self.sequences["fluidic_port"] <= 24)
 
+        self.log_callback(f"Running fluidics round for Probe Port {self.port_list[index]}")
         self.sequences.loc[mask, "fluidic_port"] = self.port_list[index]
 
     def set_rounds(self, rounds: list):

@@ -4851,6 +4851,7 @@ class FluidicsWidget(QWidget):
 
         # Initialize data structures
         self.fluidics = fluidics
+        self.fluidics.log_callback = self.log_message_signal.emit
         self.set_sequence_callbacks()
 
         # Set up the UI
@@ -5015,7 +5016,7 @@ class FluidicsWidget(QWidget):
             "on_estimate": self.on_estimate,
             "update_progress": self.update_progress,
         }
-        self.fluidics.callbacks = callbacks
+        self.fluidics.worker_callbacks = callbacks
 
     def set_manual_control_callbacks(self):
         # TODO: use better logging description
@@ -5025,7 +5026,7 @@ class FluidicsWidget(QWidget):
             "on_estimate": None,
             "update_progress": None,
         }
-        self.fluidics.callbacks = callbacks
+        self.fluidics.worker_callbacks = callbacks
 
     def load_sequences(self):
         """Open file dialog to load sequences from CSV"""
