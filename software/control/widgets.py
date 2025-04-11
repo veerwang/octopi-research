@@ -4405,6 +4405,7 @@ class MultiPointWithFluidicsWidget(QFrame):
         self.base_path_is_set = False
         self.acquisition_start_time = None
         self.eta_seconds = 0
+        self.nRound = 0
         self.is_current_acquisition_widget = False
         self.parent = self.multipointController.parent
 
@@ -4464,7 +4465,7 @@ class MultiPointWithFluidicsWidget(QFrame):
         self.btn_startAcquisition.setEnabled(False)
 
         # Progress indicators
-        self.progress_label = QLabel("Region -/-")
+        self.progress_label = QLabel("Round -/-")
         self.progress_bar = QProgressBar()
         self.eta_label = QLabel("--:--:--")
         self.progress_bar.setVisible(False)
@@ -4685,14 +4686,20 @@ class MultiPointWithFluidicsWidget(QFrame):
         self.btn_startAcquisition.setEnabled(True)
 
     def update_region_progress(self, current_fov, num_fovs):
-        """Update progress bar and ETA for current region"""
         self.progress_bar.setMaximum(num_fovs)
         self.progress_bar.setValue(current_fov)
 
         if self.acquisition_start_time is not None and current_fov > 0:
             elapsed_time = time.time() - self.acquisition_start_time
-            processed_fovs = current_fov
-            total_fovs = num_fovs
+            Nt = self.nRound
+
+            # Calculate total processed FOVs and total FOVs
+            processed_fovs = (
+                (self.current_region - 1) * num_fovs
+                + current_fov
+                + self.current_time_point * self.num_regions * num_fovs
+            )
+            total_fovs = self.num_regions * num_fovs * Nt
             remaining_fovs = total_fovs - processed_fovs
 
             # Calculate ETA
@@ -4704,12 +4711,25 @@ class MultiPointWithFluidicsWidget(QFrame):
             self.eta_timer.start(1000)  # Update every 1000 ms (1 second)
 
     def update_acquisition_progress(self, current_region, num_regions, current_time_point):
-        """Update progress display for current acquisition"""
-        if current_region == 1:  # First region
-            self.acquisition_start_time = time.time()
+        self.current_region = current_region
+        self.current_time_point = current_time_point
 
-        # Set the progress label text
-        self.progress_label.setText(f"Region {current_region}/{num_regions}")
+        if self.current_region == 1 and self.current_time_point == 0:  # First region
+            self.acquisition_start_time = time.time()
+            self.num_regions = num_regions
+
+        progress_parts = []
+        # Update timepoint progress if there are multiple timepoints and the timepoint has changed
+        if self.nRound > 1:
+            progress_parts.append(f"Round {current_time_point + 1}/{self.nRound}")
+
+        # Update region progress if there are multiple regions
+        if num_regions > 1:
+            progress_parts.append(f"Region {current_region}/{num_regions}")
+
+        # Set the progress label text, ensuring it's not empty
+        progress_text = "  ".join(progress_parts)
+        self.progress_label.setText(progress_text if progress_text else "Progress")
         self.progress_bar.setValue(0)
 
     def update_eta_display(self):
@@ -4734,7 +4754,7 @@ class MultiPointWithFluidicsWidget(QFrame):
         self.eta_label.setVisible(show)
         if show:
             self.progress_bar.setValue(0)
-            self.progress_label.setText("Region 0/0")
+            self.progress_label.setText("Round 0/0")
             self.eta_label.setText("--:--")
             self.acquisition_start_time = None
         else:
@@ -4829,6 +4849,8 @@ class MultiPointWithFluidicsWidget(QFrame):
                     if num < 1 or num > 24:
                         raise ValueError(f"Invalid number {num}: Must be between 1 and 24")
                     rounds.append(num)
+
+            self.nRound = len(rounds)
 
             return rounds
 
