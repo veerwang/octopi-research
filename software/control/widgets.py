@@ -393,6 +393,7 @@ class LaserAutofocusSettingWidget(QWidget):
         exposure_layout = QHBoxLayout()
         exposure_layout.addWidget(QLabel("Focus Camera Exposure (ms):"))
         self.exposure_spinbox = QDoubleSpinBox()
+        self.exposure_spinbox.setSingleStep(0.1)
         self.exposure_spinbox.setRange(
             self.liveController.camera.EXPOSURE_TIME_MS_MIN, self.liveController.camera.EXPOSURE_TIME_MS_MAX
         )
@@ -438,7 +439,7 @@ class LaserAutofocusSettingWidget(QWidget):
         self._add_spinbox(
             settings_layout, "Displacement Success Window (μm):", "displacement_success_window_um", 0.1, 10.0, 2
         )
-        self._add_spinbox(settings_layout, "Correlation Threshold:", "correlation_threshold", 0.1, 1.0, 2)
+        self._add_spinbox(settings_layout, "Correlation Threshold:", "correlation_threshold", 0.1, 1.0, 2, 0.1)
         self._add_spinbox(settings_layout, "Laser AF Range (μm):", "laser_af_range", 1, 1000, 1)
         self.update_threshold_button = QPushButton("Apply without Re-initialization")
         settings_layout.addWidget(self.update_threshold_button)
@@ -454,7 +455,7 @@ class LaserAutofocusSettingWidget(QWidget):
         self._add_spinbox(spot_detection_layout, "X Window (pixels):", "x_window", 1, 500, 0)
         self._add_spinbox(spot_detection_layout, "Min Peak Width:", "min_peak_width", 1, 100, 1)
         self._add_spinbox(spot_detection_layout, "Min Peak Distance:", "min_peak_distance", 1, 100, 1)
-        self._add_spinbox(spot_detection_layout, "Min Peak Prominence:", "min_peak_prominence", 0.01, 1.0, 2)
+        self._add_spinbox(spot_detection_layout, "Min Peak Prominence:", "min_peak_prominence", 0.01, 1.0, 2, 0.1)
         self._add_spinbox(spot_detection_layout, "Spot Spacing (pixels):", "spot_spacing", 1, 1000, 1)
 
         # Spot detection mode combo box
@@ -514,7 +515,7 @@ class LaserAutofocusSettingWidget(QWidget):
         self.characterization_checkbox.toggled.connect(self.toggle_characterization_mode)
 
     def _add_spinbox(
-        self, layout, label: str, property_name: str, min_val: float, max_val: float, decimals: int
+        self, layout, label: str, property_name: str, min_val: float, max_val: float, decimals: int, step: float = 1
     ) -> None:
         """Helper method to add a labeled spinbox to the layout."""
         box_layout = QHBoxLayout()
@@ -523,6 +524,7 @@ class LaserAutofocusSettingWidget(QWidget):
         spinbox = QDoubleSpinBox()
         spinbox.setRange(min_val, max_val)
         spinbox.setDecimals(decimals)
+        spinbox.setSingleStep(step)
         # Get initial value from laser_af_properties
         current_value = getattr(self.laserAutofocusController.laser_af_properties, property_name)
         spinbox.setValue(current_value)
