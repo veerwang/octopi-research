@@ -75,6 +75,13 @@ class AbstractCephlaMicroSerial(abc.ABC):
         pass
 
     @abstractmethod
+    def reset_input_buffer(self) -> bool:
+        """
+        Reset the input buffer of the serial port.
+        """
+        pass
+
+    @abstractmethod
     def write(self, data: bytearray, reconnect_tries: int = 0) -> int:
         """
         This must raise an IOError or OSError on any io issues, or ValueError if data is not sendable.
@@ -231,6 +238,12 @@ class SimSerial(AbstractCephlaMicroSerial):
             self._closed = True
             self._update_internal_state()
 
+    def reset_input_buffer(self) -> bool:
+        with self._update_lock:
+            self.response_buffer.clear()
+            self._in_waiting = 0
+            return True
+
     def write(self, data: bytearray, reconnect_tries: int = 0) -> int:
         # Reconnect takes the lock and checks closed too, so let it handle locking for reconnect
         if self._closed:
@@ -309,12 +322,12 @@ class MicrocontrollerSerial(AbstractCephlaMicroSerial):
     def close(self) -> None:
         return self._serial.close()
 
-    def reset_input_buffer(self) -> None:
+    def reset_input_buffer(self) -> bool:
         try:
             self._serial.reset_input_buffer()
             return True
         except Exception as e:
-            self.log.error(f"Failed to clear input buffer: {e}")
+            self._log.error(f"Failed to clear input buffer: {e}")
             return False
 
     def write(self, data: bytearray, reconnect_tries: int = 0) -> int:
