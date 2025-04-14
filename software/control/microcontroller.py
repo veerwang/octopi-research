@@ -227,8 +227,8 @@ class SimSerial(AbstractCephlaMicroSerial):
 
         self._update_internal_state()
 
-    def _update_internal_state(self):
-        if self._closed:
+    def _update_internal_state(self, clear_buffer: bool = False):
+        if clear_buffer:
             self.response_buffer.clear()
 
         self._in_waiting = len(self.response_buffer)
@@ -236,12 +236,11 @@ class SimSerial(AbstractCephlaMicroSerial):
     def close(self):
         with self._update_lock:
             self._closed = True
-            self._update_internal_state()
+            self._update_internal_state(clear_buffer=True)
 
     def reset_input_buffer(self) -> bool:
         with self._update_lock:
-            self.response_buffer.clear()
-            self._in_waiting = 0
+            self._update_internal_state(clear_buffer=True)
             return True
 
     def write(self, data: bytearray, reconnect_tries: int = 0) -> int:
@@ -287,7 +286,7 @@ class SimSerial(AbstractCephlaMicroSerial):
 
             if self._closed:
                 self._log.warning("Reconnect required, succeeded.")
-                self._update_internal_state()
+                self._update_internal_state(clear_buffer=True)
                 self._closed = False
 
         return True
@@ -327,7 +326,7 @@ class MicrocontrollerSerial(AbstractCephlaMicroSerial):
             self._serial.reset_input_buffer()
             return True
         except Exception as e:
-            self._log.error(f"Failed to clear input buffer: {e}")
+            self._log.exception(f"Failed to clear input buffer: {e}")
             return False
 
     def write(self, data: bytearray, reconnect_tries: int = 0) -> int:
