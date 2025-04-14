@@ -2024,7 +2024,7 @@ class MultiPointWorker(QObject):
 
     def move_z_back_after_stack(self):
         if self.use_piezo:
-            self.z_piezo_um = self.z_piezo_um - self.deltaZ * (self.NZ - 1)
+            self.z_piezo_um = self.z_piezo_um - self.deltaZ * 1000 * (self.NZ - 1)
             self.piezo.move_to(self.z_piezo_um)
             if (
                 self.liveController.trigger_mode == TriggerMode.SOFTWARE
