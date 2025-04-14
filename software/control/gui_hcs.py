@@ -151,6 +151,7 @@ class MovementUpdater(QObject):
 
 class HighContentScreeningGui(QMainWindow):
     fps_software_trigger = 100
+    LASER_BASED_FOCUS_TAB_NAME = "Laser-Based Focus"
 
     def __init__(self, is_simulation=False, live_only_mode=False, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -835,7 +836,7 @@ class HighContentScreeningGui(QMainWindow):
                 laserfocus_dockArea.addDock(dock_waveform, "bottom", relativeTo=dock_laserfocus_liveController)
                 laserfocus_dockArea.addDock(dock_displayMeasurement, "bottom", relativeTo=dock_waveform)
 
-            self.imageDisplayTabs.addTab(laserfocus_dockArea, "Laser-Based Focus")
+            self.imageDisplayTabs.addTab(laserfocus_dockArea, self.LASER_BASED_FOCUS_TAB_NAME)
 
         if RUN_FLUIDICS:
             self.imageDisplayTabs.addTab(self.fluidicsWidget, "Fluidics")
@@ -1321,8 +1322,8 @@ class HighContentScreeningGui(QMainWindow):
     def toggleNapariTabs(self):
         # Enable/disable Napari tabs based on performance mode
         for i in range(1, self.imageDisplayTabs.count()):
-            widget = self.imageDisplayTabs.widget(i)
-            self.imageDisplayTabs.setTabEnabled(i, not self.performance_mode)
+            if self.imageDisplayTabs.tabText(i) != self.LASER_BASED_FOCUS_TAB_NAME:
+                self.imageDisplayTabs.setTabEnabled(i, not self.performance_mode)
 
         if self.performance_mode:
             # Switch to the NapariLiveWidget tab if it exists
@@ -1391,7 +1392,7 @@ class HighContentScreeningGui(QMainWindow):
 
         # Stop focus camera live if not on laser focus tab
         if SUPPORT_LASER_AUTOFOCUS:
-            is_laser_focus_tab = self.imageDisplayTabs.tabText(index) == "Laser-Based Focus"
+            is_laser_focus_tab = self.imageDisplayTabs.tabText(index) == self.LASER_BASED_FOCUS_TAB_NAME
 
             if hasattr(self, "dock_wellSelection"):
                 self.dock_wellSelection.setVisible(not is_laser_focus_tab)
