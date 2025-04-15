@@ -255,9 +255,9 @@ class Camera(object):
     def set_pixel_format(self, pixel_format: str):
         """
         port_speed_gain_table:
-        {'Sensitivity': {'port_value': 0, 'Speed_0': {'speed_index': 0, 'pixel_time': 10, 'bit_depth': 12, 'gain_range': [1], 'Standard': {'gain_index': 1}}}, 
-        'Speed': {'port_value': 1, 'Speed_0': {'speed_index': 0, 'pixel_time': 5, 'bit_depth': 8, 'gain_range': [1, 2], 'Sensitivity': {'gain_index': 1}, 'Full Well': {'gain_index': 2}}}, 
-        'Dynamic Range': {'port_value': 2, 'Speed_0': {'speed_index': 0, 'pixel_time': 10, 'bit_depth': 16, 'gain_range': [1], 'Standard': {'gain_index': 1}}}, 
+        {'Sensitivity': {'port_value': 0, 'Speed_0': {'speed_index': 0, 'pixel_time': 10, 'bit_depth': 12, 'gain_range': [1], 'Standard': {'gain_index': 1}}},
+        'Speed': {'port_value': 1, 'Speed_0': {'speed_index': 0, 'pixel_time': 5, 'bit_depth': 8, 'gain_range': [1, 2], 'Sensitivity': {'gain_index': 1}, 'Full Well': {'gain_index': 2}}},
+        'Dynamic Range': {'port_value': 2, 'Speed_0': {'speed_index': 0, 'pixel_time': 10, 'bit_depth': 16, 'gain_range': [1], 'Standard': {'gain_index': 1}}},
         'Sub-Electron': {'port_value': 3, 'Speed_0': {'speed_index': 0, 'pixel_time': 10, 'bit_depth': 16, 'gain_range': [1], 'Standard': {'gain_index': 1}}}}
         """
         try:
