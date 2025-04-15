@@ -431,9 +431,6 @@ class LaserAutofocusSettingWidget(QWidget):
         settings_group.setFrameStyle(QFrame.Panel | QFrame.Raised)
         settings_layout = QVBoxLayout()
 
-        # Create spinboxes for numerical parameters
-        self.spinboxes = {}
-
         # Add threshold property spinboxes
         self._add_spinbox(settings_layout, "Laser AF Averaging N:", "laser_af_averaging_n", 1, 100, 0)
         self._add_spinbox(
@@ -580,6 +577,7 @@ class LaserAutofocusSettingWidget(QWidget):
         self.update_calibration_label()
 
     def apply_and_initialize(self):
+        print(self.spinboxes.keys())
         updates = {
             "laser_af_averaging_n": int(self.spinboxes["laser_af_averaging_n"].value()),
             "displacement_success_window_um": self.spinboxes["displacement_success_window_um"].value(),
