@@ -209,6 +209,7 @@ class Microscope(QObject):
             self.channelConfigurationManager,
             scanCoordinates=None,
             parent=self,
+            headless=True,
         )
 
     def setup_hardware(self):
