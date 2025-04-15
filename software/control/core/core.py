@@ -1516,7 +1516,7 @@ class MultiPointWorker(QObject):
             "z (um)": [pos.z_mm * 1000],
             "time": [datetime.now().strftime("%Y-%m-%d_%H-%M-%S.%f")],
         }
-        piezo_data = {"z_piezo (um)": [self.z_piezo_um - OBJECTIVE_PIEZO_HOME_UM]} if self.use_piezo else {}
+        piezo_data = {"z_piezo (um)": [self.z_piezo_um]} if self.use_piezo else {}
 
         new_row = pd.DataFrame({"region": [region_id], "fov": [fov], **base_data, **piezo_data})
 
