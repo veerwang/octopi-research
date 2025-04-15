@@ -14,8 +14,48 @@ import squid.logging
 import squid.config
 import squid.stage.utils
 
+
+log = squid.logging.get_logger(__name__)
+
 if CAMERA_TYPE == "Toupcam":
-    import control.camera_toupcam as camera
+    try:
+        import control.camera_toupcam as camera
+    except:
+        log.warning("Problem importing Toupcam, defaulting to default camera")
+        import control.camera as camera
+elif CAMERA_TYPE == "FLIR":
+    try:
+        import control.camera_flir as camera
+    except:
+        log.warning("Problem importing FLIR camera, defaulting to default camera")
+        import control.camera as camera
+elif CAMERA_TYPE == "Hamamatsu":
+    try:
+        import control.camera_hamamatsu as camera
+    except:
+        log.warning("Problem importing Hamamatsu camera, defaulting to default camera")
+        import control.camera as camera
+elif CAMERA_TYPE == "iDS":
+    try:
+        import control.camera_ids as camera
+    except:
+        log.warning("Problem importing iDS camera, defaulting to default camera")
+        import control.camera as camera
+elif CAMERA_TYPE == "Tucsen":
+    try:
+        import control.camera_tucsen as camera
+    except:
+        log.warning("Problem importing Tucsen camera, defaulting to default camera")
+        import control.camera as camera
+elif CAMERA_TYPE == "Kinetix":
+    try:
+        import control.camera_kinetix as camera
+    except:
+        log.warning("Problem importing Kinetix camera, defaulting to default camera")
+        import control.camera as camera
+else:
+    import control.camera as camera
+
 if FOCUS_CAMERA_TYPE == "Toupcam":
     try:
         import control.camera_toupcam as camera_fc
