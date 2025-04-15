@@ -577,7 +577,6 @@ class LaserAutofocusSettingWidget(QWidget):
         self.update_calibration_label()
 
     def apply_and_initialize(self):
-        print(self.spinboxes.keys())
         updates = {
             "laser_af_averaging_n": int(self.spinboxes["laser_af_averaging_n"].value()),
             "displacement_success_window_um": self.spinboxes["displacement_success_window_um"].value(),
