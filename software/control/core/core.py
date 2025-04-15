@@ -1358,6 +1358,7 @@ class MultiPointWorker(QObject):
         self.z_range = self.multiPointController.z_range
         self.fluidics = self.multiPointController.fluidics
 
+        self.headless = self.multiPointController.headless
         self.microscope = self.multiPointController.parent
         self.performance_mode = self.microscope and self.microscope.performance_mode
 
@@ -1459,7 +1460,7 @@ class MultiPointWorker(QObject):
             self._log.error(f"Operation timed out during acquisition, aborting acquisition!")
             self._log.error(te)
             self.multiPointController.request_abort_aquisition()
-        if QApplication.instance() is not None:
+        if not self.headless:
             self.finished.emit()
 
     def wait_till_operation_is_completed(self):
@@ -1614,7 +1615,7 @@ class MultiPointWorker(QObject):
             print(f"Acquiring image: ID={file_ID}, Metadata={metadata}")
 
             # laser af characterization mode
-            if self.do_reflection_af and self.microscope.laserAutofocusController.characterization_mode:
+            if self.microscope.laserAutofocusController.characterization_mode:
                 image = self.microscope.laserAutofocusController.get_image()
                 saving_path = os.path.join(current_path, file_ID + "_laser af camera" + ".bmp")
                 iio.imwrite(saving_path, image)
@@ -1832,7 +1833,7 @@ class MultiPointWorker(QObject):
         self.handle_dpc_generation(current_round_images)
         self.handle_rgb_generation(current_round_images, file_ID, current_path, k)
 
-        if QApplication.instance() is not None:
+        if not self.headless:
             QApplication.processEvents()
 
     def acquire_rgb_image(self, config, file_ID, current_path, current_round_images, k):
@@ -2143,6 +2144,7 @@ class MultiPointController(QObject):
         scanCoordinates=None,
         fluidics=None,
         parent=None,
+        headless=False,
     ):
         QObject.__init__(self)
         self._log = squid.logging.get_logger(self.__class__.__name__)
@@ -2197,6 +2199,7 @@ class MultiPointController(QObject):
         self.use_fluidics = False
         self.fluidics = fluidics
 
+        self.headless = headless
         try:
             if self.parent is not None:
                 self.old_images_per_page = self.parent.dataHandler.n_images_per_page
@@ -2468,25 +2471,17 @@ class MultiPointController(QObject):
         self.multiPointWorker = MultiPointWorker(self)
         self.multiPointWorker.use_piezo = self.use_piezo
 
-        if QApplication.instance() is not None:
+        if not self.headless:
             # create a QThread object
             self.thread = QThread()
-            # create a worker object
-            if DO_FLUORESCENCE_RTP:
-                self.processingHandler.start_processing()
-                self.processingHandler.start_uploading()
             # move the worker to the thread
             self.multiPointWorker.moveToThread(self.thread)
             # connect signals and slots
             self.thread.started.connect(self.multiPointWorker.run)
             self.multiPointWorker.signal_detection_stats.connect(self.slot_detection_stats)
             self.multiPointWorker.finished.connect(self._on_acquisition_completed)
-            if DO_FLUORESCENCE_RTP:
-                self.processingHandler.finished.connect(self.multiPointWorker.deleteLater)
-                self.processingHandler.finished.connect(self.thread.quit)
-            else:
-                self.multiPointWorker.finished.connect(self.multiPointWorker.deleteLater)
-                self.multiPointWorker.finished.connect(self.thread.quit)
+            self.multiPointWorker.finished.connect(self.multiPointWorker.deleteLater)
+            self.multiPointWorker.finished.connect(self.thread.quit)
             self.multiPointWorker.image_to_display.connect(self.slot_image_to_display)
             self.multiPointWorker.image_to_display_multi.connect(self.slot_image_to_display_multi)
             self.multiPointWorker.spectrum_to_display.connect(self.slot_spectrum_to_display)
@@ -2495,7 +2490,6 @@ class MultiPointController(QObject):
             )
             self.multiPointWorker.signal_register_current_fov.connect(self.slot_register_current_fov)
             self.multiPointWorker.napari_layers_init.connect(self.slot_napari_layers_init)
-            self.multiPointWorker.napari_rtp_layers_update.connect(self.slot_napari_rtp_layers_update)
             self.multiPointWorker.napari_layers_update.connect(self.slot_napari_layers_update)
             self.multiPointWorker.signal_z_piezo_um.connect(self.slot_z_piezo_um)
             self.multiPointWorker.signal_acquisition_progress.connect(self.slot_acquisition_progress)
@@ -2546,7 +2540,7 @@ class MultiPointController(QObject):
         if not self.abort_acqusition_requested:
             self.signal_stitcher.emit(os.path.join(self.base_path, self.experiment_ID))
 
-        if QApplication.instance() is not None:
+        if not self.headless:
             QApplication.processEvents()
 
     def request_abort_aquisition(self):

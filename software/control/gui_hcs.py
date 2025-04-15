@@ -1294,19 +1294,7 @@ class HighContentScreeningGui(QMainWindow):
         elif not self.live_only_mode:
             configs = [config.name for config in selected_configurations]
             print(configs)
-            if (
-                DO_FLUORESCENCE_RTP
-                and "BF LED matrix left half" in configs
-                and "BF LED matrix right half" in configs
-                and "Fluorescence 405 nm Ex" in configs
-            ):
-                self.recordTabWidget.setCurrentWidget(self.statsDisplayWidget)
-                if USE_NAPARI_FOR_MULTIPOINT:
-                    self.imageDisplayTabs.setCurrentWidget(self.napariRTPWidget)
-                else:
-                    self.imageDisplayTabs.setCurrentWidget(self.imageArrayDisplayWindow.widget)
-
-            elif USE_NAPARI_FOR_MOSAIC_DISPLAY and Nz == 1:
+            if USE_NAPARI_FOR_MOSAIC_DISPLAY and Nz == 1:
                 self.imageDisplayTabs.setCurrentWidget(self.napariMosaicDisplayWidget)
 
             elif USE_NAPARI_FOR_MULTIPOINT:
