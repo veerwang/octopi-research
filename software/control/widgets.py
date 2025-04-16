@@ -7810,11 +7810,6 @@ class LaserAutofocusControlWidget(QFrame):
         self.setFrameStyle(QFrame.Panel | QFrame.Raised)
 
     def add_components(self):
-        self.btn_initialize = QPushButton("Initialize")
-        self.btn_initialize.setCheckable(False)
-        self.btn_initialize.setChecked(False)
-        self.btn_initialize.setDefault(False)
-
         self.btn_set_reference = QPushButton(" Set Reference ")
         self.btn_set_reference.setCheckable(False)
         self.btn_set_reference.setChecked(False)
@@ -7849,8 +7844,7 @@ class LaserAutofocusControlWidget(QFrame):
 
         self.grid = QGridLayout()
 
-        self.grid.addWidget(self.btn_initialize, 0, 0, 1, 2)
-        self.grid.addWidget(self.btn_set_reference, 0, 2, 1, 2)
+        self.grid.addWidget(self.btn_set_reference, 0, 0, 1, 4)
 
         self.grid.addWidget(QLabel("Displacement (um)"), 1, 0)
         self.grid.addWidget(self.label_displacement, 1, 1)
@@ -7862,21 +7856,12 @@ class LaserAutofocusControlWidget(QFrame):
         self.setLayout(self.grid)
 
         # make connections
-        self.btn_initialize.clicked.connect(self.init_controller)
         self.btn_set_reference.clicked.connect(self.on_set_reference_clicked)
         self.btn_measure_displacement.clicked.connect(self.laserAutofocusController.measure_displacement)
         self.btn_move_to_target.clicked.connect(self.move_to_target)
         self.laserAutofocusController.signal_displacement_um.connect(self.label_displacement.setNum)
 
-    def init_controller(self):
-        self.laserAutofocusController.initialize_auto()
-        if self.laserAutofocusController.is_initialized:
-            self.btn_set_reference.setEnabled(True)
-            self.btn_measure_displacement.setEnabled(False)
-            self.btn_move_to_target.setEnabled(False)
-
     def update_init_state(self):
-        self.btn_initialize.setChecked(self.laserAutofocusController.is_initialized)
         self.btn_set_reference.setEnabled(self.laserAutofocusController.is_initialized)
         self.btn_measure_displacement.setEnabled(self.laserAutofocusController.laser_af_properties.has_reference)
         self.btn_move_to_target.setEnabled(self.laserAutofocusController.laser_af_properties.has_reference)

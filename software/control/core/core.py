@@ -1504,18 +1504,6 @@ class MultiPointWorker(QObject):
 
         self.z_pos = self.stage.get_pos().z_mm  # zpos at the beginning of the scan
 
-        # reset piezo to home position
-        if self.use_piezo:
-            self.z_piezo_um = OBJECTIVE_PIEZO_HOME_UM
-            self.piezo.move_to(self.z_piezo_um)
-            # TODO(imo): Not sure the wait comment below is actually correct?  Should this wait just be in the set_piezo_um helper?
-            if (
-                self.liveController.trigger_mode == TriggerMode.SOFTWARE
-            ):  # for hardware trigger, delay is in waiting for the last row to start exposure
-                time.sleep(MULTIPOINT_PIEZO_DELAY_MS / 1000)
-            if MULTIPOINT_PIEZO_UPDATE_DISPLAY:
-                self.signal_z_piezo_um.emit(self.z_piezo_um)
-
     def initialize_coordinates_dataframe(self):
         base_columns = ["z_level", "x (mm)", "y (mm)", "z (um)", "time"]
         piezo_column = ["z_piezo (um)"] if self.use_piezo else []
@@ -1530,7 +1518,7 @@ class MultiPointWorker(QObject):
             "z (um)": [pos.z_mm * 1000],
             "time": [datetime.now().strftime("%Y-%m-%d_%H-%M-%S.%f")],
         }
-        piezo_data = {"z_piezo (um)": [self.z_piezo_um - OBJECTIVE_PIEZO_HOME_UM]} if self.use_piezo else {}
+        piezo_data = {"z_piezo (um)": [self.z_piezo_um]} if self.use_piezo else {}
 
         new_row = pd.DataFrame({"region": [region_id], "fov": [fov], **base_data, **piezo_data})
 
@@ -1604,6 +1592,7 @@ class MultiPointWorker(QObject):
         pos = self.stage.get_pos()
         x_mm = pos.x_mm
         y_mm = pos.y_mm
+        self.z_piezo_um = self.piezo.position
 
         for z_level in range(self.NZ):
             file_ID = f"{region_id}_{fov:0{FILE_ID_PADDING}}_{z_level:0{FILE_ID_PADDING}}"
@@ -1622,7 +1611,8 @@ class MultiPointWorker(QObject):
             # iterate through selected modes
             for config_idx, config in enumerate(self.selected_configurations):
 
-                self.handle_z_offset(config, True)
+                if self.NZ == 1:  # TODO: handle z offset for z stack
+                    self.handle_z_offset(config, True)
 
                 # acquire image
                 if "USB Spectrometer" not in config.name and "RGB" not in config.name:
@@ -1632,7 +1622,8 @@ class MultiPointWorker(QObject):
                 else:
                     self.acquire_spectrometer_data(config, file_ID, current_path, z_level)
 
-                self.handle_z_offset(config, False)
+                if self.NZ == 1:  # TODO: handle z offset for z stack
+                    self.handle_z_offset(config, False)
 
                 current_image = (
                     fov * self.NZ * len(self.selected_configurations)
@@ -1641,10 +1632,6 @@ class MultiPointWorker(QObject):
                     + 1
                 )
                 self.signal_region_progress.emit(current_image, self.total_scans)
-
-            # real time processing
-            if self.multiPointController.do_fluorescence_rtp:
-                self.run_real_time_processing(current_round_images, z_level)
 
             # updates coordinates df
             self.update_coordinates_dataframe(region_id, z_level, fov)
@@ -2056,7 +2043,7 @@ class MultiPointWorker(QObject):
 
     def move_z_back_after_stack(self):
         if self.use_piezo:
-            self.z_piezo_um = OBJECTIVE_PIEZO_HOME_UM
+            self.z_piezo_um = self.z_piezo_um - self.deltaZ * 1000 * (self.NZ - 1)
             self.piezo.move_to(self.z_piezo_um)
             if (
                 self.liveController.trigger_mode == TriggerMode.SOFTWARE
