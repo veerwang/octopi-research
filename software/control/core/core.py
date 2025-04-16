@@ -4574,23 +4574,31 @@ class FocusMap:
             # For add_margin we are using one more row and col, taking the middle points on the grid so that the
             # focus points are not located at the edges of the scaning grid.
             # TODO: set a value for margin from user input
+            # Calculate x and y positions
             if add_margin:
-                x_step = (x_max - x_min) / cols if cols > 1 else 0
-                y_step = (y_max - y_min) / rows if rows > 1 else 0
+                # With margin, divide the area into equal cells and use cell centers
+                x_step = (x_max - x_min) / cols
+                y_step = (y_max - y_min) / rows
+
+                x_positions = [x_min + (j + 0.5) * x_step for j in range(cols)]
+                y_positions = [y_min + (i + 0.5) * y_step for i in range(rows)]
             else:
-                x_step = (x_max - x_min) / (cols - 1) if cols > 1 else 0
-                y_step = (y_max - y_min) / (rows - 1) if rows > 1 else 0
+                # Without margin, handle special cases for rows=1 or cols=1
+                if rows == 1:
+                    y_positions = [y_min + (y_max - y_min) / 2]  # Center point
+                else:
+                    y_step = (y_max - y_min) / (rows - 1)
+                    y_positions = [y_min + i * y_step for i in range(rows)]
 
-            # Generate grid points
-            for i in range(rows):
-                for j in range(cols):
-                    if add_margin:
-                        x = x_min + x_step / 2 + j * x_step
-                        y = y_min + y_step / 2 + i * y_step
-                    else:
-                        x = x_min + j * x_step
-                        y = y_min + i * y_step
+                if cols == 1:
+                    x_positions = [x_min + (x_max - x_min) / 2]  # Center point
+                else:
+                    x_step = (x_max - x_min) / (cols - 1)
+                    x_positions = [x_min + j * x_step for j in range(cols)]
 
+            # Generate grid points by combining x and y positions
+            for y in y_positions:
+                for x in x_positions:
                     # Check if point is within region bounds
                     if scanCoordinates.validate_coordinates(x, y) and scanCoordinates.region_contains_coordinate(
                         region_id, x, y
