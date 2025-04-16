@@ -181,7 +181,7 @@ class HighContentScreeningGui(QMainWindow):
 
         self.makeConnections()
 
-        self.microscope = control.microscope.Microscope(self.stage, self, is_simulation=is_simulation)
+        self.microscope = control.microscope.Microscope(self, is_simulation=is_simulation)
 
         # TODO(imo): Why is moving to the cached position after boot hidden behind homing?
         if HOMING_ENABLED_X and HOMING_ENABLED_Y and HOMING_ENABLED_Z:
@@ -265,12 +265,6 @@ class HighContentScreeningGui(QMainWindow):
         self.autofocusController = core.AutoFocusController(
             self.camera, self.stage, self.liveController, self.microcontroller
         )
-        self.slidePositionController = core.SlidePositionController(
-            self.stage, self.liveController, is_for_wellplate=True
-        )
-        self.autofocusController = core.AutoFocusController(
-            self.camera, self.stage, self.liveController, self.microcontroller
-        )
         self.imageSaver = core.ImageSaver()
         self.imageDisplay = core.ImageDisplay()
         if ENABLE_TRACKING:
@@ -310,6 +304,7 @@ class HighContentScreeningGui(QMainWindow):
             self.liveController_focus_camera = core.LiveController(
                 self.camera_focus,
                 self.microcontroller,
+                None,
                 self,
                 control_illumination=False,
                 for_displacement_measurement=True,
@@ -1021,6 +1016,7 @@ class HighContentScreeningGui(QMainWindow):
         self.multipointController.signal_current_configuration.connect(self.liveControlWidget.set_microscope_mode)
         if self.piezoWidget:
             self.multipointController.signal_z_piezo_um.connect(self.piezoWidget.update_displacement_um_display)
+        self.multipointController.signal_set_display_tabs.connect(self.setAcquisitionDisplayTabs)
 
         self.recordTabWidget.currentChanged.connect(self.onTabChanged)
         if not self.live_only_mode:
@@ -1345,6 +1341,20 @@ class HighContentScreeningGui(QMainWindow):
         self.updateNapariConnections()
         self.toggleNapariTabs()
         print(f"Performance mode {'enabled' if self.performance_mode else 'disabled'}")
+
+    def setAcquisitionDisplayTabs(self, selected_configurations, Nz):
+        if self.performance_mode:
+            self.imageDisplayTabs.setCurrentIndex(0)
+        elif not self.live_only_mode:
+            configs = [config.name for config in selected_configurations]
+            print(configs)
+            if USE_NAPARI_FOR_MOSAIC_DISPLAY and Nz == 1:
+                self.imageDisplayTabs.setCurrentWidget(self.napariMosaicDisplayWidget)
+
+            elif USE_NAPARI_FOR_MULTIPOINT:
+                self.imageDisplayTabs.setCurrentWidget(self.napariMultiChannelWidget)
+            else:
+                self.imageDisplayTabs.setCurrentIndex(0)
 
     def openLedMatrixSettings(self):
         if SUPPORT_SCIMICROSCOPY_LED_ARRAY:

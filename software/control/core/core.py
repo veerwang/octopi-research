@@ -1356,6 +1356,7 @@ class MultiPointWorker(QObject):
         self.z_range = self.multiPointController.z_range
         self.fluidics = self.multiPointController.fluidics
 
+        self.headless = self.multiPointController.headless
         self.microscope = self.multiPointController.parent
         self.performance_mode = self.microscope and self.microscope.performance_mode
 
@@ -1457,7 +1458,8 @@ class MultiPointWorker(QObject):
             self._log.error(f"Operation timed out during acquisition, aborting acquisition!")
             self._log.error(te)
             self.multiPointController.request_abort_aquisition()
-        self.finished.emit()
+        if not self.headless:
+            self.finished.emit()
 
     def wait_till_operation_is_completed(self):
         while self.microcontroller.is_busy():
@@ -1770,8 +1772,16 @@ class MultiPointWorker(QObject):
 
     def acquire_camera_image(self, config, file_ID, current_path, current_round_images, k):
         # update the current configuration
-        self.signal_current_configuration.emit(config)
-        self.wait_till_operation_is_completed()
+        if not self.performance_mode:
+            self.signal_current_configuration.emit(config)
+            self.wait_till_operation_is_completed()
+        else:
+            # set channel mode directly if in performance mode
+            self.liveController.set_microscope_mode(config)
+            self.liveController.camera.set_exposure_time(config.exposure_time)
+            self.liveController.camera.set_analog_gain(config.analog_gain)
+            self.liveController.set_illumination(config.illumination_source, config.illumination_intensity)
+            self.wait_till_operation_is_completed()
 
         # trigger acquisition (including turning on the illumination) and read frame
         if self.liveController.trigger_mode == TriggerMode.SOFTWARE:
@@ -1821,7 +1831,8 @@ class MultiPointWorker(QObject):
         self.handle_dpc_generation(current_round_images)
         self.handle_rgb_generation(current_round_images, file_ID, current_path, k)
 
-        QApplication.processEvents()
+        if not self.headless:
+            QApplication.processEvents()
 
     def acquire_rgb_image(self, config, file_ID, current_path, current_round_images, k):
         # go through the channels
@@ -1833,8 +1844,16 @@ class MultiPointWorker(QObject):
         ):
             if config_.name in rgb_channels:
                 # update the current configuration
-                self.signal_current_configuration.emit(config_)
-                self.wait_till_operation_is_completed()
+                if not self.performance_mode:
+                    self.signal_current_configuration.emit(config)
+                    self.wait_till_operation_is_completed()
+                else:
+                    # set channel mode directly if in performance mode
+                    self.liveController.set_microscope_mode(config)
+                    self.liveController.camera.set_exposure_time(config.exposure_time)
+                    self.liveController.camera.set_analog_gain(config.analog_gain)
+                    self.liveController.set_illumination(config.illumination_source, config.illumination_intensity)
+                    self.wait_till_operation_is_completed()
 
                 # trigger acquisition (including turning on the illumination)
                 if self.liveController.trigger_mode == TriggerMode.SOFTWARE:
@@ -2072,6 +2091,7 @@ class MultiPointController(QObject):
     napari_rtp_layers_update = Signal(np.ndarray, str)
     napari_layers_init = Signal(int, int, object)
     napari_layers_update = Signal(np.ndarray, float, float, int, str)  # image, x_mm, y_mm, k, channel
+    signal_set_display_tabs = Signal(list, int)
     signal_z_piezo_um = Signal(float)
     signal_acquisition_progress = Signal(int, int, int)
     signal_region_progress = Signal(int, int)
@@ -2090,6 +2110,7 @@ class MultiPointController(QObject):
         scanCoordinates=None,
         fluidics=None,
         parent=None,
+        headless=False,
     ):
         QObject.__init__(self)
         self._log = squid.logging.get_logger(self.__class__.__name__)
@@ -2144,6 +2165,7 @@ class MultiPointController(QObject):
         self.use_fluidics = False
         self.fluidics = fluidics
 
+        self.headless = headless
         try:
             if self.parent is not None:
                 self.old_images_per_page = self.parent.dataHandler.n_images_per_page
@@ -2449,31 +2471,7 @@ class MultiPointController(QObject):
                 self.usb_spectrometer_was_streaming = False
 
         # set current tabs
-        if self.parent and self.parent.performance_mode:
-            self.parent.imageDisplayTabs.setCurrentIndex(0)
-
-        elif self.parent is not None and not self.parent.live_only_mode:
-            configs = [config.name for config in self.selected_configurations]
-            print(configs)
-            if (
-                DO_FLUORESCENCE_RTP
-                and "BF LED matrix left half" in configs
-                and "BF LED matrix right half" in configs
-                and "Fluorescence 405 nm Ex" in configs
-            ):
-                self.parent.recordTabWidget.setCurrentWidget(self.parent.statsDisplayWidget)
-                if USE_NAPARI_FOR_MULTIPOINT:
-                    self.parent.imageDisplayTabs.setCurrentWidget(self.parent.napariRTPWidget)
-                else:
-                    self.parent.imageDisplayTabs.setCurrentWidget(self.parent.imageArrayDisplayWindow.widget)
-
-            elif USE_NAPARI_FOR_MOSAIC_DISPLAY and self.NZ == 1:
-                self.parent.imageDisplayTabs.setCurrentWidget(self.parent.napariMosaicDisplayWidget)
-
-            elif USE_NAPARI_FOR_MULTIPOINT:
-                self.parent.imageDisplayTabs.setCurrentWidget(self.parent.napariMultiChannelWidget)
-            else:
-                self.parent.imageDisplayTabs.setCurrentIndex(0)
+        self.signal_set_display_tabs.emit(self.selected_configurations, self.NZ)
 
         # run the acquisition
         self.timestamp_acquisition_started = time.time()
@@ -2551,44 +2549,40 @@ class MultiPointController(QObject):
                 print("Invalid coordinates for autofocus plane, aborting.")
                 return
 
-        # create a QThread object
-        self.thread = QThread()
-        # create a worker object
-        if DO_FLUORESCENCE_RTP:
-            self.processingHandler.start_processing()
-            self.processingHandler.start_uploading()
         self.multiPointWorker = MultiPointWorker(self)
         self.multiPointWorker.use_piezo = self.use_piezo
-        # move the worker to the thread
-        self.multiPointWorker.moveToThread(self.thread)
-        # connect signals and slots
-        self.thread.started.connect(self.multiPointWorker.run)
-        self.multiPointWorker.signal_detection_stats.connect(self.slot_detection_stats)
-        self.multiPointWorker.finished.connect(self._on_acquisition_completed)
-        if DO_FLUORESCENCE_RTP:
-            self.processingHandler.finished.connect(self.multiPointWorker.deleteLater)
-            self.processingHandler.finished.connect(self.thread.quit)
-        else:
+
+        if not self.headless:
+            # create a QThread object
+            self.thread = QThread()
+            # move the worker to the thread
+            self.multiPointWorker.moveToThread(self.thread)
+            # connect signals and slots
+            self.thread.started.connect(self.multiPointWorker.run)
+            self.multiPointWorker.signal_detection_stats.connect(self.slot_detection_stats)
+            self.multiPointWorker.finished.connect(self._on_acquisition_completed)
             self.multiPointWorker.finished.connect(self.multiPointWorker.deleteLater)
             self.multiPointWorker.finished.connect(self.thread.quit)
-        self.multiPointWorker.image_to_display.connect(self.slot_image_to_display)
-        self.multiPointWorker.image_to_display_multi.connect(self.slot_image_to_display_multi)
-        self.multiPointWorker.spectrum_to_display.connect(self.slot_spectrum_to_display)
-        self.multiPointWorker.signal_current_configuration.connect(
-            self.slot_current_configuration, type=Qt.BlockingQueuedConnection
-        )
-        self.multiPointWorker.signal_register_current_fov.connect(self.slot_register_current_fov)
-        self.multiPointWorker.napari_layers_init.connect(self.slot_napari_layers_init)
-        self.multiPointWorker.napari_rtp_layers_update.connect(self.slot_napari_rtp_layers_update)
-        self.multiPointWorker.napari_layers_update.connect(self.slot_napari_layers_update)
-        self.multiPointWorker.signal_z_piezo_um.connect(self.slot_z_piezo_um)
-        self.multiPointWorker.signal_acquisition_progress.connect(self.slot_acquisition_progress)
-        self.multiPointWorker.signal_region_progress.connect(self.slot_region_progress)
+            self.multiPointWorker.image_to_display.connect(self.slot_image_to_display)
+            self.multiPointWorker.image_to_display_multi.connect(self.slot_image_to_display_multi)
+            self.multiPointWorker.spectrum_to_display.connect(self.slot_spectrum_to_display)
+            self.multiPointWorker.signal_current_configuration.connect(
+                self.slot_current_configuration, type=Qt.BlockingQueuedConnection
+            )
+            self.multiPointWorker.signal_register_current_fov.connect(self.slot_register_current_fov)
+            self.multiPointWorker.napari_layers_init.connect(self.slot_napari_layers_init)
+            self.multiPointWorker.napari_layers_update.connect(self.slot_napari_layers_update)
+            self.multiPointWorker.signal_z_piezo_um.connect(self.slot_z_piezo_um)
+            self.multiPointWorker.signal_acquisition_progress.connect(self.slot_acquisition_progress)
+            self.multiPointWorker.signal_region_progress.connect(self.slot_region_progress)
 
-        # self.thread.finished.connect(self.thread.deleteLater)
-        self.thread.finished.connect(self.thread.quit)
-        # start the thread
-        self.thread.start()
+            # self.thread.finished.connect(self.thread.deleteLater)
+            self.thread.finished.connect(self.thread.quit)
+            # start the thread
+            self.thread.start()
+        else:
+            # for headless mode
+            self.multiPointWorker.run()
 
     def _on_acquisition_completed(self):
         self._log.debug("MultiPointController._on_acquisition_completed called")
@@ -2637,7 +2631,9 @@ class MultiPointController(QObject):
         self.acquisitionFinished.emit()
         if not self.abort_acqusition_requested:
             self.signal_stitcher.emit(os.path.join(self.base_path, self.experiment_ID))
-        QApplication.processEvents()
+
+        if not self.headless:
+            QApplication.processEvents()
 
     def request_abort_aquisition(self):
         self.abort_acqusition_requested = True
