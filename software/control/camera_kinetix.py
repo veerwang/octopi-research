@@ -284,7 +284,7 @@ class Camera(object):
         try:
             self.cam.sw_trigger()
         except Exception as e:
-            self.log.error(f"sending trigger failed: {e}")
+            self.log.debug(f"sending trigger failed: {e}")
 
     def read_frame(self) -> np.ndarray:
         try:
@@ -292,7 +292,7 @@ class Camera(object):
             data = frame["pixel_data"]
             return data
         except Exception as e:
-            self.log.error(f"poll frame interrupted: {e}")
+            self.log.debug(f"poll frame interrupted: {e}")
             return None
 
     def start_streaming(self):
