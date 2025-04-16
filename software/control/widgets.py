@@ -822,7 +822,7 @@ class SpinningDiskConfocalWidget(QWidget):
         layout.setColumnStretch(3, 1)
         self.setLayout(layout)
 
-    def toggle_all_buttons(self, enable: bool):
+    def enable_all_buttons(self, enable: bool):
         self.dropdown_emission_filter.setEnabled(enable)
         self.dropdown_dichroic.setEnabled(enable)
         self.btn_toggle_widefield.setEnabled(enable)
@@ -833,72 +833,72 @@ class SpinningDiskConfocalWidget(QWidget):
         self.spinbox_emission_iris.setEnabled(enable)
         self.dropdown_filter_slider.setEnabled(enable)
 
-    def block_slider_control_signals(self, block: bool):
+    def block_iris_control_signals(self, block: bool):
         self.slider_illumination_iris.blockSignals(block)
         self.spinbox_illumination_iris.blockSignals(block)
         self.slider_emission_iris.blockSignals(block)
         self.spinbox_emission_iris.blockSignals(block)
 
     def toggle_disk_position(self):
-        self.toggle_all_buttons(False)
+        self.enable_all_buttons(False)
         if self.disk_position_state == 1:
             self.disk_position_state = self.xlight.set_disk_position(0)
             self.btn_toggle_widefield.setText("Switch to Confocal")
         else:
             self.disk_position_state = self.xlight.set_disk_position(1)
             self.btn_toggle_widefield.setText("Switch to Widefield")
-        self.toggle_all_buttons(True)
+        self.enable_all_buttons(True)
         self.signal_toggle_confocal_widefield.emit(self.disk_position_state)
 
     def toggle_motor(self):
-        self.toggle_all_buttons(False)
+        self.enable_all_buttons(False)
         if self.btn_toggle_motor.isChecked():
             self.xlight.set_disk_motor_state(True)
         else:
             self.xlight.set_disk_motor_state(False)
-        self.toggle_all_buttons(True)
+        self.enable_all_buttons(True)
 
     def set_emission_filter(self, index):
-        self.toggle_all_buttons(False)
+        self.enable_all_buttons(False)
         selected_pos = self.dropdown_emission_filter.currentText()
         self.xlight.set_emission_filter(selected_pos)
-        self.toggle_all_buttons(True)
+        self.enable_all_buttons(True)
 
     def set_dichroic(self, index):
-        self.toggle_all_buttons(False)
+        self.enable_all_buttons(False)
         selected_pos = self.dropdown_dichroic.currentText()
         self.xlight.set_dichroic(selected_pos)
-        self.toggle_all_buttons(True)
+        self.enable_all_buttons(True)
 
     def update_illumination_iris(self, from_slider: bool):
-        self.block_slider_control_signals(True)  # avoid signals triggered by enable/disable buttons
-        self.toggle_all_buttons(False)
+        self.block_iris_control_signals(True)  # avoid signals triggered by enable/disable buttons
+        self.enable_all_buttons(False)
         if from_slider:
             value = self.slider_illumination_iris.value()
         else:
             value = self.spinbox_illumination_iris.value()
             self.slider_illumination_iris.setValue(value)
         self.xlight.set_illumination_iris(value)
-        self.toggle_all_buttons(True)
-        self.block_slider_control_signals(False)
+        self.enable_all_buttons(True)
+        self.block_iris_control_signals(False)
 
     def update_emission_iris(self, from_slider: bool):
-        self.block_slider_control_signals(True)  # avoid signals triggered by enable/disable buttons
-        self.toggle_all_buttons(False)
+        self.block_iris_control_signals(True)  # avoid signals triggered by enable/disable buttons
+        self.enable_all_buttons(False)
         if from_slider:
             value = self.slider_emission_iris.value()
         else:
             value = self.spinbox_emission_iris.value()
             self.slider_emission_iris.setValue(value)
         self.xlight.set_emission_iris(value)
-        self.toggle_all_buttons(True)
-        self.block_slider_control_signals(False)
+        self.enable_all_buttons(True)
+        self.block_iris_control_signals(False)
 
     def set_filter_slider(self, index):
-        self.toggle_all_buttons(False)
+        self.enable_all_buttons(False)
         position = str(self.dropdown_filter_slider.value())
         self.xlight.set_filter_slider(position)
-        self.toggle_all_buttons(True)
+        self.enable_all_buttons(True)
 
 
 class ObjectivesWidget(QWidget):

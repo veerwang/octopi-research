@@ -605,7 +605,13 @@ LDI_INTENSITY_MODE = "PC"
 LDI_SHUTTER_MODE = "PC"
 USE_CELESTA_ETHENET_CONTROL = False
 
-XLIGHT_EMISSION_FILTER_MAPPING = {11: 1, 12: 1, 13: 1, 14: 1, 15: 1}
+XLIGHT_EMISSION_FILTER_MAPPING = {
+    405: 1,
+    470: 1,
+    555: 1,
+    640: 1,
+    730: 1,
+}  # TODO: This is not being used. Need to map wavelength to illumination source in LiveController
 XLIGHT_SERIAL_NUMBER = "B00031BE"
 XLIGHT_SLEEP_TIME_FOR_WHEEL = 0.25
 XLIGHT_VALIDATE_WHEEL_POS = False
