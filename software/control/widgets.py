@@ -8675,6 +8675,7 @@ class Well1536SelectionWidget(QWidget):
         self.get_selected_cells()
 
     def onWellplateChanged(self):
+        """A placeholder to match the method in WellSelectionWidget"""
         pass
 
     def get_selected_cells(self):
