@@ -1,4 +1,5 @@
 import abc
+import enum
 import struct
 import threading
 import time
@@ -23,6 +24,25 @@ from control._def import *
 
 # We have a few top level functions here, so we have this module level log instance.  Classes should make their own!
 _log = squid.logging.get_logger("microcontroller")
+
+
+# "move backward" if SIGN is 1, "move forward" if SIGN is -1
+class HomingDirection(enum.Enum):
+    HOMING_DIRECTION_FORWARD = 0
+    HOMING_DIRECTION_BACKWARD = 1
+
+
+def movement_sign_to_homing_direction(sign: int) -> HomingDirection:
+    if sign not in (-1, 1):
+        raise ValueError("Only -1 and 1 are valid movement signs.")
+    return HomingDirection(int((sign + 1) / 2))
+
+
+_default_x_homing_direction = movement_sign_to_homing_direction(STAGE_MOVEMENT_SIGN_X)
+_default_y_homing_direction = movement_sign_to_homing_direction(STAGE_MOVEMENT_SIGN_Y)
+_default_z_homing_direction = movement_sign_to_homing_direction(STAGE_MOVEMENT_SIGN_Z)
+_default_theta_homing_direction = movement_sign_to_homing_direction(STAGE_MOVEMENT_SIGN_THETA)
+_default_w_homing_direction = movement_sign_to_homing_direction(STAGE_MOVEMENT_SIGN_W)
 
 
 # to do (7/28/2021) - add functions for configuring the stepper motors
@@ -51,6 +71,13 @@ class AbstractCephlaMicroSerial(abc.ABC):
     def close(self) -> None:
         """
         A noop if already closed.  Can throw an IOError for close related errors or invalid states.
+        """
+        pass
+
+    @abstractmethod
+    def reset_input_buffer(self) -> bool:
+        """
+        Reset the input buffer of the serial port.
         """
         pass
 
@@ -200,8 +227,8 @@ class SimSerial(AbstractCephlaMicroSerial):
 
         self._update_internal_state()
 
-    def _update_internal_state(self):
-        if self._closed:
+    def _update_internal_state(self, clear_buffer: bool = False):
+        if clear_buffer:
             self.response_buffer.clear()
 
         self._in_waiting = len(self.response_buffer)
@@ -209,7 +236,12 @@ class SimSerial(AbstractCephlaMicroSerial):
     def close(self):
         with self._update_lock:
             self._closed = True
-            self._update_internal_state()
+            self._update_internal_state(clear_buffer=True)
+
+    def reset_input_buffer(self) -> bool:
+        with self._update_lock:
+            self._update_internal_state(clear_buffer=True)
+            return True
 
     def write(self, data: bytearray, reconnect_tries: int = 0) -> int:
         # Reconnect takes the lock and checks closed too, so let it handle locking for reconnect
@@ -254,7 +286,7 @@ class SimSerial(AbstractCephlaMicroSerial):
 
             if self._closed:
                 self._log.warning("Reconnect required, succeeded.")
-                self._update_internal_state()
+                self._update_internal_state(clear_buffer=True)
                 self._closed = False
 
         return True
@@ -288,6 +320,14 @@ class MicrocontrollerSerial(AbstractCephlaMicroSerial):
 
     def close(self) -> None:
         return self._serial.close()
+
+    def reset_input_buffer(self) -> bool:
+        try:
+            self._serial.reset_input_buffer()
+            return True
+        except Exception as e:
+            self._log.exception(f"Failed to clear input buffer: {e}")
+            return False
 
     def write(self, data: bytearray, reconnect_tries: int = 0) -> int:
         # the is_open attribute is unreliable - if a device just recently dropped out, it may not be up to date.
@@ -669,47 +709,51 @@ class Microcontroller:
         cmd[6] = payload & 0xFF
         self.send_command(cmd)
 
-    def home_x(self):
+    def home_x(self, homing_direction: HomingDirection = _default_x_homing_direction):
         cmd = bytearray(self.tx_buffer_length)
         cmd[1] = CMD_SET.HOME_OR_ZERO
         cmd[2] = AXIS.X
-        cmd[3] = int((STAGE_MOVEMENT_SIGN_X + 1) / 2)  # "move backward" if SIGN is 1, "move forward" if SIGN is -1
+        cmd[3] = homing_direction.value
         self.send_command(cmd)
 
-    def home_y(self):
+    def home_y(self, homing_direction: HomingDirection = _default_y_homing_direction):
         cmd = bytearray(self.tx_buffer_length)
         cmd[1] = CMD_SET.HOME_OR_ZERO
         cmd[2] = AXIS.Y
-        cmd[3] = int((STAGE_MOVEMENT_SIGN_Y + 1) / 2)  # "move backward" if SIGN is 1, "move forward" if SIGN is -1
+        cmd[3] = homing_direction.value
         self.send_command(cmd)
 
-    def home_z(self):
+    def home_z(self, homing_direction: HomingDirection = _default_z_homing_direction):
         cmd = bytearray(self.tx_buffer_length)
         cmd[1] = CMD_SET.HOME_OR_ZERO
         cmd[2] = AXIS.Z
-        cmd[3] = int((STAGE_MOVEMENT_SIGN_Z + 1) / 2)  # "move backward" if SIGN is 1, "move forward" if SIGN is -1
+        cmd[3] = homing_direction.value
         self.send_command(cmd)
 
-    def home_theta(self):
+    def home_theta(self, homing_direction: HomingDirection = _default_theta_homing_direction):
         cmd = bytearray(self.tx_buffer_length)
         cmd[1] = CMD_SET.HOME_OR_ZERO
         cmd[2] = 3
-        cmd[3] = int((STAGE_MOVEMENT_SIGN_THETA + 1) / 2)  # "move backward" if SIGN is 1, "move forward" if SIGN is -1
+        cmd[3] = homing_direction.value
         self.send_command(cmd)
 
-    def home_xy(self):
+    def home_xy(
+        self,
+        homing_direction_x: HomingDirection = _default_x_homing_direction,
+        homing_direction_y: HomingDirection = _default_y_homing_direction,
+    ):
         cmd = bytearray(self.tx_buffer_length)
         cmd[1] = CMD_SET.HOME_OR_ZERO
         cmd[2] = AXIS.XY
-        cmd[3] = int((STAGE_MOVEMENT_SIGN_X + 1) / 2)  # "move backward" if SIGN is 1, "move forward" if SIGN is -1
-        cmd[4] = int((STAGE_MOVEMENT_SIGN_Y + 1) / 2)  # "move backward" if SIGN is 1, "move forward" if SIGN is -1
+        cmd[3] = homing_direction_x.value
+        cmd[4] = homing_direction_y.value
         self.send_command(cmd)
 
-    def home_w(self):
+    def home_w(self, homing_direction: HomingDirection = _default_w_homing_direction):
         cmd = bytearray(self.tx_buffer_length)
         cmd[1] = CMD_SET.HOME_OR_ZERO
         cmd[2] = AXIS.W
-        cmd[3] = int((STAGE_MOVEMENT_SIGN_W + 1) / 2)  # "move backward" if SIGN is 1, "move forward" if SIGN is -1
+        cmd[3] = homing_direction.value
         self.send_command(cmd)
 
     def zero_x(self):
@@ -787,6 +831,7 @@ class Microcontroller:
         self.send_command(cmd)
 
     def set_lim(self, limit_code, usteps):
+        self.log.info(f"Set lim: {limit_code=}, {usteps=}")
         cmd = bytearray(self.tx_buffer_length)
         cmd[1] = CMD_SET.SET_LIM
         cmd[2] = limit_code
@@ -983,7 +1028,8 @@ class Microcontroller:
                     # Sleep a negligible amount of time just to give other threads time to run.  Otherwise,
                     # we run the rise of spinning forever here and not letting progress happen elsewhere.
                     time.sleep(0.0001)
-
+                    if self._serial.bytes_available() == BUFFER_SIZE_LIMIT:
+                        self._serial.reset_input_buffer()
                     if not self._serial.is_open():
                         if not self._serial.reconnect(attempts=Microcontroller.MAX_RECONNECT_COUNT):
                             self.log.error(

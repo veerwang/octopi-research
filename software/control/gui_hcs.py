@@ -66,6 +66,12 @@ elif CAMERA_TYPE == "Tucsen":
     except:
         log.warning("Problem importing Tucsen camera, defaulting to default camera")
         import control.camera as camera
+elif CAMERA_TYPE == "Kinetix":
+    try:
+        import control.camera_kinetix as camera
+    except:
+        log.warning("Problem importing Kinetix camera, defaulting to default camera")
+        import control.camera as camera
 else:
     import control.camera as camera
 
@@ -151,6 +157,7 @@ class MovementUpdater(QObject):
 
 class HighContentScreeningGui(QMainWindow):
     fps_software_trigger = 100
+    LASER_BASED_FOCUS_TAB_NAME = "Laser-Based Focus"
 
     def __init__(self, is_simulation=False, live_only_mode=False, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -179,6 +186,9 @@ class HighContentScreeningGui(QMainWindow):
         # TODO(imo): Why is moving to the cached position after boot hidden behind homing?
         if HOMING_ENABLED_X and HOMING_ENABLED_Y and HOMING_ENABLED_Z:
             if cached_pos := squid.stage.utils.get_cached_position():
+                self.log.info(
+                    f"Cache position exists.  Moving to: ({cached_pos.x_mm},{cached_pos.y_mm},{cached_pos.z_mm}) [mm]"
+                )
                 self.stage.move_x_to(cached_pos.x_mm)
                 self.stage.move_y_to(cached_pos.y_mm)
                 self.stage.move_z_to(cached_pos.z_mm)
@@ -361,7 +371,6 @@ class HighContentScreeningGui(QMainWindow):
         if RUN_FLUIDICS:
             self.fluidics = Fluidics(
                 config_path=FLUIDICS_CONFIG_PATH,
-                sequence_path=FLUIDICS_SEQUENCE_PATH,
                 simulation=True,
             )
         else:
@@ -487,7 +496,6 @@ class HighContentScreeningGui(QMainWindow):
             try:
                 self.fluidics = Fluidics(
                     config_path=FLUIDICS_CONFIG_PATH,
-                    sequence_path=FLUIDICS_SEQUENCE_PATH,
                     simulation=False,
                 )
             except Exception:
@@ -507,18 +515,49 @@ class HighContentScreeningGui(QMainWindow):
             raise ValueError("Microcontroller must be none-None for hardware setup.")
 
         try:
+            x_config = self.stage.get_config().X_AXIS
+            y_config = self.stage.get_config().Y_AXIS
+            z_config = self.stage.get_config().Z_AXIS
+            self.log.info(
+                f"Setting stage limits to:"
+                f" x=[{x_config.MIN_POSITION},{x_config.MAX_POSITION}],"
+                f" y=[{y_config.MIN_POSITION},{y_config.MAX_POSITION}],"
+                f" z=[{z_config.MIN_POSITION},{z_config.MAX_POSITION}]"
+            )
+
+            self.stage.set_limits(
+                x_pos_mm=x_config.MAX_POSITION,
+                x_neg_mm=x_config.MIN_POSITION,
+                y_pos_mm=y_config.MAX_POSITION,
+                y_neg_mm=y_config.MIN_POSITION,
+                z_pos_mm=z_config.MAX_POSITION,
+                z_neg_mm=z_config.MIN_POSITION,
+            )
+
             if HOMING_ENABLED_Z:
+                self.log.info("Homing the Z axis...")
                 self.stage.home(x=False, y=False, z=True, theta=False)
+
             if HOMING_ENABLED_X and HOMING_ENABLED_Y:
+                # The plate clamp actuation post can get in the way of homing if we start with
+                # the stage in "just the wrong" position.  Blindly moving the Y out 20, then the
+                # x over 20, guarantees we'll clear the post for homing.  If we are <20mm from the
+                # end travel of either axis, we'll just stop at the extent without consequence.
+                #
+                # The one odd corner case is if the system gets shut down in the loading position.
+                # in that case, we drive off of the loading position and the clamp closes quickly.
+                # This doesn't seem to cause problems, and there isn't a clean way to avoid the corner
+                # case.
+                self.log.info("Moving y+20, then x+20 to make sure system is clear for homing.")
+                self.stage.move_y(20)
+                self.stage.move_x(20)
+
+                self.log.info("Homing the X and Y axes...")
                 self.stage.home(x=False, y=True, z=False, theta=False)
                 self.stage.home(x=True, y=False, z=False, theta=False)
                 self.slidePositionController.homing_done = True
             if USE_ZABER_EMISSION_FILTER_WHEEL:
                 self.emission_filter_wheel.wait_for_homing_complete()
-            # TODO(imo): Why do we move to 20 after homing here?
-            if HOMING_ENABLED_X and HOMING_ENABLED_Y:
-                self.stage.move_x(20)
-                self.stage.move_y(20)
 
             if HAS_OBJECTIVE_PIEZO:
                 OUTPUT_GAINS.CHANNEL7_GAIN = OBJECTIVE_PIEZO_CONTROL_VOLTAGE_RANGE == 5
@@ -567,15 +606,13 @@ class HighContentScreeningGui(QMainWindow):
     def loadWidgets(self):
         # Initialize all GUI widgets
         if ENABLE_SPINNING_DISK_CONFOCAL:
-            self.spinningDiskConfocalWidget = widgets.SpinningDiskConfocalWidget(
-                self.xlight, self.channelConfigurationManager
-            )
+            self.spinningDiskConfocalWidget = widgets.SpinningDiskConfocalWidget(self.xlight)
         if ENABLE_NL5:
             import control.NL5Widget as NL5Widget
 
             self.nl5Wdiget = NL5Widget.NL5Widget(self.nl5)
 
-        if CAMERA_TYPE == "Toupcam":
+        if CAMERA_TYPE in ["Toupcam", "Tucsen", "Kinetix"]:
             self.cameraSettingWidget = widgets.CameraSettingsWidget(
                 self.camera,
                 include_gain_exposure_time=False,
@@ -663,6 +700,9 @@ class HighContentScreeningGui(QMainWindow):
                 self.laserAutofocusController
             )
             self.imageDisplayWindow_focus = core.ImageDisplayWindow()
+
+        if RUN_FLUIDICS:
+            self.fluidicsWidget = widgets.FluidicsWidget(self.fluidics)
 
         self.imageDisplayTabs = QTabWidget()
         if self.live_only_mode:
@@ -797,7 +837,10 @@ class HighContentScreeningGui(QMainWindow):
                 laserfocus_dockArea.addDock(dock_waveform, "bottom", relativeTo=dock_laserfocus_liveController)
                 laserfocus_dockArea.addDock(dock_displayMeasurement, "bottom", relativeTo=dock_waveform)
 
-            self.imageDisplayTabs.addTab(laserfocus_dockArea, "Laser-Based Focus")
+            self.imageDisplayTabs.addTab(laserfocus_dockArea, self.LASER_BASED_FOCUS_TAB_NAME)
+
+        if RUN_FLUIDICS:
+            self.imageDisplayTabs.addTab(self.fluidicsWidget, "Fluidics")
 
     def setupRecordTabWidget(self):
         if ENABLE_WELLPLATE_MULTIPOINT:
@@ -946,6 +989,7 @@ class HighContentScreeningGui(QMainWindow):
 
         if RUN_FLUIDICS:
             self.multiPointWithFluidicsWidget.signal_acquisition_started.connect(self.toggleAcquisitionStart)
+            self.fluidicsWidget.fluidics_initialized_signal.connect(self.multiPointWithFluidicsWidget.init_fluidics)
 
         self.profileWidget.signal_profile_changed.connect(self.liveControlWidget.refresh_mode_list)
 
@@ -1018,7 +1062,7 @@ class HighContentScreeningGui(QMainWindow):
             self.wellSelectionWidget.signal_wellSelected.connect(self.wellplateMultiPointWidget.update_well_coordinates)
             self.objectivesWidget.signal_objective_changed.connect(self.wellplateMultiPointWidget.update_coordinates)
 
-        self.configurationManager.signal_profile_loaded.connect(
+        self.profileWidget.signal_profile_changed.connect(
             lambda: self.liveControlWidget.update_microscope_mode_by_name(
                 self.liveControlWidget.currentConfiguration.name
             )
@@ -1036,7 +1080,7 @@ class HighContentScreeningGui(QMainWindow):
                 self.laserAutofocusControlWidget.update_init_state()
                 self.laserAutofocusSettingWidget.update_values()
 
-            self.configurationManager.signal_profile_loaded.connect(slot_settings_changed_laser_af)
+            self.profileWidget.signal_profile_changed.connect(slot_settings_changed_laser_af)
             self.objectivesWidget.signal_objective_changed.connect(slot_settings_changed_laser_af)
             self.laserAutofocusSettingWidget.signal_newExposureTime.connect(
                 self.cameraSettingWidget_focus_camera.set_exposure_time
@@ -1077,6 +1121,16 @@ class HighContentScreeningGui(QMainWindow):
                 self.laserAutofocusController.signal_piezo_position_update.connect(
                     self.piezoWidget.update_displacement_um_display
                 )
+
+        if ENABLE_SPINNING_DISK_CONFOCAL:
+            self.spinningDiskConfocalWidget.signal_toggle_confocal_widefield.connect(
+                self.channelConfigurationManager.toggle_confocal_widefield
+            )
+            self.spinningDiskConfocalWidget.signal_toggle_confocal_widefield.connect(
+                lambda: self.liveControlWidget.update_microscope_mode_by_name(
+                    self.liveControlWidget.currentConfiguration.name
+                )
+            )
 
         self.camera.set_callback(self.streamHandler.on_new_frame)
 
@@ -1270,8 +1324,8 @@ class HighContentScreeningGui(QMainWindow):
     def toggleNapariTabs(self):
         # Enable/disable Napari tabs based on performance mode
         for i in range(1, self.imageDisplayTabs.count()):
-            widget = self.imageDisplayTabs.widget(i)
-            self.imageDisplayTabs.setTabEnabled(i, not self.performance_mode)
+            if self.imageDisplayTabs.tabText(i) != self.LASER_BASED_FOCUS_TAB_NAME:
+                self.imageDisplayTabs.setTabEnabled(i, not self.performance_mode)
 
         if self.performance_mode:
             # Switch to the NapariLiveWidget tab if it exists
@@ -1354,13 +1408,25 @@ class HighContentScreeningGui(QMainWindow):
 
         # Stop focus camera live if not on laser focus tab
         if SUPPORT_LASER_AUTOFOCUS:
-            is_laser_focus_tab = self.imageDisplayTabs.tabText(index) == "Laser-Based Focus"
+            is_laser_focus_tab = self.imageDisplayTabs.tabText(index) == self.LASER_BASED_FOCUS_TAB_NAME
 
             if hasattr(self, "dock_wellSelection"):
                 self.dock_wellSelection.setVisible(not is_laser_focus_tab)
 
             if not is_laser_focus_tab:
                 self.laserAutofocusSettingWidget.stop_live()
+
+        is_wellplate_acquisition = (
+            (index == self.recordTabWidget.indexOf(self.wellplateMultiPointWidget))
+            if ENABLE_WELLPLATE_MULTIPOINT
+            else False
+        )
+        if self.imageDisplayTabs.tabText(index) != "Live View" or not (
+            is_wellplate_acquisition and self.wellSelectionWidget.format != "glass slide"
+        ):
+            self.toggleWellSelector(False)
+        else:
+            self.toggleWellSelector(True)
 
     def onWellplateChanged(self, format_):
         if isinstance(format_, QVariant):
@@ -1503,6 +1569,8 @@ class HighContentScreeningGui(QMainWindow):
         )
         if is_wellplate_acquisition and self.wellSelectionWidget.format != "glass slide":
             self.toggleWellSelector(not acquisition_started)
+        else:
+            self.toggleWellSelector(False)
 
         # display acquisition progress bar during acquisition
         self.recordTabWidget.currentWidget().display_progress_bar(acquisition_started)
@@ -1621,7 +1689,7 @@ class HighContentScreeningGui(QMainWindow):
             self.cellx.close()
 
         if RUN_FLUIDICS:
-            self.fluidics.cleanup()
+            self.fluidics.close()
 
         self.imageSaver.close()
         self.imageDisplay.close()

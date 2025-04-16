@@ -74,15 +74,6 @@ class Acquisition:
     NUMBER_OF_FOVS_PER_AF = 3
     IMAGE_FORMAT = "bmp"
     IMAGE_DISPLAY_SCALING_FACTOR = 0.3
-    PSEUDO_COLOR = False
-    MERGE_CHANNELS = False
-    PSEUDO_COLOR_MAP = {
-        "405": {"hex": 0x0000FF},  # blue
-        "488": {"hex": 0x00FF00},  # green
-        "561": {"hex": 0xFFCF00},  # yellow
-        "638": {"hex": 0xFF0000},  # red
-        "730": {"hex": 0x770000},  # dark red
-    }
     DX = 0.9
     DY = 0.9
     DZ = 1.5
@@ -288,6 +279,8 @@ CAMERA_REVERSE_Y = False
 
 DEFAULT_TRIGGER_MODE = TriggerMode.SOFTWARE
 
+BUFFER_SIZE_LIMIT = 4095
+
 # note: XY are the in-plane axes, Z is the focus axis
 
 # change the following so that "backward" is "backward" - towards the single sided hall effect sensor
@@ -417,6 +410,7 @@ LED_MATRIX_G_FACTOR = 0
 LED_MATRIX_B_FACTOR = 1
 
 DEFAULT_SAVING_PATH = str(Path.home()) + "/Downloads"
+FILE_ID_PADDING = 0
 
 DEFAULT_PIXEL_FORMAT = "MONO12"
 
@@ -657,8 +651,10 @@ ENABLE_STITCHER = False
 IS_HCS = False
 DYNAMIC_REGISTRATION = False
 STITCH_COMPLETE_ACQUISITION = False
+
+# Pseudo color settings
 CHANNEL_COLORS_MAP = {
-    "405": {"hex": 0x3300FF, "name": "blue"},
+    "405": {"hex": 0x20ADF8, "name": "bop blue"},
     "488": {"hex": 0x1FFF00, "name": "green"},
     "561": {"hex": 0xFFCF00, "name": "yellow"},
     "638": {"hex": 0xFF0000, "name": "red"},
@@ -667,6 +663,8 @@ CHANNEL_COLORS_MAP = {
     "G": {"hex": 0x1FFF00, "name": "green"},
     "B": {"hex": 0x3300FF, "name": "blue"},
 }
+SAVE_IN_PSEUDO_COLOR = False
+MERGE_CHANNELS = False
 
 # Emission filter wheel
 USE_ZABER_EMISSION_FILTER_WHEEL = False
@@ -681,7 +679,7 @@ OPTOSPIN_EMISSION_FILTER_WHEEL_TTL_TRIGGER = False
 USE_SQUID_FILTERWHEEL = False
 SQUID_FILTERWHEEL_MAX_INDEX = 8
 SQUID_FILTERWHEEL_MIN_INDEX = 1
-SQUID_FILTERWHEEL_OFFSET = 0.01
+SQUID_FILTERWHEEL_OFFSET = 0.008
 SQUID_FILTERWHEEL_HOMING_ENABLED = True
 SQUID_FILTERWHEEL_MOTORSLOTINDEX = 3
 SQUID_FILTERWHEEL_TRANSITIONS_PER_REVOLUTION = 4000
@@ -776,9 +774,6 @@ XERYON_OBJECTIVE_SWITCHER_POS_2_OFFSET_MM = 2
 # fluidics
 RUN_FLUIDICS = False
 FLUIDICS_CONFIG_PATH = "./merfish_config/MERFISH_config.json"
-FLUIDICS_SEQUENCE_PATH = "./merfish_config/merfish-imaging.csv"
-BEFORE_IMAGING_SEQUENCES = [0, 4]
-AFTER_IMAGING_SEQUENCES = [4, 6]
 
 ##########################################################
 #### start of loading machine specific configurations ####
