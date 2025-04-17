@@ -1295,7 +1295,6 @@ class LiveControlWidget(QFrame):
         self.liveController.set_trigger_fps(self.fps_trigger)
         self.streamHandler.set_display_fps(self.fps_display)
 
-        self.triggerMode = TriggerMode.SOFTWARE
         self.currentConfiguration = self.channelConfigurationManager.get_channel_configurations_for_objective(
             self.objectiveStore.current_objective
         )[0]
@@ -1308,9 +1307,9 @@ class LiveControlWidget(QFrame):
 
     def add_components(self, show_trigger_options, show_display_options, show_autolevel, autolevel, stretch):
         # line 0: trigger mode
-        self.triggerMode = None
         self.dropdown_triggerManu = QComboBox()
         self.dropdown_triggerManu.addItems([TriggerMode.SOFTWARE, TriggerMode.HARDWARE, TriggerMode.CONTINUOUS])
+        self.dropdown_triggerManu.setCurrentText(self.liveController.camera.trigger_mode)
         sizePolicy = QSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         self.dropdown_triggerManu.setSizePolicy(sizePolicy)
 
