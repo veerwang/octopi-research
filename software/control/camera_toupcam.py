@@ -931,13 +931,14 @@ class Camera_Simulation(object):
         pass
 
     def set_continuous_acquisition(self):
-        pass
+        self.trigger_mode = TriggerMode.CONTINUOUS
 
     def set_software_triggered_acquisition(self):
-        pass
+        self.trigger_mode = TriggerMode.SOFTWARE
 
     def set_hardware_triggered_acquisition(self):
-        pass
+        self.frame_ID_offset_hardware_trigger = None
+        self.trigger_mode = TriggerMode.HARDWARE
 
     def set_gain_mode(self, mode):
         pass

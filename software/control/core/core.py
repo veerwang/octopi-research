@@ -2587,7 +2587,7 @@ class MultiPointController(QObject):
             self.camera_callback_was_enabled_before_multipoint = False
 
         # re-enable live if it's previously on
-        if self.liveController_was_live_before_multipoint:
+        if self.liveController_was_live_before_multipoint and RESUME_LIVE_AFTER_ACQUISITION:
             self.liveController.start_live()
 
         if self.usb_spectrometer != None:

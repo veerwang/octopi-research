@@ -571,7 +571,10 @@ class HighContentScreeningGui(QMainWindow):
             self.log.error("Setup timed out, resetting microcontroller before failing gui setup")
             self.microcontroller.reset()
             raise e
-        self.camera.set_software_triggered_acquisition()
+        if DEFAULT_TRIGGER_MODE == TriggerMode.HARDWARE:
+            self.camera.set_hardware_triggered_acquisition()
+        else:
+            self.camera.set_software_triggered_acquisition()
         self.camera.set_callback(self.streamHandler.on_new_frame)
         self.camera.enable_callback()
 
