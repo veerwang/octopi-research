@@ -5578,15 +5578,9 @@ class FocusMapWidget(QFrame):
         self.z_label.setText(f"Z: {z_pos_mm:.3f} mm")
 
     def fit_surface(self):
-        if len(self.focus_points) == 1:
-            self.status_label.setText("Use 1 point to set Z")
+        if len(self.focus_points) < 4:
+            self.status_label.setText("It's recommended to use at least 4 points to fit surface")
             self.status_label.show()
-            self.focusMap.set_z(self.get_points_array())
-            return True
-        elif len(self.focus_points) < 4:
-            self.status_label.setText("Need at least 4 points to fit surface")
-            self.status_label.show()
-            return False
 
         try:
             self.focusMap.set_method(self.fit_method_combo.currentText())

@@ -4627,25 +4627,36 @@ class FocusMap:
         Returns:
             tuple: (mean_error, std_error) in mm
         """
-        if len(points) < 4:
-            raise ValueError("Need at least 4 points to fit surface")
+        if len(points) < 1:
+            raise ValueError("No focus points provided")
 
         self.points = np.array(points)
         x = self.points[:, 0]
         y = self.points[:, 1]
         z = self.points[:, 2]
 
-        if self.method == "spline":
-            try:
-                self.surface_fit = SmoothBivariateSpline(
-                    x, y, z, kx=3, ky=3, s=self.smoothing_factor  # cubic spline in x  # cubic spline in y
-                )
-            except Exception as e:
-                print(f"Spline fitting failed: {str(e)}, falling back to RBF")
-                self.method = "rbf"
-                self._fit_rbf(x, y, z)
-        else:
+        if len(points) == 1:
+            # For single point, create a flat plane at that z-height
+            self._fit_constant_plane(z[0])
+            errors = np.array([0.0])  # No error for a single point
+
+        elif len(points) == 2 or len(points) == 3:
+            # For two or three points, use RBF interpolation
             self._fit_rbf(x, y, z)
+            errors = self._calculate_fitting_errors()
+
+        else:
+            if self.method == "spline":
+                try:
+                    self.surface_fit = SmoothBivariateSpline(
+                        x, y, z, kx=3, ky=3, s=self.smoothing_factor  # cubic spline in x  # cubic spline in y
+                    )
+                except Exception as e:
+                    print(f"Spline fitting failed: {str(e)}, falling back to RBF")
+                    self.method = "rbf"
+                    self._fit_rbf(x, y, z)
+            else:
+                self._fit_rbf(x, y, z)
 
         self.is_fitted = True
         errors = self._calculate_fitting_errors()
@@ -4655,6 +4666,17 @@ class FocusMap:
         """Fit using Radial Basis Function interpolation"""
         xy = np.column_stack((x, y))
         self.surface_fit = RBFInterpolator(xy, z, kernel="thin_plate_spline", epsilon=self.smoothing_factor)
+
+    def _fit_constant_plane(self, z_value):
+        """Create a constant height plane"""
+
+        def constant_plane(x, y):
+            if isinstance(x, np.ndarray):
+                return np.full_like(x, z_value)
+            else:
+                return z_value
+
+        self.surface_fit = constant_plane
 
     def interpolate(self, x, y):
         """Get interpolated Z value at given (x,y) coordinates
