@@ -4642,6 +4642,8 @@ class FocusMap:
 
         elif len(points) == 2 or len(points) == 3:
             # For two or three points, use RBF interpolation
+            print("Using RBF interpolation for 2 or 3 points")
+            self.method = "rbf"
             self._fit_rbf(x, y, z)
             errors = self._calculate_fitting_errors()
 

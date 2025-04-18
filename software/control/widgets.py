@@ -5599,7 +5599,7 @@ class FocusMapWidget(QFrame):
 
     def on_regions_updated(self):
         if self.scanCoordinates.has_regions():
-            self.generate_grid()
+            self.generate_grid(self.rows_spin.value(), self.cols_spin.value())
 
     def disable_updating_focus_points_on_signal(self):
         self.scanCoordinates.signal_scan_coordinates_updated.disconnect(self.on_regions_updated)
