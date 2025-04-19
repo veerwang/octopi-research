@@ -39,7 +39,7 @@ try:
 except:
     pass
 
-from typing import List, Tuple, Optional, Dict, Any
+from typing import List, Tuple, Optional, Dict, Any, Callable
 from queue import Queue
 from threading import Thread, Lock
 from pathlib import Path
@@ -110,7 +110,7 @@ class StreamHandler(QObject):
     signal_new_frame_received = Signal()
 
     def __init__(
-        self, crop_width=Acquisition.CROP_WIDTH, crop_height=Acquisition.CROP_HEIGHT, display_resolution_scaling=1
+        self, crop_width=Acquisition.CROP_WIDTH, crop_height=Acquisition.CROP_HEIGHT, display_resolution_scaling=1, accept_new_frame_fn: Callable[[], bool] = lambda: True
     ):
         QObject.__init__(self)
         self.fps_display = 1
@@ -132,6 +132,9 @@ class StreamHandler(QObject):
         self.timestamp_last = 0
         self.counter = 0
         self.fps_real = 0
+
+        # Only accept new frames if this user defined function returns true
+        self._accept_new_frames_fn = accept_new_frame_fn
 
     def start_recording(self):
         self.save_image_flag = True
@@ -160,6 +163,10 @@ class StreamHandler(QObject):
         print(self.display_resolution_scaling)
 
     def on_new_frame(self, frame: squid.abc.CameraFrame):
+        if not self._accept_new_frames_fn():
+            return
+
+        self.handler_busy = True
         self.signal_new_frame_received.emit()
 
         # measure real fps
@@ -641,22 +648,26 @@ class LiveController(QObject):
                 self.turn_on_illumination()
 
         self.trigger_ID = self.trigger_ID + 1
-        self.camera.send_trigger(self.camera.get_exposure_time())
+
+        # One final check to make sure we are actually live
+        # Even if we aren't live, continue on so illumination gets handled.
+        if self.is_live:
+            self.camera.send_trigger(self.camera.get_exposure_time())
+
+            # TODO(imo): Looks like this is dead code since the print is commented out?
+            # measure real fps
+            timestamp_now = round(time.time())
+            if timestamp_now == self.timestamp_last:
+                self.counter = self.counter + 1
+            else:
+                self.timestamp_last = timestamp_now
+                self.fps_real = self.counter
+                self.counter = 0
+                # print('real trigger fps is ' + str(self.fps_real))
 
         if self.trigger_mode == TriggerMode.SOFTWARE:
             if self.control_illumination and self.illumination_on == False:
                 self.turn_on_illumination()
-
-        # TODO(imo): Looks like this is dead code since the print is commented out?
-        # measure real fps
-        timestamp_now = round(time.time())
-        if timestamp_now == self.timestamp_last:
-            self.counter = self.counter + 1
-        else:
-            self.timestamp_last = timestamp_now
-            self.fps_real = self.counter
-            self.counter = 0
-            # print('real trigger fps is ' + str(self.fps_real))
 
     def _start_triggerred_acquisition(self):
         if not self.timer_trigger.isActive():
