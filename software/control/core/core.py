@@ -1486,6 +1486,21 @@ class MultiPointWorker(QObject):
 
         # finished region scan
         self.coordinates_pd.to_csv(os.path.join(current_path, "coordinates.csv"), index=False, header=True)
+
+        # Emit the xyz data for plotting
+        if len(self.coordinates_pd) > 1:
+            x = self.coordinates_pd["x (mm)"].values
+            y = self.coordinates_pd["y (mm)"].values
+            if "z_piezo (um)" in self.coordinates_pd.columns:
+                z = self.coordinates_pd["z (um)"].values + self.coordinates_pd["z_piezo (um)"].values
+            else:
+                z = self.coordinates_pd["z (um)"].values
+            region = self.coordinates_pd["region"].values
+            x = np.array(x).astype(float)
+            y = np.array(y).astype(float)
+            z = np.array(z).astype(float)
+            self.multiPointController.signal_coordinates.emit(x, y, z, region)
+
         utils.create_done_file(current_path)
         # TODO(imo): If anything throws above, we don't re-enable the joystick
         self.microcontroller.enable_joystick(True)
@@ -2069,6 +2084,7 @@ class MultiPointController(QObject):
     signal_z_piezo_um = Signal(float)
     signal_acquisition_progress = Signal(int, int, int)
     signal_region_progress = Signal(int, int)
+    signal_coordinates = Signal(np.ndarray, np.ndarray, np.ndarray, np.ndarray)  # x, y, z, region
 
     def __init__(
         self,
@@ -2401,6 +2417,17 @@ class MultiPointController(QObject):
         self.scan_region_coords_mm = list(self.scanCoordinates.region_centers.values())
         self.scan_region_names = list(self.scanCoordinates.region_centers.keys())
         self.scan_region_fov_coords_mm = self.scanCoordinates.region_fov_coordinates
+
+        # Save coordinates to CSV in top level folder
+        coordinates_df = pd.DataFrame(columns=["region", "x (mm)", "y (mm)", "z (mm)"])
+        for region_id, coords_list in self.scan_region_fov_coords_mm.items():
+            for coord in coords_list:
+                row = {"region": region_id, "x (mm)": coord[0], "y (mm)": coord[1]}
+                # Add z coordinate if available
+                if len(coord) > 2:
+                    row["z (mm)"] = coord[2]
+                coordinates_df = pd.concat([coordinates_df, pd.DataFrame([row])], ignore_index=True)
+        coordinates_df.to_csv(os.path.join(self.base_path, self.experiment_ID, "coordinates.csv"), index=False)
 
         print("num fovs:", sum(len(coords) for coords in self.scan_region_fov_coords_mm))
         print("num regions:", len(self.scan_region_coords_mm))
