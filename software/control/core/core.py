@@ -2402,6 +2402,17 @@ class MultiPointController(QObject):
         self.scan_region_names = list(self.scanCoordinates.region_centers.keys())
         self.scan_region_fov_coords_mm = self.scanCoordinates.region_fov_coordinates
 
+        # Save coordinates to CSV in top level folder
+        coordinates_df = pd.DataFrame(columns=["region", "x (mm)", "y (mm)", "z (mm)"])
+        for region_id, coords_list in self.scan_region_fov_coords_mm.items():
+            for coord in coords_list:
+                row = {"region": region_id, "x (mm)": coord[0], "y (mm)": coord[1]}
+                # Add z coordinate if available
+                if len(coord) > 2:
+                    row["z (mm)"] = coord[2]
+                coordinates_df = pd.concat([coordinates_df, pd.DataFrame([row])], ignore_index=True)
+        coordinates_df.to_csv(os.path.join(self.base_path, self.experiment_ID, "coordinates.csv"), index=False)
+
         print("num fovs:", sum(len(coords) for coords in self.scan_region_fov_coords_mm))
         print("num regions:", len(self.scan_region_coords_mm))
         print("region ids:", self.scan_region_names)
