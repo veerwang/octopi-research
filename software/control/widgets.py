@@ -9428,6 +9428,14 @@ class SurfacePlotWidget(QWidget):
         self.ax.set_zlabel("Z (um)")
         self.ax.set_title("Double-click a point to go to that position")
 
+        # Force x and y to have same scale
+        max_range = max(np.ptp(self.x), np.ptp(self.y))
+        center_x = np.mean(self.x)
+        center_y = np.mean(self.y)
+
+        self.ax.set_xlim(center_x - max_range / 2, center_x + max_range / 2)
+        self.ax.set_ylim(center_y - max_range / 2, center_y + max_range / 2)
+
         self.canvas.draw()
         self.plot_populated = True
 
