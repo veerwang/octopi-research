@@ -9359,3 +9359,118 @@ class SquidFilterWidget(QFrame):
         except ValueError:
             self.status_label.setText("Status: Invalid input")
             self.position_label.setText("Position: Invalid")
+
+
+from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
+from matplotlib.figure import Figure
+from mpl_toolkits.mplot3d import proj3d
+from scipy.interpolate import griddata
+
+
+class SurfacePlotWidget(QWidget):
+    """
+    A widget that displays a 3D surface plot of the coordinates.
+    """
+
+    signal_point_clicked = Signal(float, float)
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+
+        # Setup canvas and figure
+        self.fig = Figure()
+        self.canvas = FigureCanvas(self.fig)
+        self.ax = self.fig.add_subplot(111, projection="3d")
+
+        layout = QVBoxLayout()
+        layout.addWidget(self.canvas)
+        self.setLayout(layout)
+
+        self.selected_index = None
+        self.plot_populated = False
+
+        # Connect events
+        self.canvas.mpl_connect("scroll_event", self.on_scroll)
+        self.canvas.mpl_connect("button_press_event", self.on_click)
+
+    def plot(self, x: np.array, y: np.array, z: np.array, region: np.array) -> None:
+        """
+        Plot both surface and scatter points in 3D.
+
+        Args:
+            x (np.array): X coordinates (1D array)
+            y (np.array): Y coordinates (1D array)
+            z (np.array): Z coordinates (1D array)
+        """
+        # Store the original coordinates
+        self.x = x
+        self.y = y
+        self.z = z
+
+        # Clear previous plot
+        self.ax.clear()
+
+        # plot surface by region
+        for r in np.unique(region):
+            mask = region == r
+            grid_x, grid_y = np.mgrid[min(x[mask]) : max(x[mask]) : 10j, min(y[mask]) : max(y[mask]) : 10j]
+            grid_z = griddata((x[mask], y[mask]), z[mask], (grid_x, grid_y), method="cubic")
+            self.ax.plot_surface(grid_x, grid_y, grid_z, cmap="viridis", edgecolor="none")
+            # self.ax.plot_trisurf(x[mask], y[mask], z[mask], cmap='viridis', edgecolor='none')
+
+        # Create scatter plot using original coordinates
+        self.colors = ["r"] * len(self.x)
+        self.scatter = self.ax.scatter(self.x, self.y, self.z, c=self.colors, s=30)
+
+        # Set labels
+        self.ax.set_xlabel("X (mm)")
+        self.ax.set_ylabel("Y (mm)")
+        self.ax.set_zlabel("Z (um)")
+        self.ax.set_title("Double-click a point to go to that position")
+
+        self.canvas.draw()
+        self.plot_populated = True
+
+    def on_scroll(self, event):
+        scale = 1.1 if event.button == "up" else 0.9
+
+        def zoom(lim):
+            center = (lim[0] + lim[1]) / 2
+            half_range = (lim[1] - lim[0]) / 2 * scale
+            return center - half_range, center + half_range
+
+        self.ax.set_xlim(zoom(self.ax.get_xlim()))
+        self.ax.set_ylim(zoom(self.ax.get_ylim()))
+        self.ax.set_zlim(zoom(self.ax.get_zlim()))
+        self.canvas.draw()
+
+    def on_click(self, event):
+        if not self.plot_populated:
+            return
+        if not event.dblclick or event.inaxes != self.ax:
+            return
+
+        # Cancel drag mode after double-click
+        self.canvas.button_pressed = None  # FIX: Avoids AttributeError
+
+        # Project 3D points to 2D screen space
+        x2d, y2d, _ = proj3d.proj_transform(self.x, self.y, self.z, self.ax.get_proj())
+        dists = np.hypot(x2d - event.xdata, y2d - event.ydata)
+        idx = np.argmin(dists)
+
+        # Threshold in data coordinates
+        display_thresh = 0.05 * max(
+            self.ax.get_xlim()[1] - self.ax.get_xlim()[0], self.ax.get_ylim()[1] - self.ax.get_ylim()[0]
+        )
+        if dists[idx] > display_thresh:
+            return
+
+        # Change point color
+        self.colors = ["r"] * len(self.x)
+        self.colors[idx] = "g"
+        self.scatter.remove()
+        self.scatter = self.ax.scatter(self.x, self.y, self.z, c=self.colors, s=30)
+
+        print(f"Clicked Point: x={self.x[idx]:.3f}, y={self.y[idx]:.3f}, z={self.z[idx]:.3f}")
+        self.canvas.draw()
+        self.signal_point_clicked.emit(self.x[idx], self.y[idx])

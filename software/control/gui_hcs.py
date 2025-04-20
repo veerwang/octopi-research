@@ -769,6 +769,21 @@ class HighContentScreeningGui(QMainWindow):
                 )
                 self.imageDisplayTabs.addTab(self.napariMosaicDisplayWidget, "Mosaic View")
 
+            # z plot
+            self.zPlotWidget = widgets.SurfacePlotWidget()
+            dock_surface_plot = dock.Dock("Z Plot", autoOrientation=False)
+            dock_surface_plot.showTitleBar()
+            dock_surface_plot.addWidget(self.zPlotWidget)
+            dock_surface_plot.setStretch(x=100, y=100)
+
+            surface_plot_dockArea = dock.DockArea()
+            surface_plot_dockArea.addDock(dock_surface_plot)
+
+            self.imageDisplayTabs.addTab(surface_plot_dockArea, "Plots")
+
+            # Connect the point clicked signal to move the stage
+            self.zPlotWidget.signal_point_clicked.connect(self.move_to_mm)
+
         if SUPPORT_LASER_AUTOFOCUS:
             dock_laserfocus_image_display = dock.Dock("Focus Camera Image Display", autoOrientation=False)
             dock_laserfocus_image_display.showTitleBar()
@@ -1095,6 +1110,9 @@ class HighContentScreeningGui(QMainWindow):
                     self.liveControlWidget.currentConfiguration.name
                 )
             )
+
+        # Connect to plot xyz data when coordinates are saved
+        self.multipointController.signal_coordinates.connect(self.zPlotWidget.plot)
 
     def setup_movement_updater(self):
         # We provide a few signals about the system's physical movement to other parts of the UI.  Ideally, they other
