@@ -2782,8 +2782,8 @@ class FlexibleMultiPointWidget(QFrame):
             self.entry_deltaY.valueChanged.connect(self.update_fov_positions)
         self.entry_NX.valueChanged.connect(self.update_fov_positions)
         self.entry_NY.valueChanged.connect(self.update_fov_positions)
-        self.btn_add.clicked.connect(self.update_fov_positions)
-        self.btn_remove.clicked.connect(self.update_fov_positions)
+        # self.btn_add.clicked.connect(self.update_fov_positions) #TODO: this is handled in the add_location method - to be removed
+        # self.btn_remove.clicked.connect(self.update_fov_positions) #TODO: this is handled in the remove_location method - to be removed
         self.entry_deltaZ.valueChanged.connect(self.set_deltaZ)
         self.entry_dt.valueChanged.connect(self.multipointController.set_deltat)
         self.entry_NX.valueChanged.connect(self.multipointController.set_NX)
