@@ -1,6 +1,7 @@
 import math
 import re
 import serial
+from typing import Optional
 
 from PyQt5.QtCore import QObject
 
@@ -84,7 +85,33 @@ class Microscope(QObject):
                 self.objective_changer = microscope.objective_changer
 
     def initialize_camera(self, is_simulation):
-        self.camera = squid.camera.utils.get_camera(squid.config.get_camera_config(), simulated=is_simulation)
+        def acquisition_camera_hw_trigger_fn(illumination_time: Optional[float]) -> bool:
+            # NOTE(imo): If this succeeds, it means means we sent the request,
+            # but we didn't necessarily get confirmation of success.
+            if ENABLE_NL5 and NL5_USE_DOUT:
+                self.nl5.start_acquisition()
+            else:
+                illumination_time_us = 1000.0 * illumination_time if illumination_time else 0
+                self.log.debug(
+                    f"Sending hw trigger with illumination_time={illumination_time_us if illumination_time else None} [us]"
+                )
+                self.microcontroller.send_hardware_trigger(True if illumination_time else False, illumination_time_us)
+            return True
+
+        def acquisition_camera_hw_strobe_delay_fn(strobe_delay_ms: float) -> bool:
+            strobe_delay_us = int(1000 * strobe_delay_ms)
+            self.log.debug(f"Setting microcontroller strobe delay to {strobe_delay_us} [us]")
+            self.microcontroller.set_strobe_delay_us(strobe_delay_us)
+            self.microcontroller.wait_till_operation_is_completed()
+
+            return True
+
+        self.camera = squid.camera.utils.get_camera(
+            squid.config.get_camera_config(),
+            simulated=is_simulation,
+            hw_trigger_fn=acquisition_camera_hw_trigger_fn,
+            hw_set_strobe_delay_ms_fn=acquisition_camera_hw_strobe_delay_fn,
+        )
 
         self.camera.set_pixel_format(squid.config.CameraPixelFormat.from_string(DEFAULT_PIXEL_FORMAT))
         self.camera.set_acquisition_mode(CameraAcquisitionMode.SOFTWARE_TRIGGER)
