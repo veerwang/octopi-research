@@ -5543,10 +5543,48 @@ class FocusMapWidget(QFrame):
         self.generate_grid(self.rows_spin.value(), self.cols_spin.value())
 
     def add_current_point(self):
+        # Check if any scan regions exist
+        if not self.scanCoordinates.has_regions():
+            QMessageBox.warning(self, "No Regions Defined", "Please define scan regions before adding focus points.")
+            return
+
         pos = self.stage.get_pos()
-        self.focus_points.append((pos.x_mm, pos.y_mm, pos.z_mm))
-        self.update_point_list()
-        self.navigationViewer.register_focus_point(pos.x_mm, pos.y_mm)
+        region_id = None
+
+        # If by_region checkbox is checked, ask for region ID
+        if self.by_region_checkbox.isChecked():
+            region_ids = list(self.scanCoordinates.region_centers.keys())
+            if not region_ids:
+                QMessageBox.warning(
+                    self, "No Regions Defined", "Please define scan regions before adding focus points."
+                )
+                return
+
+            region_id, ok = QInputDialog.getItem(
+                self, "Select Region", "Choose a region:", [str(r) for r in region_ids], 0, False
+            )
+            if not ok or not region_id:
+                return
+            region_id = str(region_id)  # Ensure string format
+        else:
+            # Find the closest region to current position
+            closest_region = None
+            min_distance = float("inf")
+            for rid, center in self.scanCoordinates.region_centers.items():
+                dx = center[0] - pos.x_mm
+                dy = center[1] - pos.y_mm
+                distance = dx * dx + dy * dy
+                if distance < min_distance:
+                    min_distance = distance
+                    closest_region = rid
+            region_id = closest_region
+
+        if region_id is not None:
+            self.focus_points.append((region_id, pos.x_mm, pos.y_mm, pos.z_mm))
+            self.update_point_list()
+            self.navigationViewer.register_focus_point(pos.x_mm, pos.y_mm)
+        else:
+            QMessageBox.warning(self, "Region Error", "Could not determine a valid region for this focus point.")
 
     def remove_current_point(self):
         index = self.point_combo.currentIndex()
