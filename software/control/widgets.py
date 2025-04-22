@@ -5351,7 +5351,7 @@ class FocusMapWidget(QFrame):
         self.focusMap = focusMap
 
         # Store focus points in widget
-        self.focus_points = []  # list of (x,y,z) tuples
+        self.focus_points = []  # list of (region_id, x, y, z) tuples
         self.enabled = False  # toggled when focus map enabled for next acquisition
 
         self.setup_ui()
@@ -5397,9 +5397,9 @@ class FocusMapWidget(QFrame):
         self.cols_spin.setValue(4)
         settings_layout.addWidget(self.cols_spin)
         settings_layout.addStretch()
-        settings_layout.addWidget(QLabel("Fit Method:"))
+        settings_layout.addWidget(QLabel("Method:"))
         self.fit_method_combo = QComboBox()
-        self.fit_method_combo.addItems(["spline", "rbf"])
+        self.fit_method_combo.addItems(["spline", "rbf", "constant"])
         settings_layout.addWidget(self.fit_method_combo)
         settings_layout.addWidget(QLabel("Smoothing:"))
         self.smoothing_spin = QDoubleSpinBox()
@@ -5407,6 +5407,9 @@ class FocusMapWidget(QFrame):
         self.smoothing_spin.setValue(0.1)
         self.smoothing_spin.setSingleStep(0.05)
         settings_layout.addWidget(self.smoothing_spin)
+        self.by_region_checkbox = QCheckBox("By Region")
+        self.by_region_checkbox.setChecked(False)
+        settings_layout.addWidget(self.by_region_checkbox)
         self.layout.addLayout(settings_layout)
 
         # Status label (hidden by default)
@@ -5439,11 +5442,16 @@ class FocusMapWidget(QFrame):
         # self.point_combo.blockSignals(True)
         curr_focus_point = self.point_combo.currentIndex()
         self.point_combo.clear()
-        rows = self.rows_spin.value()
-        cols = self.cols_spin.value()
-        for idx, (x, y, z) in enumerate(self.focus_points):
+        for idx, (region_id, x, y, z) in enumerate(self.focus_points):
             point_text = (
-                f"x:" + str(round(x, 3)) + "mm  y:" + str(round(y, 3)) + "mm  z:" + str(round(1000 * z, 2)) + "μm"
+                f"{region_id}: "
+                + "x:"
+                + str(round(x, 3))
+                + "mm  y:"
+                + str(round(y, 3))
+                + "mm  z:"
+                + str(round(1000 * z, 2))
+                + "μm"
             )
             self.point_combo.addItem(point_text)
         self.point_combo.setCurrentIndex(max(0, min(curr_focus_point, len(self.focus_points) - 1)))
@@ -5453,7 +5461,7 @@ class FocusMapWidget(QFrame):
         """Edit coordinates of current point in a popup dialog"""
         index = self.point_combo.currentIndex()
         if 0 <= index < len(self.focus_points):
-            x, y, z = self.focus_points[index]
+            region_id, x, y, z = self.focus_points[index]
 
             # Create dialog
             dialog = QDialog(self)
@@ -5497,14 +5505,14 @@ class FocusMapWidget(QFrame):
                 new_x = x_spin.value()
                 new_y = y_spin.value()
                 new_z = z_spin.value() / 1000  # Convert μm back to mm for storage
-                self.focus_points[index] = (new_x, new_y, new_z)
+                self.focus_points[index] = (region_id, new_x, new_y, new_z)
                 self.update_point_list()
                 self.update_focus_point_display()
 
     def update_focus_point_display(self):
         """Update all focus points on navigation viewer"""
         self.navigationViewer.clear_focus_points()
-        for x, y, _ in self.focus_points:
+        for _, x, y, _ in self.focus_points:
             self.navigationViewer.register_focus_point(x, y)
 
     def generate_grid(self, rows=4, cols=4):
@@ -5522,9 +5530,10 @@ class FocusMapWidget(QFrame):
             )
 
             # Add points with current z coordinate
-            for x, y in coordinates:
-                self.focus_points.append((x, y, current_z))
-                self.navigationViewer.register_focus_point(x, y)
+            for region_id, coords_list in coordinates.items():
+                for coords in coords_list:
+                    self.focus_points.append((region_id, coords[0], coords[1], current_z))
+                    self.navigationViewer.register_focus_point(coords[0], coords[1])
 
             self.update_point_list()
             self.point_combo.blockSignals(False)
@@ -5558,7 +5567,7 @@ class FocusMapWidget(QFrame):
         if self.enabled:
             index = self.point_combo.currentIndex()
             if 0 <= index < len(self.focus_points):
-                x, y, z = self.focus_points[index]
+                _, x, y, z = self.focus_points[index]
                 self.stage.move_x_to(x)
                 self.stage.move_y_to(y)
                 self.stage.move_z_to(z)
@@ -5567,26 +5576,23 @@ class FocusMapWidget(QFrame):
         index = self.point_combo.currentIndex()
         if 0 <= index < len(self.focus_points):
             new_z = self.stage.get_pos().z_mm
-            x, y, _ = self.focus_points[index]
-            self.focus_points[index] = (x, y, new_z)
+            region_id, x, y, _ = self.focus_points[index]
+            self.focus_points[index] = (region_id, x, y, new_z)
             self.update_point_list()
 
-    def get_points_array(self):
-        return np.array(self.focus_points)
-
-    def update_z_display(self, z_pos_mm):
-        self.z_label.setText(f"Z: {z_pos_mm:.3f} mm")
+    def get_region_points_dict(self):
+        points_dict = {}
+        for region_id, x, y, z in self.focus_points:
+            points_dict[region_id] = (x, y, z)
+        return points_dict
 
     def fit_surface(self):
-        if len(self.focus_points) < 4:
-            self.status_label.setText("It's recommended to use at least 4 points to fit surface")
-            self.status_label.show()
-
         try:
             self.focusMap.set_method(self.fit_method_combo.currentText())
+            self.focusMap.set_fit_by_region(self.by_region_checkbox.isChecked())
             self.focusMap.smoothing_factor = self.smoothing_spin.value()
 
-            mean_error, std_error = self.focusMap.fit(self.get_points_array())
+            mean_error, std_error = self.focusMap.fit(self.get_region_points_dict())
 
             self.status_label.setText(f"Surface fit: {mean_error:.3f} mm mean error")
             self.status_label.show()

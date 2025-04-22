@@ -2470,7 +2470,7 @@ class MultiPointController(QObject):
                 # Convert each tuple to list for modification
                 for i, coords in enumerate(region_fov_coords):
                     x, y = coords[:2]  # This handles both (x,y) and (x,y,z) formats
-                    z = self.focus_map.interpolate(x, y)
+                    z = self.focus_map.interpolate(x, y, region_id)
                     # Modify the list directly
                     region_fov_coords[i] = (x, y, z)
                     self.scanCoordinates.update_fov_z_level(region_id, i, z)
@@ -4536,13 +4536,16 @@ class FocusMap:
 
     def __init__(self, smoothing_factor=0.1):
         self.smoothing_factor = smoothing_factor
-        self.surface_fit = None
-        self.method = "spline"  # can be 'spline' or 'rbf'
-        self.is_fitted = False
-        self.points_xyz = None
-        # New attributes for region-specific fitting
+        self.method = "spline"  # can be 'spline' or 'rbf' or 'constant'
+        self.global_surface_fit = None
+        self.global_method = None
+        self.global_errors = None
         self.region_surface_fits = {}
+        self.region_methods = {}
+        self.region_errors = {}
         self.fit_by_region = False
+        self.focus_points = {}
+        self.is_fitted = False
 
     def generate_grid_coordinates(
         self, scanCoordinates: ScanCoordinates, rows: int = 4, cols: int = 4, add_margin: bool = False
@@ -4563,7 +4566,7 @@ class FocusMap:
             raise ValueError("Number of rows and columns must be greater than 0")
 
         # Dictionary to store focus points by region
-        focus_points = {}
+        focus_coords = {}
 
         # Generate focus points for each region
         for region_id, region_coords in scanCoordinates.region_fov_coordinates.items():
@@ -4572,7 +4575,7 @@ class FocusMap:
             if not bounds:
                 continue
 
-            region_focus_points = []
+            region_focus_coords = []
             x_min, x_max = bounds["min_x"], bounds["max_x"]
             y_min, y_max = bounds["min_y"], bounds["max_y"]
 
@@ -4608,11 +4611,11 @@ class FocusMap:
                     if scanCoordinates.validate_coordinates(x, y) and scanCoordinates.region_contains_coordinate(
                         region_id, x, y
                     ):
-                        region_focus_points.append((x, y))
+                        region_focus_coords.append((x, y))
 
-            focus_points[region_id] = region_focus_points
+            focus_coords[region_id] = region_focus_coords
 
-        return focus_points
+        return focus_coords
 
     def set_method(self, method: str):
         """Set interpolation method
@@ -4647,6 +4650,8 @@ class FocusMap:
         if not hasattr(self, "fit_by_region"):
             raise ValueError("fit_by_region must be set before fitting")
 
+        self.focus_points = points
+
         if self.fit_by_region:
             self.region_surface_fits = {}
             self.region_methods = {}
@@ -4658,22 +4663,28 @@ class FocusMap:
                 self.region_surface_fits[region_id], self.region_methods[region_id], self.region_errors[region_id] = (
                     self._fit_surface(region_points)
                 )
+            if self.method == "constant":
+                mean_error = None
+                std_error = None
+            else:
+                all_errors = np.concatenate([errors for errors in self.region_errors.values()])
+                mean_error = np.mean(all_errors)
+                std_error = np.std(all_errors)
 
-            self.is_fitted = True
-
-            return self.region_errors
         else:
             all_points = []
             for region_points in points.values():
                 all_points.extend(region_points)
-            if len(all_points) in [0, 2, 3]:
+            if len(all_points) < 4:
                 raise ValueError("Use 1 point for constant plane, or at least 4 points for surface fitting")
 
-            self.surface_fit, self.method, self.errors = self._fit_surface(all_points)
+            self.global_surface_fit, self.global_method, self.global_errors = self._fit_surface(all_points)
+            mean_error = np.mean(self.global_errors)
+            std_error = np.std(self.global_errors)
 
-            self.is_fitted = True
+        self.is_fitted = True
 
-            return self.errors
+        return mean_error, std_error
 
     def _fit_surface(self, points: List[Tuple[float, float, float]]) -> Tuple[Callable, str, np.ndarray]:
         """Fit surface through provided focus points for a specific region or globally
@@ -4691,6 +4702,8 @@ class FocusMap:
 
         if len(points) == 1:
             # For single point, create a flat plane at that z-height
+            if self.method != "constant":
+                print("One point can only be used for constant plane, falling back to constant")
             z_value = z[0]
             surface_fit = self._fit_constant_plane(z_value)
             method = "constant"
@@ -4706,6 +4719,10 @@ class FocusMap:
                     print(f"Spline fitting failed: {str(e)}, falling back to RBF")
                     surface_fit = self._fit_rbf(x, y, z)
                     method = "rbf"
+            elif self.method == "constant":
+                print("Constant method cannot be used for multiple points, falling back to RBF")
+                surface_fit = self._fit_rbf(x, y, z)
+                method = "rbf"
             else:
                 surface_fit = self._fit_rbf(x, y, z)
                 method = "rbf"
@@ -4745,53 +4762,35 @@ class FocusMap:
             raise RuntimeError("Must fit surface before interpolating")
 
         # If fit_by_region is True and region_id is provided, use region-specific surface
-        if self.fit_by_region and region_id is not None and region_id in self.region_surface_fits:
-            region_fit = self.region_surface_fits[region_id]
-            surface_fit = region_fit["surface"]
-            method = region_fit["method"]
-
-            if np.isscalar(x) and np.isscalar(y):
-                if method == "spline":
-                    return float(surface_fit.ev(x, y))
-                elif method == "constant":
-                    return surface_fit(x, y)
-                else:  # rbf
-                    return float(surface_fit([[x, y]]))
-            else:
-                x = np.asarray(x)
-                y = np.asarray(y)
-                if method == "spline":
-                    return surface_fit.ev(x, y)
-                elif method == "constant":
-                    return surface_fit(x, y)
-                else:  # rbf
-                    xy = np.column_stack((x.ravel(), y.ravel()))
-                    z = surface_fit(xy)
-                    return z.reshape(x.shape)
+        if self.fit_by_region:
+            if region_id is None or region_id not in self.region_surface_fits:
+                raise ValueError(f"Region {region_id} not found")
+            surface_fit = self.region_surface_fits[region_id]
+            method = self.region_methods[region_id]
         else:
-            # Use global surface fit
-            if np.isscalar(x) and np.isscalar(y):
-                if self.method == "spline":
-                    return float(self.surface_fit.ev(x, y))
-                elif callable(self.surface_fit) and not hasattr(self.surface_fit, "__call__"):
-                    # For constant plane function
-                    return self.surface_fit(x, y)
-                else:
-                    return float(self.surface_fit([[x, y]]))
-            else:
-                x = np.asarray(x)
-                y = np.asarray(y)
-                if self.method == "spline":
-                    return self.surface_fit.ev(x, y)
-                elif callable(self.surface_fit) and not hasattr(self.surface_fit, "__call__"):
-                    # For constant plane function
-                    return self.surface_fit(x, y)
-                else:
-                    xy = np.column_stack((x.ravel(), y.ravel()))
-                    z = self.surface_fit(xy)
-                    return z.reshape(x.shape)
+            surface_fit = self.global_surface_fit
+            method = self.global_method
 
-    def _calculate_fitting_errors(self, points: List[Tuple[float, float, float]]):
+        if np.isscalar(x) and np.isscalar(y):
+            if method == "spline":
+                return float(surface_fit.ev(x, y))
+            elif method == "constant":
+                return surface_fit(x, y)
+            else:  # rbf
+                return float(surface_fit([[x, y]]))
+        else:
+            x = np.asarray(x)
+            y = np.asarray(y)
+            if method == "spline":
+                return surface_fit.ev(x, y)
+            elif method == "constant":
+                return surface_fit(x, y)
+            else:  # rbf
+                xy = np.column_stack((x.ravel(), y.ravel()))
+                z = surface_fit(xy)
+                return z.reshape(x.shape)
+
+    def _calculate_fitting_errors(self, points: List[Tuple[float, float, float]]) -> np.ndarray:
         """Calculate absolute errors at measured points"""
         errors = []
         for x, y, z_measured in points:
@@ -4811,7 +4810,7 @@ class FocusMap:
         Returns:
             tuple: (X grid, Y grid, Z grid)
         """
-        if not self.is_fitted and not self.region_surface_fits:
+        if not self.is_fitted:
             raise RuntimeError("Must fit surface before generating grid")
 
         x = np.linspace(x_range[0], x_range[1], num_points)
