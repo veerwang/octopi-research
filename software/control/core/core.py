@@ -1736,9 +1736,6 @@ class MultiPointWorker(QObject):
         else:
             # set channel mode directly if in performance mode
             self.liveController.set_microscope_mode(config)
-            self.liveController.camera.set_exposure_time(config.exposure_time)
-            self.liveController.camera.set_analog_gain(config.analog_gain)
-            self.liveController.set_illumination(config.illumination_source, config.illumination_intensity)
             self.wait_till_operation_is_completed()
 
         # trigger acquisition (including turning on the illumination) and read frame
@@ -1802,9 +1799,6 @@ class MultiPointWorker(QObject):
                 else:
                     # set channel mode directly if in performance mode
                     self.liveController.set_microscope_mode(config)
-                    self.liveController.camera.set_exposure_time(config.exposure_time)
-                    self.liveController.camera.set_analog_gain(config.analog_gain)
-                    self.liveController.set_illumination(config.illumination_source, config.illumination_intensity)
                     self.wait_till_operation_is_completed()
 
                 # trigger acquisition (including turning on the illumination)
