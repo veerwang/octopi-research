@@ -4217,7 +4217,7 @@ class WellplateMultiPointWidget(QFrame):
                 else:
                     # If fit failed, uncheck the box and show warning
                     self.checkbox_useFocusMap.setChecked(False)
-                    QMessageBox.warning(self, "Warning", "Failed to fit focus surface - need at least 4 focus points")
+                    QMessageBox.warning(self, "Warning", "Failed to fit focus surface")
                     self.btn_startAcquisition.setChecked(False)
                     return
             else:
@@ -5621,13 +5621,35 @@ class FocusMapWidget(QFrame):
     def get_region_points_dict(self):
         points_dict = {}
         for region_id, x, y, z in self.focus_points:
-            points_dict[region_id] = (x, y, z)
+            if region_id not in points_dict:
+                points_dict[region_id] = []
+            points_dict[region_id].append((x, y, z))
         return points_dict
 
     def fit_surface(self):
         try:
-            self.focusMap.set_method(self.fit_method_combo.currentText())
-            self.focusMap.set_fit_by_region(self.by_region_checkbox.isChecked())
+            method = self.fit_method_combo.currentText()
+            rows = self.rows_spin.value()
+            cols = self.cols_spin.value()
+            by_region = self.by_region_checkbox.isChecked()
+
+            # Validate settings
+            if method == "constant" and (rows != 1 or cols != 1):
+                QMessageBox.warning(
+                    self,
+                    "Confirm Your Configuration",
+                    "For 'constant' method, grid size should be 1×1.\nUse 'constant' with 'By Region' checked to define a Z value for each region.",
+                )
+
+            if method != "constant" and (rows < 2 or cols < 2):
+                QMessageBox.warning(
+                    self,
+                    "Confirm Your Configuration",
+                    "For surface fitting methods ('spline' or 'rbf'), a grid size of at least 2×2 is recommended.\nAlternatively, use 1x1 grid and 'constant' with 'By Region' checked to define a Z value for each region.",
+                )
+
+            self.focusMap.set_method(method)
+            self.focusMap.set_fit_by_region(by_region)
             self.focusMap.smoothing_factor = self.smoothing_spin.value()
 
             mean_error, std_error = self.focusMap.fit(self.get_region_points_dict())

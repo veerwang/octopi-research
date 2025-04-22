@@ -4651,6 +4651,7 @@ class FocusMap:
             raise ValueError("fit_by_region must be set before fitting")
 
         self.focus_points = points
+        print("fit_by_region", self.fit_by_region)
 
         if self.fit_by_region:
             self.region_surface_fits = {}
@@ -4658,6 +4659,7 @@ class FocusMap:
             self.region_errors = {}
             for region_id, region_points in points.items():
                 if len(region_points) in [0, 2, 3]:
+                    print(region_points)
                     raise ValueError("Use 1 point for constant plane, or at least 4 points for surface fitting")
 
                 self.region_surface_fits[region_id], self.region_methods[region_id], self.region_errors[region_id] = (
