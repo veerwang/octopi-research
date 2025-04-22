@@ -1668,14 +1668,8 @@ class MultiPointWorker(QObject):
                 and (self.af_fov_count % Acquisition.NUMBER_OF_FOVS_PER_AF == 0)
             ):
                 configuration_name_AF = MULTIPOINT_AUTOFOCUS_CHANNEL
-                config_AF = next(
-                    (
-                        config
-                        for config in self.channelConfigurationManager.get_channel_configurations_for_objective(
-                            self.objectiveStore.current_objective
-                        )
-                        if config.name == configuration_name_AF
-                    )
+                config_AF = self.channelConfigurationManager.get_channel_configuration_by_name(
+                    self.objectiveStore.current_objective, configuration_name_AF
                 )
                 self.signal_current_configuration.emit(config_AF)
                 if (
@@ -2237,17 +2231,11 @@ class MultiPointController(QObject):
     def set_selected_configurations(self, selected_configurations_name):
         self.selected_configurations = []
         for configuration_name in selected_configurations_name:
-            self.selected_configurations.append(
-                next(
-                    (
-                        config
-                        for config in self.channelConfigurationManager.get_channel_configurations_for_objective(
-                            self.objectiveStore.current_objective
-                        )
-                        if config.name == configuration_name
-                    )
-                )
+            config = self.channelConfigurationManager.get_channel_configuration_by_name(
+                self.objectiveStore.current_objective, configuration_name
             )
+            if config:
+                self.selected_configurations.append(config)
 
     def get_acquisition_image_count(self):
         """
@@ -2756,17 +2744,11 @@ class TrackingController(QObject):
     def set_selected_configurations(self, selected_configurations_name):
         self.selected_configurations = []
         for configuration_name in selected_configurations_name:
-            self.selected_configurations.append(
-                next(
-                    (
-                        config
-                        for config in self.channelConfigurationManager.get_channel_configurations_for_objective(
-                            self.objectiveStore.current_objective
-                        )
-                        if config.name == configuration_name
-                    )
-                )
+            config = self.channelConfigurationManager.get_channel_configuration_by_name(
+                self.objectiveStore.current_objective, configuration_name
             )
+            if config:
+                self.selected_configurations.append(config)
 
     def toggle_stage_tracking(self, state):
         self.flag_stage_tracking_enabled = state > 0
@@ -3689,6 +3671,10 @@ class ChannelConfigurationManager:
     def get_channel_configurations_for_objective(self, objective: str) -> List[ChannelMode]:
         """Get Configuration objects for current active type (alias for get_configurations)"""
         return self.get_configurations(objective)
+
+    def get_channel_configuration_by_name(self, objective: str, name: str) -> ChannelMode:
+        """Get Configuration object by name"""
+        return next((mode for mode in self.get_configurations(objective) if mode.name == name), None)
 
     def toggle_confocal_widefield(self, confocal: bool) -> None:
         """Toggle between confocal and widefield configurations"""
