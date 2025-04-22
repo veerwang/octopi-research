@@ -539,7 +539,11 @@ class HighContentScreeningGui(QMainWindow):
             self.log.error("Setup timed out, resetting microcontroller before failing gui setup")
             self.microcontroller.reset()
             raise e
-        self.camera.set_acquisition_mode(squid.abc.CameraAcquisitionMode.SOFTWARE_TRIGGER)
+        if DEFAULT_TRIGGER_MODE == TriggerMode.HARDWARE:
+            print("Setting acquisition mode to HARDWARE_TRIGGER")
+            self.camera.set_acquisition_mode(squid.abc.CameraAcquisitionMode.HARDWARE_TRIGGER)
+        else:
+            self.camera.set_acquisition_mode(squid.abc.CameraAcquisitionMode.SOFTWARE_TRIGGER)
         self.camera.add_frame_callback(self.streamHandler.on_new_frame)
         self.camera.enable_callbacks(enabled=True)
 
