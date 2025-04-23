@@ -4535,6 +4535,7 @@ class FocusMap:
     """Handles fitting and interpolation of slide surfaces through measured focus points"""
 
     def __init__(self, smoothing_factor=0.1):
+        self._log = squid.logging.get_logger(self.__class__.__name__)
         self.smoothing_factor = smoothing_factor
         self.method = "spline"  # can be 'spline' or 'rbf' or 'constant'
         self.global_surface_fit = None
@@ -4651,7 +4652,6 @@ class FocusMap:
             raise ValueError("fit_by_region must be set before fitting")
 
         self.focus_points = points
-        print("fit_by_region", self.fit_by_region)
 
         if self.fit_by_region:
             self.region_surface_fits = {}
@@ -4703,7 +4703,7 @@ class FocusMap:
         if len(points) == 1:
             # For single point, create a flat plane at that z-height
             if self.method != "constant":
-                print("One point can only be used for constant plane, falling back to constant")
+                self._log.warning("One point can only be used for constant plane, falling back to constant")
             z_value = z[0]
             surface_fit = self._fit_constant_plane(z_value)
             method = "constant"
@@ -4718,11 +4718,11 @@ class FocusMap:
                     )
                     method = self.method
                 except Exception as e:
-                    print(f"Spline fitting failed: {str(e)}, falling back to RBF")
+                    self._log.warning(f"Spline fitting failed: {str(e)}, falling back to RBF")
                     surface_fit = self._fit_rbf(x, y, z)
                     method = "rbf"
             elif self.method == "constant":
-                print("Constant method cannot be used for multiple points, falling back to RBF")
+                self._log.warning("Constant method cannot be used for multiple points, falling back to RBF")
                 surface_fit = self._fit_rbf(x, y, z)
                 method = "rbf"
             else:

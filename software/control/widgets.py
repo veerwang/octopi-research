@@ -4271,6 +4271,7 @@ class WellplateMultiPointWidget(QFrame):
             self.focusMapWidget.disable_updating_focus_points_on_signal()
         self.reset_coordinates()
         if self.focusMapWidget is not None and self.focusMapWidget.focus_points:
+            self.focusMapWidget.update_focus_point_display()
             self.focusMapWidget.enable_updating_focus_points_on_signal()
         self.setEnabled_all(True)
 
