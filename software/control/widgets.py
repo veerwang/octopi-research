@@ -5379,10 +5379,14 @@ class FocusMapWidget(QFrame):
         self.remove_point_btn = QPushButton("Remove")
         self.next_point_btn = QPushButton("Next")
         self.edit_point_btn = QPushButton("Edit")
+        self.export_btn = QPushButton("Export")
+        self.import_btn = QPushButton("Import")
         point_controls.addWidget(self.add_point_btn)
         point_controls.addWidget(self.remove_point_btn)
         point_controls.addWidget(self.next_point_btn)
         point_controls.addWidget(self.edit_point_btn)
+        point_controls.addWidget(self.export_btn)
+        point_controls.addWidget(self.import_btn)
         self.layout.addLayout(point_controls)
 
         # Surface fitting controls
@@ -5413,9 +5417,9 @@ class FocusMapWidget(QFrame):
         settings_layout.addWidget(self.by_region_checkbox)
         self.layout.addLayout(settings_layout)
 
-        # Status label (hidden by default)
+        # Status label - reserve space even when hidden
         self.status_label = QLabel()
-        self.status_label.hide()
+        self.status_label.setText(" ")  # Empty text to keep space
         self.layout.addWidget(self.status_label)
 
     def make_connections(self):
@@ -5434,6 +5438,8 @@ class FocusMapWidget(QFrame):
         self.remove_point_btn.clicked.connect(self.remove_current_point)
         self.next_point_btn.clicked.connect(self.goto_next_point)
         self.edit_point_btn.clicked.connect(self.edit_current_point)
+        self.export_btn.clicked.connect(self.export_focus_points)
+        self.import_btn.clicked.connect(self.import_focus_points)
 
         # Connect to scan coordinates changes
         self.scanCoordinates.signal_scan_coordinates_updated.connect(self.on_regions_updated)
@@ -5522,7 +5528,7 @@ class FocusMapWidget(QFrame):
             self.point_combo.blockSignals(True)
             self.focus_points.clear()
             self.navigationViewer.clear_focus_points()
-            self.status_label.hide()
+            self.status_label.setText(" ")
             current_z = self.stage.get_pos().z_mm
 
             # Use FocusMap to generate coordinates
@@ -5635,6 +5641,17 @@ class FocusMapWidget(QFrame):
             by_region = self.by_region_checkbox.isChecked()
 
             # Validate settings
+            if by_region:
+                scan_regions = set(self.scanCoordinates.region_centers.keys())
+                focus_regions = set(region_id for region_id, _, _, _ in self.focus_points)
+                if focus_regions != scan_regions:
+                    QMessageBox.warning(
+                        self,
+                        "Region Mismatch",
+                        "The focus points region IDs do not match the scan regions. Please uncheck 'By Region' or select the correct regions.",
+                    )
+                    return False
+
             if method == "constant" and (rows != 1 or cols != 1):
                 QMessageBox.warning(
                     self,
@@ -5656,13 +5673,110 @@ class FocusMapWidget(QFrame):
             mean_error, std_error = self.focusMap.fit(self.get_region_points_dict())
 
             self.status_label.setText(f"Surface fit: {mean_error:.3f} mm mean error")
-            self.status_label.show()
             return True
 
         except Exception as e:
             self.status_label.setText(f"Fitting failed: {str(e)}")
-            self.status_label.show()
             return False
+
+    def export_focus_points(self):
+        """Export focus points to a CSV file"""
+        if not self.focus_points:
+            QMessageBox.warning(self, "No Focus Points", "There are no focus points to export.")
+            return
+
+        file_path, _ = QFileDialog.getSaveFileName(self, "Export Focus Points", "", "CSV Files (*.csv);;All Files (*)")
+        if not file_path:
+            return
+        if not file_path.lower().endswith(".csv"):
+            file_path += ".csv"
+
+        try:
+            with open(file_path, "w", newline="") as csvfile:
+                writer = csv.writer(csvfile)
+                # Write header
+                writer.writerow(["Region_ID", "X_mm", "Y_mm", "Z_um"])
+
+                # Write data
+                for region_id, x, y, z in self.focus_points:
+                    writer.writerow([region_id, x, y, z])
+
+            self.status_label.setText(f"Exported {len(self.focus_points)} points to {file_path}")
+
+        except Exception as e:
+            QMessageBox.critical(self, "Export Error", f"Failed to export focus points: {str(e)}")
+
+    def import_focus_points(self):
+        """Import focus points from a CSV file"""
+        file_path, _ = QFileDialog.getOpenFileName(self, "Import Focus Points", "", "CSV Files (*.csv);;All Files (*)")
+
+        if not file_path:
+            return
+
+        try:
+            # Read the CSV file
+            imported_points = []
+            with open(file_path, "r", newline="") as csvfile:
+                reader = csv.reader(csvfile)
+                header = next(reader)  # Skip header row
+
+                # Validate header
+                required_columns = ["Region_ID", "X_mm", "Y_mm", "Z_um"]
+                if not all(col in header for col in required_columns):
+                    QMessageBox.warning(
+                        self, "Invalid Format", f"CSV file must contain columns: {', '.join(required_columns)}"
+                    )
+                    return
+
+                # Get column indices
+                region_idx = header.index("Region_ID")
+                x_idx = header.index("X_mm")
+                y_idx = header.index("Y_mm")
+                z_idx = header.index("Z_um")
+
+                # Read data
+                for row in reader:
+                    if len(row) >= 4:
+                        try:
+                            region_id = str(row[region_idx])
+                            x = float(row[x_idx])
+                            y = float(row[y_idx])
+                            z = float(row[z_idx])
+                            imported_points.append((region_id, x, y, z))
+                        except (ValueError, IndexError):
+                            continue
+
+            # If by_region is checked, validate regions
+            if self.by_region_checkbox.isChecked():
+                scan_regions = set(self.scanCoordinates.region_centers.keys())
+                focus_regions = set(region_id for region_id, _, _, _ in imported_points)
+
+                if not focus_regions == scan_regions:
+                    response = QMessageBox.warning(
+                        self,
+                        "Region Mismatch",
+                        f"The imported focus points have regions: {', '.join(sorted(focus_regions))}\n\n"
+                        f"Current scan has regions: {', '.join(sorted(scan_regions))}\n\n"
+                        "Import anyway (disable 'By Region') or cancel?",
+                        QMessageBox.Ok | QMessageBox.Cancel,
+                        QMessageBox.Cancel,
+                    )
+
+                    if response == QMessageBox.Cancel:
+                        return
+                    else:
+                        # User chose to continue, uncheck by_region
+                        self.by_region_checkbox.setChecked(False)
+
+            # Clear existing points and add imported ones
+            self.focus_points = imported_points
+            self.update_point_list()
+            self.update_focus_point_display()
+
+            self.status_label.setText(f"Imported {len(imported_points)} focus points")
+
+        except Exception as e:
+            QMessageBox.critical(self, "Import Error", f"Failed to import focus points: {str(e)}")
 
     def on_regions_updated(self):
         if self.scanCoordinates.has_regions():
