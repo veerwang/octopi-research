@@ -4659,15 +4659,13 @@ class FocusMap:
             self.region_errors = {}
             for region_id, region_points in points.items():
                 if len(region_points) in [0, 2, 3]:
-                    print(region_points)
                     raise ValueError("Use 1 point for constant plane, or at least 4 points for surface fitting")
-
                 self.region_surface_fits[region_id], self.region_methods[region_id], self.region_errors[region_id] = (
                     self._fit_surface(region_points)
                 )
             if self.method == "constant":
-                mean_error = None
-                std_error = None
+                mean_error = 0
+                std_error = 0
             else:
                 all_errors = np.concatenate([errors for errors in self.region_errors.values()])
                 mean_error = np.mean(all_errors)
@@ -4709,6 +4707,8 @@ class FocusMap:
             z_value = z[0]
             surface_fit = self._fit_constant_plane(z_value)
             method = "constant"
+
+            self.is_fitted = True
             errors = None  # No error for a single point
         else:
             if self.method == "spline":
@@ -4729,7 +4729,8 @@ class FocusMap:
                 surface_fit = self._fit_rbf(x, y, z)
                 method = "rbf"
 
-            errors = self._calculate_fitting_errors(points)
+            self.is_fitted = True
+            errors = self._calculate_fitting_errors(points, surface_fit, method)
 
         return surface_fit, method, errors
 
@@ -4773,6 +4774,9 @@ class FocusMap:
             surface_fit = self.global_surface_fit
             method = self.global_method
 
+        return self._interpolate_helper(x, y, surface_fit, method)
+
+    def _interpolate_helper(self, x, y, surface_fit, method):
         if np.isscalar(x) and np.isscalar(y):
             if method == "spline":
                 return float(surface_fit.ev(x, y))
@@ -4792,11 +4796,13 @@ class FocusMap:
                 z = surface_fit(xy)
                 return z.reshape(x.shape)
 
-    def _calculate_fitting_errors(self, points: List[Tuple[float, float, float]]) -> np.ndarray:
+    def _calculate_fitting_errors(
+        self, points: List[Tuple[float, float, float]], surface_fit: Callable, method: str
+    ) -> np.ndarray:
         """Calculate absolute errors at measured points"""
         errors = []
         for x, y, z_measured in points:
-            z_fit = self.interpolate(x, y)
+            z_fit = self._interpolate_helper(x, y, surface_fit, method)
             errors.append(abs(z_fit - z_measured))
         return np.array(errors)
 
