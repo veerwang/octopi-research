@@ -1565,15 +1565,8 @@ class LiveControlWidget(QFrame):
     def update_microscope_mode_by_name(self, current_microscope_mode_name):
         self.is_switching_mode = True
         # identify the mode selected (note that this references the object in self.channelConfigurationManager.get_channel_configurations_for_objective(self.objectiveStore.current_objective))
-        self.currentConfiguration = next(
-            (
-                config
-                for config in self.channelConfigurationManager.get_channel_configurations_for_objective(
-                    self.objectiveStore.current_objective
-                )
-                if config.name == current_microscope_mode_name
-            ),
-            None,
+        self.currentConfiguration = self.channelConfigurationManager.get_channel_configuration_by_name(
+            self.objectiveStore.current_objective, current_microscope_mode_name
         )
         self.signal_live_configuration.emit(self.currentConfiguration)
         # update the microscope to the current configuration
@@ -6257,15 +6250,8 @@ class NapariLiveWidget(QWidget):
         self.dropdown_modeSelection.setCurrentText(config.name)
 
     def update_microscope_mode_by_name(self, current_microscope_mode_name):
-        self.live_configuration = next(
-            (
-                config
-                for config in self.channelConfigurationManager.get_channel_configurations_for_objective(
-                    self.objectiveStore.current_objective
-                )
-                if config.name == current_microscope_mode_name
-            ),
-            None,
+        self.live_configuration = self.channelConfigurationManager.get_channel_configuration_by_name(
+            self.objectiveStore.current_objective, current_microscope_mode_name
         )
         if self.live_configuration:
             self.liveController.set_microscope_mode(self.live_configuration)
