@@ -751,19 +751,20 @@ class SpinningDiskConfocalWidget(QWidget):
             illumination_iris = self.xlight.illumination_iris
             self.slider_illumination_iris.setValue(illumination_iris)
             self.spinbox_illumination_iris.setValue(illumination_iris)
+
+            self.slider_illumination_iris.sliderReleased.connect(lambda: self.update_illumination_iris(True))
+            # Update spinbox values during sliding without sending to hardware
+            self.slider_illumination_iris.valueChanged.connect(self.spinbox_illumination_iris.setValue)
+            self.spinbox_illumination_iris.editingFinished.connect(lambda: self.update_illumination_iris(False))
         if self.xlight.has_emission_iris_diaphragm:
             emission_iris = self.xlight.emission_iris
             self.slider_emission_iris.setValue(emission_iris)
             self.spinbox_emission_iris.setValue(emission_iris)
 
-        self.slider_illumination_iris.sliderReleased.connect(lambda: self.update_illumination_iris(True))
-        self.slider_emission_iris.sliderReleased.connect(lambda: self.update_emission_iris(True))
-        # Update spinbox values during sliding without sending to hardware
-        self.slider_illumination_iris.valueChanged.connect(self.spinbox_illumination_iris.setValue)
-        self.slider_emission_iris.valueChanged.connect(self.spinbox_emission_iris.setValue)
-
-        self.spinbox_illumination_iris.editingFinished.connect(lambda: self.update_illumination_iris(False))
-        self.spinbox_emission_iris.editingFinished.connect(lambda: self.update_emission_iris(False))
+            self.slider_emission_iris.sliderReleased.connect(lambda: self.update_emission_iris(True))
+            # Update spinbox values during sliding without sending to hardware
+            self.slider_emission_iris.valueChanged.connect(self.spinbox_emission_iris.setValue)
+            self.spinbox_emission_iris.editingFinished.connect(lambda: self.update_emission_iris(False))
 
     def init_ui(self):
 
