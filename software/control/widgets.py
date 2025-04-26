@@ -748,11 +748,11 @@ class SpinningDiskConfocalWidget(QWidget):
         self.dropdown_filter_slider.valueChanged.connect(self.set_filter_slider)
 
         if self.xlight.has_illumination_iris_diaphragm:
-            illumination_iris = self.xlight.get_illumination_iris()
+            illumination_iris = self.xlight.illumination_iris
             self.slider_illumination_iris.setValue(illumination_iris)
             self.spinbox_illumination_iris.setValue(illumination_iris)
         if self.xlight.has_emission_iris_diaphragm:
-            emission_iris = self.xlight.get_emission_iris()
+            emission_iris = self.xlight.emission_iris
             self.slider_emission_iris.setValue(emission_iris)
             self.spinbox_emission_iris.setValue(emission_iris)
 
