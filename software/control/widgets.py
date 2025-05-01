@@ -595,6 +595,8 @@ class LaserAutofocusSettingWidget(QWidget):
 
     def update_values(self):
         """Update all widget values from the controller properties"""
+        self.clear_labels()
+
         # Update spinboxes
         for prop_name, spinbox in self.spinboxes.items():
             current_value = getattr(self.laserAutofocusController.laser_af_properties, prop_name)
@@ -614,6 +616,8 @@ class LaserAutofocusSettingWidget(QWidget):
         self.update_calibration_label()
 
     def apply_and_initialize(self):
+        self.clear_labels()
+
         updates = {
             "laser_af_averaging_n": int(self.spinboxes["laser_af_averaging_n"].value()),
             "displacement_success_window_um": self.spinboxes["displacement_success_window_um"].value(),
@@ -674,6 +678,16 @@ class LaserAutofocusSettingWidget(QWidget):
             self.liveController.microcontroller.wait_till_operation_is_completed()
 
         return frame
+
+    def clear_labels(self):
+        # Remove any existing error or correlation labels
+        if hasattr(self, "spot_detection_error_label"):
+            self.spot_detection_error_label.deleteLater()
+            delattr(self, "spot_detection_error_label")
+
+        if hasattr(self, "correlation_label"):
+            self.correlation_label.deleteLater()
+            delattr(self, "correlation_label")
 
     def run_spot_detection(self):
         """Run spot detection with current settings and emit results"""
