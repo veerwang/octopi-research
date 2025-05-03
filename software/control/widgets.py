@@ -1,12 +1,15 @@
 import os
 import logging
+import sys
+from typing import Optional
 
 import squid.logging
-from control.core.core import TrackingController, MultiPointController
+from control.core.core import TrackingController, MultiPointController, LiveController
 from control.microcontroller import Microcontroller
 from control.piezo import PiezoStage
 import control.utils as utils
-from squid.abc import AbstractStage
+from squid.abc import AbstractStage, AbstractCamera
+from squid.config import CameraPixelFormat
 
 # set QT_API environment variable
 os.environ["QT_API"] = "pyqt5"
@@ -390,10 +393,10 @@ class LaserAutofocusSettingWidget(QWidget):
     signal_apply_settings = Signal()
     signal_laser_spot_location = Signal(np.ndarray, float, float)
 
-    def __init__(self, streamHandler, liveController, laserAutofocusController, stretch=True):
+    def __init__(self, streamHandler, liveController: LiveController, laserAutofocusController, stretch=True):
         super().__init__()
         self.streamHandler = streamHandler
-        self.liveController = liveController
+        self.liveController: LiveController = liveController
         self.laserAutofocusController = laserAutofocusController
         self.stretch = stretch
         self.liveController.set_trigger_fps(10)
@@ -430,9 +433,7 @@ class LaserAutofocusSettingWidget(QWidget):
         exposure_layout.addWidget(QLabel("Focus Camera Exposure (ms):"))
         self.exposure_spinbox = QDoubleSpinBox()
         self.exposure_spinbox.setSingleStep(0.1)
-        self.exposure_spinbox.setRange(
-            self.liveController.camera.EXPOSURE_TIME_MS_MIN, self.liveController.camera.EXPOSURE_TIME_MS_MAX
-        )
+        self.exposure_spinbox.setRange(*self.liveController.camera.get_exposure_limits())
         self.exposure_spinbox.setValue(self.laserAutofocusController.laser_af_properties.focus_camera_exposure_time_ms)
         exposure_layout.addWidget(self.exposure_spinbox)
 
@@ -594,6 +595,8 @@ class LaserAutofocusSettingWidget(QWidget):
 
     def update_values(self):
         """Update all widget values from the controller properties"""
+        self.clear_labels()
+
         # Update spinboxes
         for prop_name, spinbox in self.spinboxes.items():
             current_value = getattr(self.laserAutofocusController.laser_af_properties, prop_name)
@@ -613,6 +616,8 @@ class LaserAutofocusSettingWidget(QWidget):
         self.update_calibration_label()
 
     def apply_and_initialize(self):
+        self.clear_labels()
+
         updates = {
             "laser_af_averaging_n": int(self.spinboxes["laser_af_averaging_n"].value()),
             "displacement_success_window_um": self.spinboxes["displacement_success_window_um"].value(),
@@ -659,6 +664,31 @@ class LaserAutofocusSettingWidget(QWidget):
         )
         self.layout().addWidget(self.calibration_label)
 
+    def illuminate_and_get_frame(self):
+        # Get a frame from the live controller.  We need to reach deep into the liveController here which
+        # is not ideal.
+        self.liveController.microcontroller.turn_on_AF_laser()
+        self.liveController.microcontroller.wait_till_operation_is_completed()
+        self.liveController.trigger_acquisition()
+
+        try:
+            frame = self.liveController.camera.read_frame()
+        finally:
+            self.liveController.microcontroller.turn_off_AF_laser()
+            self.liveController.microcontroller.wait_till_operation_is_completed()
+
+        return frame
+
+    def clear_labels(self):
+        # Remove any existing error or correlation labels
+        if hasattr(self, "spot_detection_error_label"):
+            self.spot_detection_error_label.deleteLater()
+            delattr(self, "spot_detection_error_label")
+
+        if hasattr(self, "correlation_label"):
+            self.correlation_label.deleteLater()
+            delattr(self, "correlation_label")
+
     def run_spot_detection(self):
         """Run spot detection with current settings and emit results"""
         params = {
@@ -671,8 +701,7 @@ class LaserAutofocusSettingWidget(QWidget):
         }
         mode = self.spot_mode_combo.currentData()
 
-        # Get current frame from live controller
-        frame = self.liveController.camera.current_frame
+        frame = self.illuminate_and_get_frame()
         if frame is not None:
             try:
                 result = utils.find_spot_location(frame, mode=mode, params=params, debug_plot=True)
@@ -681,14 +710,15 @@ class LaserAutofocusSettingWidget(QWidget):
                     self.signal_laser_spot_location.emit(frame, x, y)
                 else:
                     raise Exception("No spot detection result returned")
-            except Exception as e:
+            except Exception:
                 # Show error message
-                error_box = QMessageBox()
-                error_box.setIcon(QMessageBox.Critical)
-                error_box.setText("Spot Detection Failed!")
-                error_box.setInformativeText(str(e))
-                error_box.setWindowTitle("Error")
-                error_box.exec_()
+                # Clear previous error label if it exists
+                if hasattr(self, "spot_detection_error_label"):
+                    self.spot_detection_error_label.deleteLater()
+
+                # Create and add new error label
+                self.spot_detection_error_label = QLabel("Spot detection failed!")
+                self.layout().addWidget(self.spot_detection_error_label)
 
     def show_cross_correlation_result(self, value):
         """Show cross-correlation value from validating laser af images"""
@@ -729,11 +759,26 @@ class SpinningDiskConfocalWidget(QWidget):
         self.btn_toggle_widefield.clicked.connect(self.toggle_disk_position)
         self.btn_toggle_motor.clicked.connect(self.toggle_motor)
 
-        self.slider_illumination_iris.valueChanged.connect(self.update_illumination_iris)
-        self.spinbox_illumination_iris.valueChanged.connect(self.update_illumination_iris)
-        self.slider_emission_iris.valueChanged.connect(self.update_emission_iris)
-        self.spinbox_emission_iris.valueChanged.connect(self.update_emission_iris)
         self.dropdown_filter_slider.valueChanged.connect(self.set_filter_slider)
+
+        if self.xlight.has_illumination_iris_diaphragm:
+            illumination_iris = self.xlight.illumination_iris
+            self.slider_illumination_iris.setValue(illumination_iris)
+            self.spinbox_illumination_iris.setValue(illumination_iris)
+
+            self.slider_illumination_iris.sliderReleased.connect(lambda: self.update_illumination_iris(True))
+            # Update spinbox values during sliding without sending to hardware
+            self.slider_illumination_iris.valueChanged.connect(self.spinbox_illumination_iris.setValue)
+            self.spinbox_illumination_iris.editingFinished.connect(lambda: self.update_illumination_iris(False))
+        if self.xlight.has_emission_iris_diaphragm:
+            emission_iris = self.xlight.emission_iris
+            self.slider_emission_iris.setValue(emission_iris)
+            self.spinbox_emission_iris.setValue(emission_iris)
+
+            self.slider_emission_iris.sliderReleased.connect(lambda: self.update_emission_iris(True))
+            # Update spinbox values during sliding without sending to hardware
+            self.slider_emission_iris.valueChanged.connect(self.spinbox_emission_iris.setValue)
+            self.spinbox_emission_iris.editingFinished.connect(lambda: self.update_emission_iris(False))
 
     def init_ui(self):
 
@@ -810,80 +855,83 @@ class SpinningDiskConfocalWidget(QWidget):
         layout.setColumnStretch(3, 1)
         self.setLayout(layout)
 
-    def disable_all_buttons(self):
-        self.dropdown_emission_filter.setEnabled(False)
-        self.dropdown_dichroic.setEnabled(False)
-        self.btn_toggle_widefield.setEnabled(False)
-        self.btn_toggle_motor.setEnabled(False)
-        self.slider_illumination_iris.setEnabled(False)
-        self.spinbox_illumination_iris.setEnabled(False)
-        self.slider_emission_iris.setEnabled(False)
-        self.spinbox_emission_iris.setEnabled(False)
-        self.dropdown_filter_slider.setEnabled(False)
+    def enable_all_buttons(self, enable: bool):
+        self.dropdown_emission_filter.setEnabled(enable)
+        self.dropdown_dichroic.setEnabled(enable)
+        self.btn_toggle_widefield.setEnabled(enable)
+        self.btn_toggle_motor.setEnabled(enable)
+        self.slider_illumination_iris.setEnabled(enable)
+        self.spinbox_illumination_iris.setEnabled(enable)
+        self.slider_emission_iris.setEnabled(enable)
+        self.spinbox_emission_iris.setEnabled(enable)
+        self.dropdown_filter_slider.setEnabled(enable)
 
-    def enable_all_buttons(self):
-        self.dropdown_emission_filter.setEnabled(True)
-        self.dropdown_dichroic.setEnabled(True)
-        self.btn_toggle_widefield.setEnabled(True)
-        self.btn_toggle_motor.setEnabled(True)
-        self.slider_illumination_iris.setEnabled(True)
-        self.spinbox_illumination_iris.setEnabled(True)
-        self.slider_emission_iris.setEnabled(True)
-        self.spinbox_emission_iris.setEnabled(True)
-        self.dropdown_filter_slider.setEnabled(True)
+    def block_iris_control_signals(self, block: bool):
+        self.slider_illumination_iris.blockSignals(block)
+        self.spinbox_illumination_iris.blockSignals(block)
+        self.slider_emission_iris.blockSignals(block)
+        self.spinbox_emission_iris.blockSignals(block)
 
     def toggle_disk_position(self):
-        self.disable_all_buttons()
+        self.enable_all_buttons(False)
         if self.disk_position_state == 1:
             self.disk_position_state = self.xlight.set_disk_position(0)
             self.btn_toggle_widefield.setText("Switch to Confocal")
         else:
             self.disk_position_state = self.xlight.set_disk_position(1)
             self.btn_toggle_widefield.setText("Switch to Widefield")
-        self.enable_all_buttons()
+        self.enable_all_buttons(True)
         self.signal_toggle_confocal_widefield.emit(self.disk_position_state)
 
     def toggle_motor(self):
-        self.disable_all_buttons()
+        self.enable_all_buttons(False)
         if self.btn_toggle_motor.isChecked():
             self.xlight.set_disk_motor_state(True)
         else:
             self.xlight.set_disk_motor_state(False)
-        self.enable_all_buttons()
+        self.enable_all_buttons(True)
 
     def set_emission_filter(self, index):
-        self.disable_all_buttons()
+        self.enable_all_buttons(False)
         selected_pos = self.dropdown_emission_filter.currentText()
         self.xlight.set_emission_filter(selected_pos)
-        self.enable_all_buttons()
+        self.enable_all_buttons(True)
 
     def set_dichroic(self, index):
-        self.disable_all_buttons()
+        self.enable_all_buttons(False)
         selected_pos = self.dropdown_dichroic.currentText()
         self.xlight.set_dichroic(selected_pos)
-        self.enable_all_buttons()
+        self.enable_all_buttons(True)
 
-    def update_illumination_iris(self, value):
-        self.disable_all_buttons()
-        # Update both slider and spinbox to ensure they're in sync
-        self.slider_illumination_iris.setValue(value)
-        self.spinbox_illumination_iris.setValue(value)
+    def update_illumination_iris(self, from_slider: bool):
+        self.block_iris_control_signals(True)  # avoid signals triggered by enable/disable buttons
+        self.enable_all_buttons(False)
+        if from_slider:
+            value = self.slider_illumination_iris.value()
+        else:
+            value = self.spinbox_illumination_iris.value()
+            self.slider_illumination_iris.setValue(value)
         self.xlight.set_illumination_iris(value)
-        self.enable_all_buttons()
+        self.enable_all_buttons(True)
+        self.block_iris_control_signals(False)
 
-    def update_emission_iris(self, value):
-        self.disable_all_buttons()
-        # Update both slider and spinbox to ensure they're in sync
-        self.slider_emission_iris.setValue(value)
-        self.spinbox_emission_iris.setValue(value)
+    def update_emission_iris(self, from_slider: bool):
+        self.block_iris_control_signals(True)  # avoid signals triggered by enable/disable buttons
+        self.enable_all_buttons(False)
+        if from_slider:
+            value = self.slider_emission_iris.value()
+        else:
+            value = self.spinbox_emission_iris.value()
+            self.slider_emission_iris.setValue(value)
         self.xlight.set_emission_iris(value)
-        self.enable_all_buttons()
+        self.enable_all_buttons(True)
+        self.block_iris_control_signals(False)
 
     def set_filter_slider(self, index):
-        self.disable_all_buttons()
+        self.enable_all_buttons(False)
         position = str(self.dropdown_filter_slider.value())
         self.xlight.set_filter_slider(position)
-        self.enable_all_buttons()
+        self.enable_all_buttons(True)
 
 
 class ObjectivesWidget(QWidget):
@@ -921,7 +969,7 @@ class CameraSettingsWidget(QFrame):
 
     def __init__(
         self,
-        camera,
+        camera: AbstractCamera,
         include_gain_exposure_time=False,
         include_camera_temperature_setting=False,
         include_camera_auto_wb_setting=False,
@@ -931,7 +979,8 @@ class CameraSettingsWidget(QFrame):
     ):
 
         super().__init__(*args, **kwargs)
-        self.camera = camera
+        self._log = squid.logging.get_logger(self.__class__.__name__)
+        self.camera: AbstractCamera = camera
         self.add_components(
             include_gain_exposure_time, include_camera_temperature_setting, include_camera_auto_wb_setting
         )
@@ -944,56 +993,64 @@ class CameraSettingsWidget(QFrame):
 
         # add buttons and input fields
         self.entry_exposureTime = QDoubleSpinBox()
-        self.entry_exposureTime.setMinimum(self.camera.EXPOSURE_TIME_MS_MIN)
-        self.entry_exposureTime.setMaximum(self.camera.EXPOSURE_TIME_MS_MAX)
+        self.entry_exposureTime.setMinimum(self.camera.get_exposure_limits()[0])
+        self.entry_exposureTime.setMaximum(self.camera.get_exposure_limits()[1])
         self.entry_exposureTime.setSingleStep(1)
         self.entry_exposureTime.setValue(20)
         self.camera.set_exposure_time(20)
 
         self.entry_analogGain = QDoubleSpinBox()
-        self.entry_analogGain.setMinimum(self.camera.GAIN_MIN)
-        self.entry_analogGain.setMaximum(self.camera.GAIN_MAX)
-        self.entry_analogGain.setSingleStep(self.camera.GAIN_STEP)
-        self.entry_analogGain.setValue(0)
-        self.camera.set_analog_gain(0)
+        try:
+            gain_range = self.camera.get_gain_range()
+            self.entry_analogGain.setMinimum(gain_range.min_gain)
+            self.entry_analogGain.setMaximum(gain_range.max_gain)
+            self.entry_analogGain.setSingleStep(gain_range.gain_step)
+            self.entry_analogGain.setValue(gain_range.min_gain)
+            self.camera.set_analog_gain(gain_range.min_gain)
+        except NotImplementedError:
+            self._log.info("Camera does not support analog gain, disabling analog gain control.")
+            self.entry_analogGain.setValue(0)
+            self.entry_analogGain.setEnabled(False)
 
         self.dropdown_pixelFormat = QComboBox()
         self.dropdown_pixelFormat.addItems(["MONO8", "MONO12", "MONO14", "MONO16", "BAYER_RG8", "BAYER_RG12"])
-        if self.camera.pixel_format is not None:
-            self.dropdown_pixelFormat.setCurrentText(self.camera.pixel_format)
+        if self.camera.get_pixel_format() is not None:
+            self.dropdown_pixelFormat.setCurrentText(self.camera.get_pixel_format().name)
         else:
             print("setting camera's default pixel format")
-            self.camera.set_pixel_format(DEFAULT_PIXEL_FORMAT)
+            self.camera.set_pixel_format(CameraPixelFormat.from_string(DEFAULT_PIXEL_FORMAT))
             self.dropdown_pixelFormat.setCurrentText(DEFAULT_PIXEL_FORMAT)
         self.dropdown_pixelFormat.setSizePolicy(QSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed))
         # to do: load and save pixel format in configurations
 
         self.entry_ROI_offset_x = QSpinBox()
-        self.entry_ROI_offset_x.setValue(self.camera.OffsetX)
+        roi_info = self.camera.get_region_of_interest()
+        (max_x, max_y) = self.camera.get_resolution()
+        self.entry_ROI_offset_x.setValue(roi_info[0])
         self.entry_ROI_offset_x.setSingleStep(8)
         self.entry_ROI_offset_x.setFixedWidth(60)
         self.entry_ROI_offset_x.setMinimum(0)
-        self.entry_ROI_offset_x.setMaximum(self.camera.WidthMax)
+        self.entry_ROI_offset_x.setMaximum(max_x)
         self.entry_ROI_offset_x.setKeyboardTracking(False)
         self.entry_ROI_offset_y = QSpinBox()
-        self.entry_ROI_offset_y.setValue(self.camera.OffsetY)
+        self.entry_ROI_offset_y.setValue(roi_info[1])
         self.entry_ROI_offset_y.setSingleStep(8)
         self.entry_ROI_offset_y.setFixedWidth(60)
         self.entry_ROI_offset_y.setMinimum(0)
-        self.entry_ROI_offset_y.setMaximum(self.camera.HeightMax)
+        self.entry_ROI_offset_y.setMaximum(max_y)
         self.entry_ROI_offset_y.setKeyboardTracking(False)
         self.entry_ROI_width = QSpinBox()
         self.entry_ROI_width.setMinimum(16)
-        self.entry_ROI_width.setMaximum(self.camera.WidthMax)
-        self.entry_ROI_width.setValue(self.camera.Width)
+        self.entry_ROI_width.setMaximum(max_x)
+        self.entry_ROI_width.setValue(roi_info[2])
         self.entry_ROI_width.setSingleStep(8)
         self.entry_ROI_width.setFixedWidth(60)
         self.entry_ROI_width.setKeyboardTracking(False)
         self.entry_ROI_height = QSpinBox()
         self.entry_ROI_height.setSingleStep(8)
         self.entry_ROI_height.setMinimum(16)
-        self.entry_ROI_height.setMaximum(self.camera.HeightMax)
-        self.entry_ROI_height.setValue(self.camera.Height)
+        self.entry_ROI_height.setMaximum(max_y)
+        self.entry_ROI_height.setValue(roi_info[3])
         self.entry_ROI_height.setFixedWidth(60)
         self.entry_ROI_height.setKeyboardTracking(False)
         self.entry_temperature = QDoubleSpinBox()
@@ -1006,8 +1063,10 @@ class CameraSettingsWidget(QFrame):
 
         # connection
         self.entry_exposureTime.valueChanged.connect(self.camera.set_exposure_time)
-        self.entry_analogGain.valueChanged.connect(self.camera.set_analog_gain)
-        self.dropdown_pixelFormat.currentTextChanged.connect(self.camera.set_pixel_format)
+        self.entry_analogGain.valueChanged.connect(self.set_analog_gain_if_supported)
+        self.dropdown_pixelFormat.currentTextChanged.connect(
+            lambda s: self.camera.set_pixel_format(CameraPixelFormat.from_string(s))
+        )
         self.entry_ROI_offset_x.valueChanged.connect(self.set_ROI_offset)
         self.entry_ROI_offset_y.valueChanged.connect(self.set_ROI_offset)
         self.entry_ROI_height.valueChanged.connect(self.set_Height)
@@ -1029,9 +1088,9 @@ class CameraSettingsWidget(QFrame):
         format_line.addWidget(QLabel("Pixel Format"))
         format_line.addWidget(self.dropdown_pixelFormat)
         try:
-            current_res = self.camera.resolution
+            current_res = self.camera.get_resolution()
             current_res_string = "x".join([str(current_res[0]), str(current_res[1])])
-            res_options = [f"{res[0]} x {res[1]}" for res in self.camera.res_list]
+            res_options = [f"{res[0]}x{res[1]}" for res in self.camera.get_resolutions()]
             self.dropdown_res = QComboBox()
             self.dropdown_res.addItems(res_options)
             self.dropdown_res.setCurrentText(current_res_string)
@@ -1054,7 +1113,8 @@ class CameraSettingsWidget(QFrame):
             temp_line.addWidget(self.label_temperature_measured)
             try:
                 self.entry_temperature.valueChanged.connect(self.set_temperature)
-                self.camera.set_temperature_reading_callback(self.update_measured_temperature)
+                # TODO(imo): temp reading callback restoration, or polling
+                # self.camera.set_temperature_reading_callback(self.update_measured_temperature)
             except AttributeError:
                 pass
             self.camera_layout.addLayout(temp_line)
@@ -1087,31 +1147,29 @@ class CameraSettingsWidget(QFrame):
 
             self.camera_layout.addLayout(blacklevel_line)
 
-        if include_camera_auto_wb_setting:
-            is_color = False
-            try:
-                is_color = self.camera.get_is_color()
-            except AttributeError:
-                pass
+        if include_camera_auto_wb_setting and CameraPixelFormat.is_color_format(self.camera.get_pixel_format()):
+            # auto white balance
+            self.btn_auto_wb = QPushButton("Auto White Balance")
+            self.btn_auto_wb.setCheckable(True)
+            self.btn_auto_wb.setChecked(False)
+            self.btn_auto_wb.clicked.connect(self.toggle_auto_wb)
 
-            if is_color is True:
-                # auto white balance
-                self.btn_auto_wb = QPushButton("Auto White Balance")
-                self.btn_auto_wb.setCheckable(True)
-                self.btn_auto_wb.setChecked(False)
-                self.btn_auto_wb.clicked.connect(self.toggle_auto_wb)
-                print(self.camera.get_balance_white_auto())
-
-                self.camera_layout.addLayout(grid_camera_setting_wb)
+            self.camera_layout.addLayout(self.btn_auto_wb)
 
         self.setLayout(self.camera_layout)
+
+    def set_analog_gain_if_supported(self, gain):
+        try:
+            self.camera.set_analog_gain(gain)
+        except NotImplementedError:
+            self._log.warning(f"Cannot set gain to {gain}, gain not supported.")
 
     def toggle_auto_wb(self, pressed):
         # 0: OFF  1:CONTINUOUS  2:ONCE
         if pressed:
-            self.camera.set_balance_white_auto(1)
-        else:
-            self.camera.set_balance_white_auto(0)
+            # Run auto white balance once, then uncheck
+            self.camera.set_auto_white_balance_gains()
+            self.btn_auto_wb.setChecked(False)
 
     def set_exposure_time(self, exposure_time):
         self.entry_exposureTime.setValue(exposure_time)
@@ -1124,12 +1182,12 @@ class CameraSettingsWidget(QFrame):
         self.entry_ROI_width.blockSignals(True)
         self.entry_ROI_width.setValue(width)
         self.entry_ROI_width.blockSignals(False)
-        offset_x = (self.camera.WidthMax - self.entry_ROI_width.value()) / 2
+        offset_x = (self.camera.get_resolution()[0] - self.entry_ROI_width.value()) / 2
         offset_x = int(offset_x // 8) * 8
         self.entry_ROI_offset_x.blockSignals(True)
         self.entry_ROI_offset_x.setValue(offset_x)
         self.entry_ROI_offset_x.blockSignals(False)
-        self.camera.set_ROI(
+        self.camera.set_region_of_interest(
             self.entry_ROI_offset_x.value(),
             self.entry_ROI_offset_y.value(),
             self.entry_ROI_width.value(),
@@ -1141,12 +1199,12 @@ class CameraSettingsWidget(QFrame):
         self.entry_ROI_height.blockSignals(True)
         self.entry_ROI_height.setValue(height)
         self.entry_ROI_height.blockSignals(False)
-        offset_y = (self.camera.HeightMax - self.entry_ROI_height.value()) / 2
+        offset_y = (self.camera.get_resolution()[1] - self.entry_ROI_height.value()) / 2
         offset_y = int(offset_y // 8) * 8
         self.entry_ROI_offset_y.blockSignals(True)
         self.entry_ROI_offset_y.setValue(offset_y)
         self.entry_ROI_offset_y.blockSignals(False)
-        self.camera.set_ROI(
+        self.camera.set_region_of_interest(
             self.entry_ROI_offset_x.value(),
             self.entry_ROI_offset_y.value(),
             self.entry_ROI_width.value(),
@@ -1154,7 +1212,7 @@ class CameraSettingsWidget(QFrame):
         )
 
     def set_ROI_offset(self):
-        self.camera.set_ROI(
+        self.camera.set_region_of_interest(
             self.entry_ROI_offset_x.value(),
             self.entry_ROI_offset_y.value(),
             self.entry_ROI_width.value(),
@@ -1165,7 +1223,7 @@ class CameraSettingsWidget(QFrame):
         try:
             self.camera.set_temperature(float(self.entry_temperature.value()))
         except AttributeError:
-            pass
+            self._log.warning("Cannot set temperature - not supported.")
 
     def update_measured_temperature(self, temperature):
         self.label_temperature_measured.setNum(temperature)
@@ -1180,16 +1238,21 @@ class CameraSettingsWidget(QFrame):
         self.entry_ROI_height.blockSignals(True)
         self.entry_ROI_width.blockSignals(True)
 
-        self.entry_ROI_height.setMaximum(self.camera.HeightMax)
-        self.entry_ROI_width.setMaximum(self.camera.WidthMax)
+        def round_to_8(val):
+            return int(8 * val // 8)
 
-        self.entry_ROI_offset_x.setMaximum(self.camera.WidthMax)
-        self.entry_ROI_offset_y.setMaximum(self.camera.HeightMax)
+        (x_offset, y_offset, width, height) = self.camera.get_region_of_interest()
+        (x_max, y_max) = self.camera.get_resolution()
+        self.entry_ROI_height.setMaximum(y_max)
+        self.entry_ROI_width.setMaximum(x_max)
 
-        self.entry_ROI_offset_x.setValue(int(8 * self.camera.OffsetX // 8))
-        self.entry_ROI_offset_y.setValue(int(8 * self.camera.OffsetY // 8))
-        self.entry_ROI_height.setValue(int(8 * self.camera.Height // 8))
-        self.entry_ROI_width.setValue(int(8 * self.camera.Width // 8))
+        self.entry_ROI_offset_x.setMaximum(x_max)
+        self.entry_ROI_offset_y.setMaximum(y_max)
+
+        self.entry_ROI_offset_x.setValue(round_to_8(x_offset))
+        self.entry_ROI_offset_y.setValue(round_to_8(y_offset))
+        self.entry_ROI_height.setValue(round_to_8(height))
+        self.entry_ROI_width.setValue(round_to_8(width))
 
         self.entry_ROI_offset_x.blockSignals(False)
         self.entry_ROI_offset_y.blockSignals(False)
@@ -1198,9 +1261,9 @@ class CameraSettingsWidget(QFrame):
 
     def update_blacklevel(self, blacklevel):
         try:
-            self.camera.set_blacklevel(blacklevel)
+            self.camera.set_black_level(blacklevel)
         except AttributeError:
-            pass
+            self._log.warning("Cannot set black level - not supported.")
 
 
 class ProfileWidget(QFrame):
@@ -1286,7 +1349,8 @@ class LiveControlWidget(QFrame):
         **kwargs,
     ):
         super().__init__(*args, **kwargs)
-        self.liveController = liveController
+        self._log = squid.logging.get_logger(self.__class__.__name__)
+        self.liveController: LiveController = liveController
         self.streamHandler = streamHandler
         self.objectiveStore = objectiveStore
         self.channelConfigurationManager = channelConfigurationManager
@@ -1295,7 +1359,6 @@ class LiveControlWidget(QFrame):
         self.liveController.set_trigger_fps(self.fps_trigger)
         self.streamHandler.set_display_fps(self.fps_display)
 
-        self.triggerMode = TriggerMode.SOFTWARE
         self.currentConfiguration = self.channelConfigurationManager.get_channel_configurations_for_objective(
             self.objectiveStore.current_objective
         )[0]
@@ -1308,9 +1371,9 @@ class LiveControlWidget(QFrame):
 
     def add_components(self, show_trigger_options, show_display_options, show_autolevel, autolevel, stretch):
         # line 0: trigger mode
-        self.triggerMode = None
         self.dropdown_triggerManu = QComboBox()
         self.dropdown_triggerManu.addItems([TriggerMode.SOFTWARE, TriggerMode.HARDWARE, TriggerMode.CONTINUOUS])
+        self.dropdown_triggerManu.setCurrentText(self.liveController.camera.get_acquisition_mode().value)
         sizePolicy = QSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         self.dropdown_triggerManu.setSizePolicy(sizePolicy)
 
@@ -1340,14 +1403,13 @@ class LiveControlWidget(QFrame):
 
         # line 3: exposure time and analog gain associated with the current mode
         self.entry_exposureTime = QDoubleSpinBox()
-        self.entry_exposureTime.setMinimum(self.liveController.camera.EXPOSURE_TIME_MS_MIN)
-        self.entry_exposureTime.setMaximum(self.liveController.camera.EXPOSURE_TIME_MS_MAX)
+        self.entry_exposureTime.setMinimum(self.liveController.camera.get_exposure_limits()[0])
+        self.entry_exposureTime.setMaximum(self.liveController.camera.get_exposure_limits()[1])
         self.entry_exposureTime.setSingleStep(1)
         self.entry_exposureTime.setSuffix(" ms")
         self.entry_exposureTime.setValue(0)
         self.entry_exposureTime.setSizePolicy(sizePolicy)
 
-        self.entry_analogGain = QDoubleSpinBox()
         self.entry_analogGain = QDoubleSpinBox()
         self.entry_analogGain.setMinimum(0)
         self.entry_analogGain.setMaximum(24)
@@ -1355,6 +1417,13 @@ class LiveControlWidget(QFrame):
         self.entry_analogGain.setSingleStep(0.1)
         self.entry_analogGain.setValue(0)
         self.entry_analogGain.setSizePolicy(sizePolicy)
+        # Not all cameras support analog gain, so attempt to get the gain
+        # to check this
+        try:
+            self.liveController.camera.get_analog_gain()
+        except NotImplementedError:
+            self._log.info("Analog gain not supported, disabling it in live control widget.")
+            self.entry_analogGain.setEnabled(False)
 
         self.slider_illuminationIntensity = QSlider(Qt.Horizontal)
         self.slider_illuminationIntensity.setTickPosition(QSlider.TicksBelow)
@@ -1513,15 +1582,8 @@ class LiveControlWidget(QFrame):
     def update_microscope_mode_by_name(self, current_microscope_mode_name):
         self.is_switching_mode = True
         # identify the mode selected (note that this references the object in self.channelConfigurationManager.get_channel_configurations_for_objective(self.objectiveStore.current_objective))
-        self.currentConfiguration = next(
-            (
-                config
-                for config in self.channelConfigurationManager.get_channel_configurations_for_objective(
-                    self.objectiveStore.current_objective
-                )
-                if config.name == current_microscope_mode_name
-            ),
-            None,
+        self.currentConfiguration = self.channelConfigurationManager.get_channel_configuration_by_name(
+            self.objectiveStore.current_objective, current_microscope_mode_name
         )
         self.signal_live_configuration.emit(self.currentConfiguration)
         # update the microscope to the current configuration
@@ -2347,6 +2409,8 @@ class FlexibleMultiPointWidget(QFrame):
         self.location_ids = np.empty((0,), dtype="<U20")
         self.use_overlap = USE_OVERLAP_FOR_FLEXIBLE
         self.add_components()
+        self.setup_layout()
+        self.setup_connections()
         self.setFrameStyle(QFrame.Panel | QFrame.Raised)
         self.is_current_acquisition_widget = False
         self.acquisition_in_place = False
@@ -2561,28 +2625,32 @@ class FlexibleMultiPointWidget(QFrame):
         self.eta_timer = QTimer()
 
         # layout
-        grid_line0 = QHBoxLayout()
-        grid_line0.addWidget(QLabel("Saving Path"))
-        grid_line0.addWidget(self.lineEdit_savingDir)
-        grid_line0.addWidget(self.btn_setSavingDir)
-        grid_line0.addWidget(QLabel("ID"))
-        grid_line0.addWidget(self.lineEdit_experimentID)
+        self.grid_line0 = QHBoxLayout()
+        self.grid_line0.addWidget(QLabel("Saving Path"))
+        self.grid_line0.addWidget(self.lineEdit_savingDir)
+        self.grid_line0.addWidget(self.btn_setSavingDir)
+        self.grid_line0.addWidget(QLabel("ID"))
+        self.grid_line0.addWidget(self.lineEdit_experimentID)
 
-        grid_line1 = QGridLayout()
+        self.grid_location_list_line1 = QGridLayout()
         temp3 = QHBoxLayout()
         temp3.addWidget(QLabel("Location List"))
         temp3.addWidget(self.dropdown_location_list)
-        grid_line1.addLayout(temp3, 0, 0, 1, 6)  # Span across all columns except the last
-        grid_line1.addWidget(self.btn_show_table_location_list, 0, 6, 1, 2)  # Align with other buttons
+        self.grid_location_list_line1.addLayout(temp3, 0, 0, 1, 6)  # Span across all columns except the last
+        self.grid_location_list_line1.addWidget(
+            self.btn_show_table_location_list, 0, 6, 1, 2
+        )  # Align with other buttons
 
+        self.grid_location_list_line2 = QGridLayout()
         # Make all buttons span 2 columns for consistent width
-        grid_line1.addWidget(self.btn_add, 1, 0, 1, 2)
-        grid_line1.addWidget(self.btn_remove, 1, 2, 1, 2)
-        grid_line1.addWidget(self.btn_next, 1, 4, 1, 2)
-        grid_line1.addWidget(self.btn_clear, 1, 6, 1, 2)
+        self.grid_location_list_line2.addWidget(self.btn_add, 1, 0, 1, 2)
+        self.grid_location_list_line2.addWidget(self.btn_remove, 1, 2, 1, 2)
+        self.grid_location_list_line2.addWidget(self.btn_next, 1, 4, 1, 2)
+        self.grid_location_list_line2.addWidget(self.btn_clear, 1, 6, 1, 2)
 
-        grid_line1.addWidget(self.btn_import_locations, 2, 0, 1, 4)
-        grid_line1.addWidget(self.btn_export_locations, 2, 4, 1, 4)
+        self.grid_location_list_line3 = QGridLayout()
+        self.grid_location_list_line3.addWidget(self.btn_import_locations, 2, 0, 1, 4)
+        self.grid_location_list_line3.addWidget(self.btn_export_locations, 2, 4, 1, 4)
 
         # Create spacer items
         EDGE_SPACING = 4  # Adjust this value as needed
@@ -2637,15 +2705,16 @@ class FlexibleMultiPointWidget(QFrame):
         dt_half.addWidget(QLabel("Nt"))
         dt_half.addWidget(self.entry_Nt)
 
+        self.grid_acquisition = QGridLayout()
         # Add the layouts to grid_line1
         if self.use_overlap:
-            grid_line1.addLayout(xy_half, 3, 0, 1, 4)
-            grid_line1.addLayout(overlap_half, 3, 4, 1, 4)
+            self.grid_acquisition.addLayout(xy_half, 3, 0, 1, 4)
+            self.grid_acquisition.addLayout(overlap_half, 3, 4, 1, 4)
         else:
-            grid_line1.addLayout(x_half, 3, 0, 1, 4)
-            grid_line1.addLayout(y_half, 3, 4, 1, 4)
-        grid_line1.addLayout(dz_half, 4, 0, 1, 4)
-        grid_line1.addLayout(dt_half, 4, 4, 1, 4)
+            self.grid_acquisition.addLayout(x_half, 3, 0, 1, 4)
+            self.grid_acquisition.addLayout(y_half, 3, 4, 1, 4)
+        self.grid_acquisition.addLayout(dz_half, 4, 0, 1, 4)
+        self.grid_acquisition.addLayout(dt_half, 4, 4, 1, 4)
 
         self.z_min_layout = QHBoxLayout()
         self.z_min_layout.addWidget(self.set_minZ_button)
@@ -2659,8 +2728,8 @@ class FlexibleMultiPointWidget(QFrame):
         self.z_max_layout.addWidget(QLabel("Z-max"), Qt.AlignRight)
         self.z_max_layout.addWidget(self.entry_maxZ)
 
-        grid_line1.addLayout(self.z_min_layout, 5, 0, 1, 4)  # hide this in toggle
-        grid_line1.addLayout(self.z_max_layout, 5, 4, 1, 4)  # hide this in toggle
+        self.grid_acquisition.addLayout(self.z_min_layout, 5, 0, 1, 4)  # hide this in toggle
+        self.grid_acquisition.addLayout(self.z_max_layout, 5, 4, 1, 4)  # hide this in toggle
 
         grid_af = QVBoxLayout()
         grid_af.addWidget(self.checkbox_withAutofocus)
@@ -2683,45 +2752,41 @@ class FlexibleMultiPointWidget(QFrame):
         grid_acquisition.addLayout(grid_af)
         grid_acquisition.addWidget(self.btn_startAcquisition)
 
-        grid_line1.addLayout(grid_config, 6, 0, 3, 4)
-        grid_line1.addLayout(grid_acquisition, 6, 4, 3, 4)
+        self.grid_acquisition.addLayout(grid_config, 6, 0, 3, 4)
+        self.grid_acquisition.addLayout(grid_acquisition, 6, 4, 3, 4)
 
         # Columns 0-3: Combined stretch factor = 4
-        grid_line1.setColumnStretch(0, 1)
-        grid_line1.setColumnStretch(1, 1)
-        grid_line1.setColumnStretch(2, 1)
-        grid_line1.setColumnStretch(3, 1)
-
         # Columns 4-7: Combined stretch factor = 4
-        grid_line1.setColumnStretch(4, 1)
-        grid_line1.setColumnStretch(5, 1)
-        grid_line1.setColumnStretch(6, 1)
-        grid_line1.setColumnStretch(7, 1)
+        for i in range(4):
+            self.grid_location_list_line1.setColumnStretch(i, 1)
+            self.grid_location_list_line2.setColumnStretch(i, 1)
+            self.grid_location_list_line3.setColumnStretch(i, 1)
+            self.grid_acquisition.setColumnStretch(i, 1)
 
-        grid_line1.setRowStretch(0, 0)  # Location list row
-        grid_line1.setRowStretch(1, 0)  # Button row
-        grid_line1.setRowStretch(2, 0)  # Import/Export buttons
-        grid_line1.setRowStretch(3, 0)  # Nx/Ny and overlap row
-        grid_line1.setRowStretch(4, 0)  # dz/Nz and dt/Nt row
-        grid_line1.setRowStretch(5, 0)  # Z-range row
-        grid_line1.setRowStretch(6, 1)  # Configuration/AF row - allow this to stretch
-        grid_line1.setRowStretch(7, 0)  # Last row
+            self.grid_location_list_line1.setColumnStretch(i + 4, 1)
+            self.grid_location_list_line2.setColumnStretch(i + 4, 1)
+            self.grid_location_list_line3.setColumnStretch(i + 4, 1)
+            self.grid_acquisition.setColumnStretch(i + 4, 1)
+
+        self.grid_location_list_line1.setRowStretch(0, 0)  # Location list row
+        self.grid_location_list_line2.setRowStretch(1, 0)  # Button row
+        self.grid_location_list_line3.setRowStretch(2, 0)  # Import/Export buttons
+        self.grid_acquisition.setRowStretch(0, 0)  # Nx/Ny and overlap row
+        self.grid_acquisition.setRowStretch(1, 0)  # dz/Nz and dt/Nt row
+        self.grid_acquisition.setRowStretch(2, 0)  # Z-range row
+        self.grid_acquisition.setRowStretch(3, 1)  # Configuration/AF row - allow this to stretch
+        self.grid_acquisition.setRowStretch(4, 0)  # Last row
 
         # Row : Progress Bar
-        row_progress_layout = QHBoxLayout()
-        row_progress_layout.addWidget(self.progress_label)
-        row_progress_layout.addWidget(self.progress_bar)
-        row_progress_layout.addWidget(self.eta_label)
-
-        self.grid = QVBoxLayout()
-        self.grid.addLayout(grid_line0)
-        self.grid.addLayout(grid_line1)
-        self.grid.addLayout(row_progress_layout)
-        self.setLayout(self.grid)
+        self.row_progress_layout = QHBoxLayout()
+        self.row_progress_layout.addWidget(self.progress_label)
+        self.row_progress_layout.addWidget(self.progress_bar)
+        self.row_progress_layout.addWidget(self.eta_label)
 
         # add and display a timer - to be implemented
         # self.timer = QTimer()
 
+    def setup_connections(self):
         # connections
         if self.use_overlap:
             self.entry_overlap.valueChanged.connect(self.update_fov_positions)
@@ -2730,8 +2795,8 @@ class FlexibleMultiPointWidget(QFrame):
             self.entry_deltaY.valueChanged.connect(self.update_fov_positions)
         self.entry_NX.valueChanged.connect(self.update_fov_positions)
         self.entry_NY.valueChanged.connect(self.update_fov_positions)
-        self.btn_add.clicked.connect(self.update_fov_positions)
-        self.btn_remove.clicked.connect(self.update_fov_positions)
+        # self.btn_add.clicked.connect(self.update_fov_positions) #TODO: this is handled in the add_location method - to be removed
+        # self.btn_remove.clicked.connect(self.update_fov_positions) #TODO: this is handled in the remove_location method - to be removed
         self.entry_deltaZ.valueChanged.connect(self.set_deltaZ)
         self.entry_dt.valueChanged.connect(self.multipointController.set_deltat)
         self.entry_NX.valueChanged.connect(self.multipointController.set_NX)
@@ -2775,6 +2840,16 @@ class FlexibleMultiPointWidget(QFrame):
 
         self.toggle_z_range_controls(False)
         self.multipointController.set_use_piezo(self.checkbox_usePiezo.isChecked())
+
+    def setup_layout(self):
+        self.grid = QVBoxLayout()
+        self.grid.addLayout(self.grid_line0)
+        self.grid.addLayout(self.grid_location_list_line1)
+        self.grid.addLayout(self.grid_location_list_line2)
+        self.grid.addLayout(self.grid_location_list_line3)
+        self.grid.addLayout(self.grid_acquisition)
+        self.grid.addLayout(self.row_progress_layout)
+        self.setLayout(self.grid)
 
     def toggle_z_range_controls(self, state):
         is_visible = bool(state)
@@ -4373,6 +4448,7 @@ class WellplateMultiPointWidget(QFrame):
         """
         try:
             # Read coordinates from CSV
+
             df = pd.read_csv(file_path)
 
             # Validate CSV format
@@ -4431,6 +4507,7 @@ class WellplateMultiPointWidget(QFrame):
                         coordinates.append([region_id, x, y])
 
                 # Save to CSV with headers
+
                 df = pd.DataFrame(coordinates, columns=["Region", "X_mm", "Y_mm"])
                 df.to_csv(file_path, index=False)
 
@@ -6050,9 +6127,7 @@ class NapariLiveWidget(QWidget):
 
         # Exposure Time
         self.entry_exposureTime = QDoubleSpinBox()
-        self.entry_exposureTime.setRange(
-            self.liveController.camera.EXPOSURE_TIME_MS_MIN, self.liveController.camera.EXPOSURE_TIME_MS_MAX
-        )
+        self.entry_exposureTime.setRange(*self.liveController.camera.get_exposure_limits())
         self.entry_exposureTime.setValue(self.live_configuration.exposure_time)
         self.entry_exposureTime.setSuffix(" ms")
         self.entry_exposureTime.valueChanged.connect(self.update_config_exposure_time)
@@ -6268,15 +6343,8 @@ class NapariLiveWidget(QWidget):
         self.dropdown_modeSelection.setCurrentText(config.name)
 
     def update_microscope_mode_by_name(self, current_microscope_mode_name):
-        self.live_configuration = next(
-            (
-                config
-                for config in self.channelConfigurationManager.get_channel_configurations_for_objective(
-                    self.objectiveStore.current_objective
-                )
-                if config.name == current_microscope_mode_name
-            ),
-            None,
+        self.live_configuration = self.channelConfigurationManager.get_channel_configuration_by_name(
+            self.objectiveStore.current_objective, current_microscope_mode_name
         )
         if self.live_configuration:
             self.liveController.set_microscope_mode(self.live_configuration)
@@ -9222,6 +9290,10 @@ class Well1536SelectionWidget(QWidget):
     def onSelectionChanged(self):
         self.get_selected_cells()
 
+    def onWellplateChanged(self):
+        """A placeholder to match the method in WellSelectionWidget"""
+        pass
+
     def get_selected_cells(self):
         list_of_selected_cells = list(self.selected_cells.keys())
         return list_of_selected_cells
@@ -9379,3 +9451,126 @@ class SquidFilterWidget(QFrame):
         except ValueError:
             self.status_label.setText("Status: Invalid input")
             self.position_label.setText("Position: Invalid")
+
+
+from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
+from matplotlib.figure import Figure
+from mpl_toolkits.mplot3d import proj3d
+from scipy.interpolate import griddata
+
+
+class SurfacePlotWidget(QWidget):
+    """
+    A widget that displays a 3D surface plot of the coordinates.
+    """
+
+    signal_point_clicked = Signal(float, float)
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+
+        # Setup canvas and figure
+        self.fig = Figure()
+        self.canvas = FigureCanvas(self.fig)
+        self.ax = self.fig.add_subplot(111, projection="3d")
+
+        layout = QVBoxLayout()
+        layout.addWidget(self.canvas)
+        self.setLayout(layout)
+
+        self.selected_index = None
+        self.plot_populated = False
+
+        # Connect events
+        self.canvas.mpl_connect("scroll_event", self.on_scroll)
+        self.canvas.mpl_connect("button_press_event", self.on_click)
+
+    def plot(self, x: np.array, y: np.array, z: np.array, region: np.array) -> None:
+        """
+        Plot both surface and scatter points in 3D.
+
+        Args:
+            x (np.array): X coordinates (1D array)
+            y (np.array): Y coordinates (1D array)
+            z (np.array): Z coordinates (1D array)
+        """
+        # Store the original coordinates
+        self.x = x
+        self.y = y
+        self.z = z
+
+        # Clear previous plot
+        self.ax.clear()
+
+        # plot surface by region
+        for r in np.unique(region):
+            mask = region == r
+            grid_x, grid_y = np.mgrid[min(x[mask]) : max(x[mask]) : 10j, min(y[mask]) : max(y[mask]) : 10j]
+            grid_z = griddata((x[mask], y[mask]), z[mask], (grid_x, grid_y), method="cubic")
+            self.ax.plot_surface(grid_x, grid_y, grid_z, cmap="viridis", edgecolor="none")
+            # self.ax.plot_trisurf(x[mask], y[mask], z[mask], cmap='viridis', edgecolor='none')
+
+        # Create scatter plot using original coordinates
+        self.colors = ["r"] * len(self.x)
+        self.scatter = self.ax.scatter(self.x, self.y, self.z, c=self.colors, s=30)
+
+        # Set labels
+        self.ax.set_xlabel("X (mm)")
+        self.ax.set_ylabel("Y (mm)")
+        self.ax.set_zlabel("Z (um)")
+        self.ax.set_title("Double-click a point to go to that position")
+
+        # Force x and y to have same scale
+        max_range = max(np.ptp(self.x), np.ptp(self.y))
+        center_x = np.mean(self.x)
+        center_y = np.mean(self.y)
+
+        self.ax.set_xlim(center_x - max_range / 2, center_x + max_range / 2)
+        self.ax.set_ylim(center_y - max_range / 2, center_y + max_range / 2)
+
+        self.canvas.draw()
+        self.plot_populated = True
+
+    def on_scroll(self, event):
+        scale = 1.1 if event.button == "up" else 0.9
+
+        def zoom(lim):
+            center = (lim[0] + lim[1]) / 2
+            half_range = (lim[1] - lim[0]) / 2 * scale
+            return center - half_range, center + half_range
+
+        self.ax.set_xlim(zoom(self.ax.get_xlim()))
+        self.ax.set_ylim(zoom(self.ax.get_ylim()))
+        self.ax.set_zlim(zoom(self.ax.get_zlim()))
+        self.canvas.draw()
+
+    def on_click(self, event):
+        if not self.plot_populated:
+            return
+        if not event.dblclick or event.inaxes != self.ax:
+            return
+
+        # Cancel drag mode after double-click
+        self.canvas.button_pressed = None  # FIX: Avoids AttributeError
+
+        # Project 3D points to 2D screen space
+        x2d, y2d, _ = proj3d.proj_transform(self.x, self.y, self.z, self.ax.get_proj())
+        dists = np.hypot(x2d - event.xdata, y2d - event.ydata)
+        idx = np.argmin(dists)
+
+        # Threshold in data coordinates
+        display_thresh = 0.05 * max(
+            self.ax.get_xlim()[1] - self.ax.get_xlim()[0], self.ax.get_ylim()[1] - self.ax.get_ylim()[0]
+        )
+        if dists[idx] > display_thresh:
+            return
+
+        # Change point color
+        self.colors = ["r"] * len(self.x)
+        self.colors[idx] = "g"
+        self.scatter.remove()
+        self.scatter = self.ax.scatter(self.x, self.y, self.z, c=self.colors, s=30)
+
+        print(f"Clicked Point: x={self.x[idx]:.3f}, y={self.y[idx]:.3f}, z={self.z[idx]:.3f}")
+        self.canvas.draw()
+        self.signal_point_clicked.emit(self.x[idx], self.y[idx])

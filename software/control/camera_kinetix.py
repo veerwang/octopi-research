@@ -74,19 +74,11 @@ class Camera(object):
         self.cam = next(PVCam.detect_camera())
         self.cam.open()
         self.cam.exp_res = 1  # Exposure resolution in microseconds
-        self.cam.readout_port = 2  # Dynamic Range Mode
-        self.cam.set_roi(220, 220, 2760, 2760)  # Crop fov to 25mm
+        self.cam.set_roi(240, 240, 2720, 2720)  # Crop fov to 25mm
         self.log.info(f"Cropped area: {self.cam.shape(0)}")
         self.calculate_strobe_delay()  # hard coded before implementing roi
         self.set_temperature(15)  # temperature range: -15 - 15 degree Celcius
         # self.temperature_reading_thread.start()
-        """
-        port_speed_gain_table:
-        {'Sensitivity': {'port_value': 0, 'Speed_0': {'speed_index': 0, 'pixel_time': 10, 'bit_depth': 12, 'gain_range': [1], 'Standard': {'gain_index': 1}}}, 
-        'Speed': {'port_value': 1, 'Speed_0': {'speed_index': 0, 'pixel_time': 5, 'bit_depth': 8, 'gain_range': [1, 2], 'Sensitivity': {'gain_index': 1}, 'Full Well': {'gain_index': 2}}}, 
-        'Dynamic Range': {'port_value': 2, 'Speed_0': {'speed_index': 0, 'pixel_time': 10, 'bit_depth': 16, 'gain_range': [1], 'Standard': {'gain_index': 1}}}, 
-        'Sub-Electron': {'port_value': 3, 'Speed_0': {'speed_index': 0, 'pixel_time': 10, 'bit_depth': 16, 'gain_range': [1], 'Standard': {'gain_index': 1}}}}
-        """
 
     def open_by_sn(self, sn: str):
         self.open()
@@ -261,13 +253,38 @@ class Camera(object):
             raise e
 
     def set_pixel_format(self, pixel_format: str):
-        pass
+        """
+        port_speed_gain_table:
+        {'Sensitivity': {'port_value': 0, 'Speed_0': {'speed_index': 0, 'pixel_time': 10, 'bit_depth': 12, 'gain_range': [1], 'Standard': {'gain_index': 1}}},
+        'Speed': {'port_value': 1, 'Speed_0': {'speed_index': 0, 'pixel_time': 5, 'bit_depth': 8, 'gain_range': [1, 2], 'Sensitivity': {'gain_index': 1}, 'Full Well': {'gain_index': 2}}},
+        'Dynamic Range': {'port_value': 2, 'Speed_0': {'speed_index': 0, 'pixel_time': 10, 'bit_depth': 16, 'gain_range': [1], 'Standard': {'gain_index': 1}}},
+        'Sub-Electron': {'port_value': 3, 'Speed_0': {'speed_index': 0, 'pixel_time': 10, 'bit_depth': 16, 'gain_range': [1], 'Standard': {'gain_index': 1}}}}
+        """
+        try:
+            has_callback = self.callback_is_enabled
+            self.stop_streaming()
+            self.log.info(f"setting pixel format: {pixel_format}")
+            if pixel_format == "MONO8":
+                self.cam.readout_port = 1
+            elif pixel_format == "MONO12":
+                self.cam.readout_port = 0
+            elif pixel_format == "MONO16":
+                self.cam.readout_port = 2
+            else:
+                raise ValueError(f"Invalid pixel format: {pixel_format}")
+            if has_callback:
+                self.enable_callback()
+            if not self.is_streaming:
+                self.start_streaming()
+        except Exception as e:
+            self.log.exception(f"set_pixel_format failed: {e}")
+            raise e
 
     def send_trigger(self):
         try:
             self.cam.sw_trigger()
         except Exception as e:
-            self.log.error(f"sending trigger failed: {e}")
+            self.log.debug(f"sending trigger failed: {e}")
 
     def read_frame(self) -> np.ndarray:
         try:
@@ -275,7 +292,7 @@ class Camera(object):
             data = frame["pixel_data"]
             return data
         except Exception as e:
-            self.log.error(f"poll frame interrupted: {e}")
+            self.log.debug(f"poll frame interrupted: {e}")
             return None
 
     def start_streaming(self):

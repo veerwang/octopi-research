@@ -514,6 +514,8 @@ USE_OVERLAP_FOR_FLEXIBLE = True
 ENABLE_WELLPLATE_MULTIPOINT = True
 ENABLE_RECORDING = False
 
+RESUME_LIVE_AFTER_ACQUISITION = True
+
 CAMERA_SN = {"ch 1": "SN1", "ch 2": "SN2"}  # for multiple cameras, to be overwritten in the configuration file
 
 ENABLE_STROBE_OUTPUT = False
@@ -605,10 +607,18 @@ LDI_INTENSITY_MODE = "PC"
 LDI_SHUTTER_MODE = "PC"
 USE_CELESTA_ETHENET_CONTROL = False
 
-XLIGHT_EMISSION_FILTER_MAPPING = {405: 1, 470: 2, 555: 3, 640: 4, 730: 5}
+XLIGHT_EMISSION_FILTER_MAPPING = {
+    405: 1,
+    470: 1,
+    555: 1,
+    640: 1,
+    730: 1,
+}  # TODO: This is not being used. Need to map wavelength to illumination source in LiveController
 XLIGHT_SERIAL_NUMBER = "B00031BE"
 XLIGHT_SLEEP_TIME_FOR_WHEEL = 0.25
 XLIGHT_VALIDATE_WHEEL_POS = False
+XLIGHT_ILLUMINATION_IRIS_DEFAULT = 100
+XLIGHT_EMISSION_IRIS_DEFAULT = 100
 
 # Confocal.nl NL5 integration
 ENABLE_NL5 = False
@@ -775,6 +785,8 @@ XERYON_OBJECTIVE_SWITCHER_POS_2_OFFSET_MM = 2
 RUN_FLUIDICS = False
 FLUIDICS_CONFIG_PATH = "./merfish_config/MERFISH_config.json"
 
+USE_TEMPLATE_MULTIPOINT = False
+
 ##########################################################
 #### start of loading machine specific configurations ####
 ##########################################################
@@ -782,7 +794,6 @@ CACHED_CONFIG_FILE_PATH = None
 
 # Piezo configuration items
 Z_MOTOR_CONFIG = "STEPPER"  # "STEPPER", "STEPPER + PIEZO", "PIEZO", "LINEAR"
-HAS_OBJECTIVE_PIEZO = "PIEZO" in Z_MOTOR_CONFIG
 
 # the value of OBJECTIVE_PIEZO_CONTROL_VOLTAGE_RANGE is 2.5 or 5
 OBJECTIVE_PIEZO_CONTROL_VOLTAGE_RANGE = 5
@@ -889,6 +900,7 @@ A1_Y_PIXEL = WELLPLATE_FORMAT_SETTINGS[WELLPLATE_FORMAT]["a1_y_pixel"]  # coordi
 ##########################################################
 
 # objective piezo
+HAS_OBJECTIVE_PIEZO = "PIEZO" in Z_MOTOR_CONFIG
 MULTIPOINT_USE_PIEZO_FOR_ZSTACKS = HAS_OBJECTIVE_PIEZO
 
 # saving path
