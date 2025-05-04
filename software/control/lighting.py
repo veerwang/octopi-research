@@ -1,4 +1,7 @@
 from enum import Enum
+import json
+import os
+from pathlib import Path
 
 
 class LightSourceType(Enum):
@@ -34,7 +37,9 @@ class IlluminationController:
         self.shutter_control_mode = shutter_control_mode
         self.light_source_type = light_source_type
         self.light_source = light_source
-        self.channel_mappings_TTL = {
+
+        # Default channel mappings
+        default_mappings = {
             405: 11,
             470: 12,
             488: 12,
@@ -49,6 +54,9 @@ class IlluminationController:
             750: 15,
         }
 
+        # Try to load mappings from file
+        self.channel_mappings_TTL = self._load_channel_mappings(default_mappings)
+
         self.channel_mappings_software = {}
         self.is_on = {}
         self.intensity_settings = {}
@@ -56,6 +64,22 @@ class IlluminationController:
 
         if self.light_source_type is not None:
             self._configure_light_source()
+
+    def _load_channel_mappings(self, default_mappings):
+        """Load channel mappings from JSON file, fallback to default if file not found."""
+        try:
+            # Get the parent directory of the current file
+            current_dir = Path(__file__).parent.parent
+            mapping_file = current_dir / "channel_mappings.json"
+
+            if mapping_file.exists():
+                with open(mapping_file, "r") as f:
+                    mappings = json.load(f)
+                    # Convert string keys to integers
+                    return {int(k): v for k, v in mappings["Illumination Code Map"].items()}
+            return default_mappings
+        except (json.JSONDecodeError, KeyError, FileNotFoundError):
+            return default_mappings
 
     def _configure_light_source(self):
         self.light_source.initialize()
