@@ -22,7 +22,12 @@ class ShutterControlMode(Enum):
 
 class IlluminationController:
     def __init__(
-        self, microcontroller, intensity_control_mode, shutter_control_mode, light_source_type=None, light_source=None
+        self,
+        microcontroller,
+        intensity_control_mode=IntensityControlMode.SquidControllerDAC,
+        shutter_control_mode=ShutterControlMode.TTL,
+        light_source_type=None,
+        light_source=None,
     ):
         self.microcontroller = microcontroller
         self.intensity_control_mode = intensity_control_mode
@@ -50,36 +55,39 @@ class IlluminationController:
         self.current_channel = None
 
         if self.light_source_type is not None:
-            self.configure_light_source()
+            self._configure_light_source()
 
-    def configure_light_source(self):
+    def _configure_light_source(self):
         self.light_source.initialize()
-        self.set_intensity_control_mode(self.intensity_control_mode)
-        self.set_shutter_control_mode(self.shutter_control_mode)
+        self._set_intensity_control_mode(self.intensity_control_mode)
+        self._set_shutter_control_mode(self.shutter_control_mode)
         self.channel_mappings_software = self.light_source.channel_mappings
         for ch in self.channel_mappings_software:
             self.intensity_settings[ch] = self.get_intensity(ch)
             self.is_on[ch] = self.light_source.get_shutter_state(self.channel_mappings_software[ch])
 
-    def set_intensity_control_mode(self, mode):
+    def _set_intensity_control_mode(self, mode):
         self.light_source.set_intensity_control_mode(mode)
         self.intensity_control_mode = mode
 
+    def _set_shutter_control_mode(self, mode):
+        self.light_source.set_shutter_control_mode(mode)
+        self.shutter_control_mode = mode
+
+    # current not used
+    """
     def get_intensity_control_mode(self):
         mode = self.light_source.get_intensity_control_mode()
         if mode is not None:
             self.intensity_control_mode = mode
             return mode
 
-    def set_shutter_control_mode(self, mode):
-        self.light_source.set_shutter_control_mode(mode)
-        self.shutter_control_mode = mode
-
     def get_shutter_control_mode(self):
         mode = self.light_source.get_shutter_control_mode()
         if mode is not None:
             self.shutter_control_mode = mode
             return mode
+    """
 
     def get_intensity(self, channel):
         if self.intensity_control_mode == IntensityControlMode.Software:
@@ -110,18 +118,17 @@ class IlluminationController:
 
         self.is_on[channel] = False
 
-    def set_current_channel(self, channel):
-        self.current_channel = channel
-
     def set_intensity(self, channel, intensity):
         if self.intensity_control_mode == IntensityControlMode.Software:
             if intensity != self.intensity_settings[channel]:
                 self.light_source.set_intensity(self.channel_mappings_software[channel], intensity)
                 self.intensity_settings[channel] = intensity
-        self.microcontroller.set_illumination(self.channel_mappings_TTL[channel], intensity)
+        else:
+            self.microcontroller.set_illumination(self.channel_mappings_TTL[channel], intensity)
 
     def get_shutter_state(self):
         return self.is_on
 
     def close(self):
-        self.light_source.shut_down()
+        if self.light_source is not None:
+            self.light_source.shut_down()
