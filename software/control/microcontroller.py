@@ -443,6 +443,9 @@ class Microcontroller:
     LAST_COMMAND_ACK_TIMEOUT = 0.5
     MAX_RETRY_COUNT = 5
     MAX_RECONNECT_COUNT = 3
+    # The micro has an update time it tries to keep to.  This must be > that time.  As of 2025-04-28, it's 10ms
+    # on the micro.  So 0.1 is 10x that.
+    STALE_READ_TIMEOUT = 0.1
 
     def __init__(self, serial_device: AbstractCephlaMicroSerial, reset_and_initialize=True):
         self.log = squid.logging.get_logger(self.__class__.__name__)
@@ -459,6 +462,11 @@ class Microcontroller:
         self._cmd_id_mcu = None  # command id of mcu's last received command
         self._cmd_execution_status = None
         self.mcu_cmd_execution_in_progress = False
+
+        # This is a sentinel/watchdog of sorts.  Every time we receive a valid packet from the micro, we update this.
+        # The micro should be sending packets once very ~10 ms, so if we go much longer than that without something
+        # is likely wrong.  See def _warn_if_reads_stale() and the read loop.
+        self._last_successful_read_time = time.time()
 
         self.x_pos = 0  # unit: microstep or encoder resolution
         self.y_pos = 0  # unit: microstep or encoder resolution
@@ -505,6 +513,16 @@ class Microcontroller:
             if USE_SQUID_FILTERWHEEL:
                 self.configure_squidfilter()
             time.sleep(0.5)
+
+    def _warn_if_reads_stale(self):
+        now = time.time()
+        last_read = float(
+            self._last_successful_read_time
+        )  # Just in case it gets update, capture it for printing below.
+        if now - last_read > Microcontroller.STALE_READ_TIMEOUT:
+            self.log.warning(
+                f"Read thread is stale, it has been {now - last_read} [s] since a valid packet. Last cmd id from the mcu was {self._cmd_id_mcu}, our last sent cmd id was {self._cmd_id}"
+            )
 
     def close(self):
         self.terminate_reading_received_packet_thread = True
@@ -997,6 +1015,8 @@ class Microcontroller:
             )
         self.last_command_aborted_error = None
 
+        self._warn_if_reads_stale()
+
     def abort_current_command(self, reason):
         self.log.error(f"Command id={self._cmd_id} aborted for reason='{reason}'")
         self.last_command_aborted_error = CommandAborted(reason=reason, command_id=self._cmd_id)
@@ -1022,6 +1042,8 @@ class Microcontroller:
 
     def read_received_packet(self):
         crc_calculator = CrcCalculator(Crc8.CCITT, table_based=True)
+        last_watchdog_fail_report = time.time()
+        watchdog_fail_report_period = 5.0
 
         while not self.terminate_reading_received_packet_thread:
             try:
@@ -1035,6 +1057,9 @@ class Microcontroller:
                 # If we don't at least have enough bytes for a full packet (rx_buffer_length), there's no reason to
                 # waste our time looking for a valid message.  So wait here until we have at least that many bytes.
                 if self._serial.bytes_available() < self.rx_buffer_length:
+                    if time.time() - last_watchdog_fail_report > watchdog_fail_report_period:
+                        last_watchdog_fail_report = time.time()
+                        self._warn_if_reads_stale()
                     # Sleep a negligible amount of time just to give other threads time to run.  Otherwise,
                     # we run the rise of spinning forever here and not letting progress happen elsewhere.
                     time.sleep(0.0001)
@@ -1084,6 +1109,7 @@ class Microcontroller:
                 - reserved (4 bytes)
                 - CRC (1 byte)
                 """
+                self._last_successful_read_time = time.time()
                 self._cmd_id_mcu = msg[0]
                 self._cmd_execution_status = msg[1]
                 if (self._cmd_id_mcu == self._cmd_id) and (
