@@ -4292,7 +4292,7 @@ class WellplateMultiPointWidget(QFrame):
                 else:
                     # If fit failed, uncheck the box and show warning
                     self.checkbox_useFocusMap.setChecked(False)
-                    QMessageBox.warning(self, "Warning", "Failed to fit focus surface - need at least 4 focus points")
+                    QMessageBox.warning(self, "Warning", "Failed to fit focus surface")
                     self.btn_startAcquisition.setChecked(False)
                     return
             else:
@@ -4342,7 +4342,12 @@ class WellplateMultiPointWidget(QFrame):
         self.signal_acquisition_started.emit(False)
         self.is_current_acquisition_widget = False
         self.btn_startAcquisition.setChecked(False)
+        if self.focusMapWidget is not None and self.focusMapWidget.focus_points:
+            self.focusMapWidget.disable_updating_focus_points_on_signal()
         self.reset_coordinates()
+        if self.focusMapWidget is not None and self.focusMapWidget.focus_points:
+            self.focusMapWidget.update_focus_point_display()
+            self.focusMapWidget.enable_updating_focus_points_on_signal()
         self.setEnabled_all(True)
 
     def setEnabled_all(self, enabled):
@@ -5424,7 +5429,7 @@ class FocusMapWidget(QFrame):
         self.focusMap = focusMap
 
         # Store focus points in widget
-        self.focus_points = []  # list of (x,y,z) tuples
+        self.focus_points = []  # list of (region_id, x, y, z) tuples
         self.enabled = False  # toggled when focus map enabled for next acquisition
 
         self.setup_ui()
@@ -5461,18 +5466,18 @@ class FocusMapWidget(QFrame):
         settings_layout = QHBoxLayout()
         settings_layout.addWidget(QLabel("Focus Grid:"))
         self.rows_spin = QSpinBox()
-        self.rows_spin.setRange(2, 10)
+        self.rows_spin.setRange(1, 10)
         self.rows_spin.setValue(4)
         settings_layout.addWidget(self.rows_spin)
         settings_layout.addWidget(QLabel("×"))
         self.cols_spin = QSpinBox()
-        self.cols_spin.setRange(2, 10)
+        self.cols_spin.setRange(1, 10)
         self.cols_spin.setValue(4)
         settings_layout.addWidget(self.cols_spin)
         settings_layout.addStretch()
-        settings_layout.addWidget(QLabel("Fit Method:"))
+        settings_layout.addWidget(QLabel("Method:"))
         self.fit_method_combo = QComboBox()
-        self.fit_method_combo.addItems(["spline", "rbf"])
+        self.fit_method_combo.addItems(["spline", "rbf", "constant"])
         settings_layout.addWidget(self.fit_method_combo)
         settings_layout.addWidget(QLabel("Smoothing:"))
         self.smoothing_spin = QDoubleSpinBox()
@@ -5480,6 +5485,9 @@ class FocusMapWidget(QFrame):
         self.smoothing_spin.setValue(0.1)
         self.smoothing_spin.setSingleStep(0.05)
         settings_layout.addWidget(self.smoothing_spin)
+        self.by_region_checkbox = QCheckBox("By Region")
+        self.by_region_checkbox.setChecked(False)
+        settings_layout.addWidget(self.by_region_checkbox)
         self.layout.addLayout(settings_layout)
 
         # Status label (hidden by default)
@@ -5512,11 +5520,16 @@ class FocusMapWidget(QFrame):
         # self.point_combo.blockSignals(True)
         curr_focus_point = self.point_combo.currentIndex()
         self.point_combo.clear()
-        rows = self.rows_spin.value()
-        cols = self.cols_spin.value()
-        for idx, (x, y, z) in enumerate(self.focus_points):
+        for idx, (region_id, x, y, z) in enumerate(self.focus_points):
             point_text = (
-                f"x:" + str(round(x, 3)) + "mm  y:" + str(round(y, 3)) + "mm  z:" + str(round(1000 * z, 2)) + "μm"
+                f"{region_id}: "
+                + "x:"
+                + str(round(x, 3))
+                + "mm  y:"
+                + str(round(y, 3))
+                + "mm  z:"
+                + str(round(1000 * z, 2))
+                + "μm"
             )
             self.point_combo.addItem(point_text)
         self.point_combo.setCurrentIndex(max(0, min(curr_focus_point, len(self.focus_points) - 1)))
@@ -5526,7 +5539,7 @@ class FocusMapWidget(QFrame):
         """Edit coordinates of current point in a popup dialog"""
         index = self.point_combo.currentIndex()
         if 0 <= index < len(self.focus_points):
-            x, y, z = self.focus_points[index]
+            region_id, x, y, z = self.focus_points[index]
 
             # Create dialog
             dialog = QDialog(self)
@@ -5570,14 +5583,14 @@ class FocusMapWidget(QFrame):
                 new_x = x_spin.value()
                 new_y = y_spin.value()
                 new_z = z_spin.value() / 1000  # Convert μm back to mm for storage
-                self.focus_points[index] = (new_x, new_y, new_z)
+                self.focus_points[index] = (region_id, new_x, new_y, new_z)
                 self.update_point_list()
                 self.update_focus_point_display()
 
     def update_focus_point_display(self):
         """Update all focus points on navigation viewer"""
         self.navigationViewer.clear_focus_points()
-        for x, y, _ in self.focus_points:
+        for _, x, y, _ in self.focus_points:
             self.navigationViewer.register_focus_point(x, y)
 
     def generate_grid(self, rows=4, cols=4):
@@ -5595,9 +5608,10 @@ class FocusMapWidget(QFrame):
             )
 
             # Add points with current z coordinate
-            for x, y in coordinates:
-                self.focus_points.append((x, y, current_z))
-                self.navigationViewer.register_focus_point(x, y)
+            for region_id, coords_list in coordinates.items():
+                for coords in coords_list:
+                    self.focus_points.append((region_id, coords[0], coords[1], current_z))
+                    self.navigationViewer.register_focus_point(coords[0], coords[1])
 
             self.update_point_list()
             self.point_combo.blockSignals(False)
@@ -5607,10 +5621,48 @@ class FocusMapWidget(QFrame):
         self.generate_grid(self.rows_spin.value(), self.cols_spin.value())
 
     def add_current_point(self):
+        # Check if any scan regions exist
+        if not self.scanCoordinates.has_regions():
+            QMessageBox.warning(self, "No Regions Defined", "Please define scan regions before adding focus points.")
+            return
+
         pos = self.stage.get_pos()
-        self.focus_points.append((pos.x_mm, pos.y_mm, pos.z_mm))
-        self.update_point_list()
-        self.navigationViewer.register_focus_point(pos.x_mm, pos.y_mm)
+        region_id = None
+
+        # If by_region checkbox is checked, ask for region ID
+        if self.by_region_checkbox.isChecked():
+            region_ids = list(self.scanCoordinates.region_centers.keys())
+            if not region_ids:
+                QMessageBox.warning(
+                    self, "No Regions Defined", "Please define scan regions before adding focus points."
+                )
+                return
+
+            region_id, ok = QInputDialog.getItem(
+                self, "Select Region", "Choose a region:", [str(r) for r in region_ids], 0, False
+            )
+            if not ok or not region_id:
+                return
+            region_id = str(region_id)  # Ensure string format
+        else:
+            # Find the closest region to current position
+            closest_region = None
+            min_distance = float("inf")
+            for rid, center in self.scanCoordinates.region_centers.items():
+                dx = center[0] - pos.x_mm
+                dy = center[1] - pos.y_mm
+                distance = dx * dx + dy * dy
+                if distance < min_distance:
+                    min_distance = distance
+                    closest_region = rid
+            region_id = closest_region
+
+        if region_id is not None:
+            self.focus_points.append((region_id, pos.x_mm, pos.y_mm, pos.z_mm))
+            self.update_point_list()
+            self.navigationViewer.register_focus_point(pos.x_mm, pos.y_mm)
+        else:
+            QMessageBox.warning(self, "Region Error", "Could not determine a valid region for this focus point.")
 
     def remove_current_point(self):
         index = self.point_combo.currentIndex()
@@ -5631,7 +5683,7 @@ class FocusMapWidget(QFrame):
         if self.enabled:
             index = self.point_combo.currentIndex()
             if 0 <= index < len(self.focus_points):
-                x, y, z = self.focus_points[index]
+                _, x, y, z = self.focus_points[index]
                 self.stage.move_x_to(x)
                 self.stage.move_y_to(y)
                 self.stage.move_z_to(z)
@@ -5640,27 +5692,45 @@ class FocusMapWidget(QFrame):
         index = self.point_combo.currentIndex()
         if 0 <= index < len(self.focus_points):
             new_z = self.stage.get_pos().z_mm
-            x, y, _ = self.focus_points[index]
-            self.focus_points[index] = (x, y, new_z)
+            region_id, x, y, _ = self.focus_points[index]
+            self.focus_points[index] = (region_id, x, y, new_z)
             self.update_point_list()
 
-    def get_points_array(self):
-        return np.array(self.focus_points)
-
-    def update_z_display(self, z_pos_mm):
-        self.z_label.setText(f"Z: {z_pos_mm:.3f} mm")
+    def get_region_points_dict(self):
+        points_dict = {}
+        for region_id, x, y, z in self.focus_points:
+            if region_id not in points_dict:
+                points_dict[region_id] = []
+            points_dict[region_id].append((x, y, z))
+        return points_dict
 
     def fit_surface(self):
-        if len(self.focus_points) < 4:
-            self.status_label.setText("Need at least 4 points to fit surface")
-            self.status_label.show()
-            return False
-
         try:
-            self.focusMap.set_method(self.fit_method_combo.currentText())
+            method = self.fit_method_combo.currentText()
+            rows = self.rows_spin.value()
+            cols = self.cols_spin.value()
+            by_region = self.by_region_checkbox.isChecked()
+
+            # Validate settings
+            if method == "constant" and (rows != 1 or cols != 1):
+                QMessageBox.warning(
+                    self,
+                    "Confirm Your Configuration",
+                    "For 'constant' method, grid size should be 1×1.\nUse 'constant' with 'By Region' checked to define a Z value for each region.",
+                )
+
+            if method != "constant" and (rows < 2 or cols < 2):
+                QMessageBox.warning(
+                    self,
+                    "Confirm Your Configuration",
+                    "For surface fitting methods ('spline' or 'rbf'), a grid size of at least 2×2 is recommended.\nAlternatively, use 1x1 grid and 'constant' with 'By Region' checked to define a Z value for each region.",
+                )
+
+            self.focusMap.set_method(method)
+            self.focusMap.set_fit_by_region(by_region)
             self.focusMap.smoothing_factor = self.smoothing_spin.value()
 
-            mean_error, std_error = self.focusMap.fit(self.get_points_array())
+            mean_error, std_error = self.focusMap.fit(self.get_region_points_dict())
 
             self.status_label.setText(f"Surface fit: {mean_error:.3f} mm mean error")
             self.status_label.show()
@@ -5673,7 +5743,13 @@ class FocusMapWidget(QFrame):
 
     def on_regions_updated(self):
         if self.scanCoordinates.has_regions():
-            self.generate_grid()
+            self.generate_grid(self.rows_spin.value(), self.cols_spin.value())
+
+    def disable_updating_focus_points_on_signal(self):
+        self.scanCoordinates.signal_scan_coordinates_updated.disconnect(self.on_regions_updated)
+
+    def enable_updating_focus_points_on_signal(self):
+        self.scanCoordinates.signal_scan_coordinates_updated.connect(self.on_regions_updated)
 
     def setEnabled(self, enabled):
         self.enabled = enabled
