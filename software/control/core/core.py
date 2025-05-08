@@ -440,28 +440,32 @@ class LiveController(QObject):
 
     # illumination control
     def turn_on_illumination(self):
-        if self.illuminationController is not None and not "LED matrix" in self.currentConfiguration.name:
+        if not "LED matrix" in self.currentConfiguration.name:
             self.illuminationController.turn_on_illumination(
                 int(utils_channel.extract_wavelength_from_config_name(self.currentConfiguration.name))
             )
         elif SUPPORT_SCIMICROSCOPY_LED_ARRAY and "LED matrix" in self.currentConfiguration.name:
             self.led_array.turn_on_illumination()
+        # LED matrix
         else:
-            self.microcontroller.turn_on_illumination()
+            self.microcontroller.turn_on_illumination()  # to wrap microcontroller in Squid_led_array
         self.illumination_on = True
 
     def turn_off_illumination(self):
-        if self.illuminationController is not None and not "LED matrix" in self.currentConfiguration.name:
+        if not "LED matrix" in self.currentConfiguration.name:
             self.illuminationController.turn_off_illumination(
                 int(utils_channel.extract_wavelength_from_config_name(self.currentConfiguration.name))
             )
         elif SUPPORT_SCIMICROSCOPY_LED_ARRAY and "LED matrix" in self.currentConfiguration.name:
             self.led_array.turn_off_illumination()
+        # LED matrix
         else:
-            self.microcontroller.turn_off_illumination()
+            self.microcontroller.turn_off_illumination()  # to wrap microcontroller in Squid_led_array
         self.illumination_on = False
 
-    def set_illumination(self, illumination_source, intensity, update_channel_settings=True):
+    def _set_illumination(self):
+        illumination_source = self.currentConfiguration.illumination_source
+        intensity = self.currentConfiguration.illumination_intensity
         if illumination_source < 10:  # LED matrix
             if SUPPORT_SCIMICROSCOPY_LED_ARRAY:
                 # set color
@@ -504,19 +508,14 @@ class LiveController(QObject):
                     )
         else:
             # update illumination
-            if self.illuminationController is not None:
-                self.illuminationController.set_intensity(
-                    int(utils_channel.extract_wavelength_from_config_name(self.currentConfiguration.name)), intensity
-                )
-            elif ENABLE_NL5 and NL5_USE_DOUT and "Fluorescence" in self.currentConfiguration.name:
-                wavelength = int(self.currentConfiguration.name[13:16])
+            wavelength = int(utils_channel.extract_wavelength_from_config_name(self.currentConfiguration.name))
+            self.illuminationController.set_intensity(wavelength, intensity)
+            if ENABLE_NL5 and NL5_USE_DOUT and "Fluorescence" in self.currentConfiguration.name:
                 self.microscope.nl5.set_active_channel(NL5_WAVENLENGTH_MAP[wavelength])
-                if NL5_USE_AOUT and update_channel_settings:
+                if NL5_USE_AOUT:
                     self.microscope.nl5.set_laser_power(NL5_WAVENLENGTH_MAP[wavelength], int(intensity))
                 if ENABLE_CELLX:
                     self.microscope.cellx.set_laser_power(NL5_WAVENLENGTH_MAP[wavelength], int(intensity))
-            else:
-                self.microcontroller.set_illumination(illumination_source, intensity)
 
         # set emission filter position
         if ENABLE_SPINNING_DISK_CONFOCAL:
@@ -698,9 +697,7 @@ class LiveController(QObject):
 
         # set illumination
         if self.control_illumination:
-            self.set_illumination(
-                self.currentConfiguration.illumination_source, self.currentConfiguration.illumination_intensity
-            )
+            self._set_illumination()
 
         # restart live
         if self.is_live is True:

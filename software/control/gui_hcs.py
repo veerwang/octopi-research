@@ -168,7 +168,6 @@ class HighContentScreeningGui(QMainWindow):
             self.addDockWidget(Qt.LeftDockWidgetArea, self.jupyter_dock)
 
     def loadObjects(self, is_simulation):
-        self.illuminationController = None
         if is_simulation:
             self.loadSimulationObjects()
         else:
@@ -319,6 +318,7 @@ class HighContentScreeningGui(QMainWindow):
         self.microcontroller = microcontroller.Microcontroller(
             serial_device=microcontroller.get_microcontroller_serial_device(simulated=True)
         )
+        self.illuminationController = IlluminationController(self.microcontroller)
         if USE_PRIOR_STAGE:
             self.stage: squid.abc.AbstractStage = squid.stage.prior.PriorStage(
                 sn=PRIOR_STAGE_SN, stage_config=squid.config.get_stage_config()
@@ -374,6 +374,8 @@ class HighContentScreeningGui(QMainWindow):
         except Exception:
             self.log.error(f"Error initializing Microcontroller")
             raise
+
+        self.illuminationController = IlluminationController(self.microcontroller)
 
         if USE_PRIOR_STAGE:
             self.stage: squid.abc.AbstractStage = squid.stage.prior.PriorStage(
