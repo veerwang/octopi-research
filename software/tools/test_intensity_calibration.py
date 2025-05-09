@@ -17,10 +17,10 @@ sys.path.append(str(software_dir))
 # Set working directory to software directory
 os.chdir(str(software_dir))
 
-from software.tools.PM16 import PM16
-from software.control.lighting import IlluminationController, IntensityControlMode, ShutterControlMode
-import software.control.microcontroller as microcontroller
-from software.control._def import *
+from tools.PM16 import PM16
+from control.lighting import IlluminationController, IntensityControlMode, ShutterControlMode
+import control.microcontroller as microcontroller
+from control._def import *
 
 
 def measure_power(pm: PM16, num_measurements: int = 5, delay: float = 0.1) -> float:
