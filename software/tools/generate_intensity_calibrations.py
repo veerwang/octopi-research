@@ -2,10 +2,16 @@ import time
 import pandas as pd
 import numpy as np
 from pathlib import Path
+import sys
+import os
 from typing import List
 import matplotlib.pyplot as plt
 
-from tools.PM16 import PM16
+software_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.append(software_dir)
+os.chdir(software_dir)
+
+from PM16 import PM16
 from control.lighting import IlluminationController, IntensityControlMode, ShutterControlMode
 import control.microcontroller as microcontroller
 from control._def import *
