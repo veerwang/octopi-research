@@ -1619,7 +1619,7 @@ class LiveControlWidget(QFrame):
             self.channelConfigurationManager.update_configuration(
                 self.objectiveStore.current_objective, self.currentConfiguration.id, "IlluminationIntensity", new_value
             )
-            self.liveController.set_illumination()
+            self.liveController.update_illumination()
 
     def set_microscope_mode(self, config):
         # self.liveController.set_microscope_mode(config)
@@ -6497,7 +6497,7 @@ class NapariLiveWidget(QWidget):
         self.channelConfigurationManager.update_configuration(
             self.objectiveStore.current_objective, self.live_configuration.id, "IlluminationIntensity", new_value
         )
-        self.liveController.set_illumination()
+        self.liveController.update_illumination()
 
     def update_resolution_scaling(self, value):
         self.streamHandler.set_display_resolution_scaling(value)
