@@ -51,7 +51,7 @@ class Fluidics:
         self.experiment_ops = None
         self.worker = None
         self.thread = None
-        self.do_not_run_after_imaging = False
+        self.emergency_stop_called = False
 
         # Set default callbacks if none provided
         self.worker_callbacks = worker_callbacks or {
@@ -275,13 +275,14 @@ class Fluidics:
 
     def run_before_imaging(self):
         """Run the sequences before imaging"""
+        if self.emergency_stop_called:
+            return
         self.log_callback("Running sequences before imaging")
-        self.do_not_run_after_imaging = False
         self.run_sequences(self.sequences.iloc[self.sequences_before_imaging])
 
     def run_after_imaging(self):
         """Run the sequences after imaging"""
-        if self.do_not_run_after_imaging:
+        if self.emergency_stop_called:
             return
         self.log_callback("Running sequences after imaging")
         self.run_sequences(self.sequences.iloc[self.sequences_after_imaging])
@@ -296,7 +297,7 @@ class Fluidics:
         """Stop syringe pump operation immediately"""
         self.syringe_pump.abort()
         self.worker.abort()
-        self.do_not_run_after_imaging = True
+        self.emergency_stop_called = True
 
     def reset_abort(self):
         self.syringe_pump.reset_abort()
@@ -320,6 +321,7 @@ class Fluidics:
 
     def set_rounds(self, rounds: list):
         """Rounds: a list of port indices of unique reagents to run"""
+        self.emergency_stop_called = False
         self.port_list = rounds
 
     def close(self):
