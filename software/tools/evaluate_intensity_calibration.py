@@ -7,20 +7,14 @@ import os
 import time
 from typing import List
 
-# Add the project root directory to Python path
-project_root = Path(__file__).parent.parent.parent
-sys.path.append(str(project_root))
-# Add software directory to Python path
-software_dir = project_root / "software"
-sys.path.append(str(software_dir))
+software_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.append(software_dir)
+os.chdir(software_dir)
 
-# Set working directory to software directory
-os.chdir(str(software_dir))
-
-from software.tools.PM16 import PM16
-from software.control.lighting import IlluminationController, IntensityControlMode, ShutterControlMode
-import software.control.microcontroller as microcontroller
-from software.control._def import *
+from PM16 import PM16
+from control.lighting import IlluminationController, IntensityControlMode, ShutterControlMode
+import control.microcontroller as microcontroller
+from control._def import *
 
 
 def measure_power(pm: PM16, num_measurements: int = 5, delay: float = 0.1) -> float:
