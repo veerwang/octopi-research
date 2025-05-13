@@ -1962,7 +1962,7 @@ class MultiPointController(QObject):
         channel_configuration_manager: ChannelConfigurationManager,
         usb_spectrometer=None,
         scan_coordinates: Optional[ScanCoordinates] = None,
-        fluidics = None,
+        fluidics=None,
         parent=None,
         headless=False,
     ):
@@ -2017,11 +2017,6 @@ class MultiPointController(QObject):
         self.fluidics = fluidics
 
         self.headless = headless
-        try:
-            if self.parent is not None:
-                self.old_images_per_page = self.parent.dataHandler.n_images_per_page
-        except:
-            pass
         self.z_stacking_config = Z_STACKING_CONFIG
 
     def acquisition_in_progress(self):
@@ -2081,9 +2076,6 @@ class MultiPointController(QObject):
         self.gen_focus_map = flag
         if not flag:
             self.autofocusController.set_focus_map_use(False)
-
-    def set_stitch_tiles_flag(self, flag):
-        self.do_stitch_tiles = flag
 
     def set_segmentation_flag(self, flag):
         self.do_segmentation = flag
