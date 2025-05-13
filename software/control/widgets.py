@@ -7241,16 +7241,25 @@ class NapariMosaicDisplayWidget(QWidget):
             self.signal_shape_drawn.emit([])
 
     def clearAllLayers(self):
-        self.clear_shape()
-        self.viewer.layers.clear()
-        self.viewer_extents = None
-        self.top_left_coordinate = None
-        self.dtype = None
+        # Keep the Manual ROI layer and clear the content of all other layers
+        for layer in self.viewer.layers:
+            if layer.name == "Manual ROI":
+                continue
+
+            if hasattr(layer, "data") and hasattr(layer.data, "shape"):
+                # Create an empty array matching the layer's dimensions
+                if len(layer.data.shape) == 3 and layer.data.shape[2] == 3:  # RGB
+                    empty_data = np.zeros((layer.data.shape[0], layer.data.shape[1], 3), dtype=layer.data.dtype)
+                else:  # Grayscale
+                    empty_data = np.zeros((layer.data.shape[0], layer.data.shape[1]), dtype=layer.data.dtype)
+
+                layer.data = empty_data
+
         self.channels = set()
-        self.dz_um = None
-        self.Nz = None
-        self.layers_initialized = False
-        self.signal_layers_initialized.emit(self.layers_initialized)
+
+        for layer in self.viewer.layers:
+            layer.refresh()
+
         self.signal_clear_viewer.emit()
 
     def activate(self):
