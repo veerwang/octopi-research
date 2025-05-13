@@ -31,8 +31,8 @@ from control._def import SpotDetectionMode
 class LaserAFConfig(BaseModel):
     """Pydantic model for laser autofocus configuration"""
 
-    x_offset: int = 0
-    y_offset: int = 0
+    x_offset: float = 0
+    y_offset: float = 0
     width: int = LASER_AF_CROP_WIDTH
     height: int = LASER_AF_CROP_HEIGHT
     pixel_to_um: float = 1
