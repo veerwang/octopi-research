@@ -4491,11 +4491,13 @@ class WellplateMultiPointWidget(QFrame):
         )
 
         if file_path:
-            # Add .csv extension if not present
-            if not file_path.lower().endswith(".csv"):
-                file_path += ".csv"
+            base_path, extension = os.path.splitext(file_path)
+            if not extension:
+                extension = ".csv"
 
-            try:
+            current_objective = self.objectiveStore.current_objective
+
+            def _helper_save_coordinates(self, file_path: str):
                 # Get coordinates from scanCoordinates
                 coordinates = []
                 for region_id, fov_coords in self.scanCoordinates.region_fov_coordinates.items():
@@ -4508,6 +4510,21 @@ class WellplateMultiPointWidget(QFrame):
                 df.to_csv(file_path, index=False)
 
                 self._log.info(f"Saved scan coordinates to {file_path}")
+
+            try:
+                for objective_name in self.objectiveStore.objectives_dict.keys():
+                    if objective_name == current_objective:
+                        continue
+                    else:
+                        self.objectiveStore.set_current_objective(objective_name)
+                        self.update_coordinates()
+                        obj_file_path = f"{base_path}_{objective_name}{extension}"
+                        _helper_save_coordinates(self, obj_file_path)
+
+                self.objectiveStore.set_current_objective(current_objective)
+                self.update_coordinates()
+                obj_file_path = f"{base_path}_{current_objective}{extension}"
+                _helper_save_coordinates(self, obj_file_path)
 
             except Exception as e:
                 self._log.error(f"Failed to save coordinates: {str(e)}")
