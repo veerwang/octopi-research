@@ -2249,7 +2249,7 @@ class MultiPointController(QObject):
 
         return size_per_image * self.get_acquisition_image_count() + non_image_file_size
 
-    def run_acquisition(self):
+    def run_acquisition(self, acquire_current_fov=False):
         if not self.validate_acquisition_settings():
             # emit acquisition finished signal to re-enable the UI
             self.acquisition_finished.emit()
@@ -2257,10 +2257,17 @@ class MultiPointController(QObject):
 
         self._log.info("start multipoint")
 
-        self.scan_region_coords_mm = list(self.scanCoordinates.region_centers.values())
-        self.scan_region_names = list(self.scanCoordinates.region_centers.keys())
-        self.scan_region_fov_coords_mm = self.scanCoordinates.region_fov_coordinates
-
+        if acquire_current_fov:
+            pos = self.stage.get_pos()
+            self.scan_region_coords_mm = [(pos.x_mm, pos.y_mm)]
+            self.scan_region_names = "current"
+            self.scan_region_fov_coords_mm = {"current": [(pos.x_mm, pos.y_mm)]}
+            self.run_acquisition_current_fov = True
+        else:
+            self.scan_region_coords_mm = list(self.scanCoordinates.region_centers.values())
+            self.scan_region_names = list(self.scanCoordinates.region_centers.keys())
+            self.scan_region_fov_coords_mm = self.scanCoordinates.region_fov_coordinates
+            self.run_acquisition_current_fov = False
         # Save coordinates to CSV in top level folder
         coordinates_df = pd.DataFrame(columns=["region", "x (mm)", "y (mm)", "z (mm)"])
         for region_id, coords_list in self.scan_region_fov_coords_mm.items():
@@ -2302,7 +2309,12 @@ class MultiPointController(QObject):
                 self.usb_spectrometer_was_streaming = False
 
         # set current tabs
-        self.signal_set_display_tabs.emit(self.selected_configurations, self.NZ)
+        if not self.run_acquisition_current_fov:
+            self.signal_set_display_tabs.emit(self.selected_configurations, self.NZ)
+        else:
+            self.signal_set_display_tabs.emit(
+                self.selected_configurations, 2
+            )  # temp: modify the signal to show multiChannel Widget instead of Mosaic Widget
 
         # run the acquisition
         self.timestamp_acquisition_started = time.time()
@@ -2447,15 +2459,18 @@ class MultiPointController(QObject):
         self._log.info(f"total time for acquisition + processing + reset: {time.time() - self.recording_start_time}")
         utils.create_done_file(os.path.join(self.base_path, self.experiment_ID))
 
-        # move back to the center of the current region if using "glass slide"
-        if "current" in self.scanCoordinates.region_centers:
-            region_center = self.scanCoordinates.region_centers["current"]
-            try:
-                self.stage.move_x_to(region_center[0])
-                self.stage.move_y_to(region_center[1])
-                self.stage.move_z_to(region_center[2])
-            except:
-                self._log.error("Failed to move to center of current region")
+        if self.run_acquisition_current_fov:
+            self.run_acquisition_current_fov = False
+        else:
+            # move back to the center of the current region if using "glass slide"
+            if "current" in self.scanCoordinates.region_centers:
+                region_center = self.scanCoordinates.region_centers["current"]
+                try:
+                    self.stage.move_x_to(region_center[0])
+                    self.stage.move_y_to(region_center[1])
+                    self.stage.move_z_to(region_center[2])
+                except:
+                    self._log.error("Failed to move to center of current region")
 
         self.acquisition_finished.emit()
         if not self.abort_acqusition_requested:
