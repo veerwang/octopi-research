@@ -2913,6 +2913,51 @@ class ImageDisplayWindow(QMainWindow):
         self.show_LUT = show_LUT
         self.autoLevels = autoLevels
 
+        # Store last valid cursor position
+        self.last_valid_x = 0
+        self.last_valid_y = 0
+        self.last_valid_value = 0
+        self.has_valid_position = False
+
+        # Create main layout
+        layout = QVBoxLayout()
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
+
+        # Create status bar widget
+        status_widget = QWidget()
+        status_layout = QHBoxLayout()
+        status_layout.setContentsMargins(5, 2, 5, 2)
+        status_layout.setSpacing(10)
+
+        # Create labels with minimum width to prevent jumping
+        self.cursor_position_label = QLabel()
+        self.cursor_position_label.setMinimumWidth(150)
+        self.pixel_value_label = QLabel()
+        self.pixel_value_label.setMinimumWidth(150)
+        self.stage_position_label = QLabel()
+        self.stage_position_label.setMinimumWidth(200)
+        self.piezo_position_label = QLabel()
+        self.piezo_position_label.setMinimumWidth(150)
+
+        # Add labels to status layout with spacing
+        status_layout.addWidget(self.cursor_position_label)
+        status_layout.addWidget(QLabel(" | "))  # Add separator
+        status_layout.addWidget(self.pixel_value_label)
+        status_layout.addWidget(QLabel(" | "))  # Add separator
+        status_layout.addWidget(self.stage_position_label)
+        status_layout.addWidget(QLabel(" | "))  # Add separator
+        status_layout.addWidget(self.piezo_position_label)
+        status_layout.addStretch()  # Push labels to the left
+
+        status_widget.setLayout(status_layout)
+
+        # Initialize labels with default text
+        self.cursor_position_label.setText("Position: (0, 0)")
+        self.pixel_value_label.setText("Value: N/A")
+        self.stage_position_label.setText("Stage: X: 0.00 mm, Y: 0.00 mm, Z: 0.00 mm")
+        self.piezo_position_label.setText("Piezo: N/A")
+
         # interpret image data as row-major instead of col-major
         pg.setConfigOptions(imageAxisOrder="row-major")
 
@@ -2959,11 +3004,14 @@ class ImageDisplayWindow(QMainWindow):
         self.image_offset = np.array([0, 0])
 
         ## Layout
-        layout = QGridLayout()
         if self.show_LUT:
-            layout.addWidget(self.graphics_widget.view, 0, 0)
+            layout.addWidget(self.graphics_widget.view)
         else:
-            layout.addWidget(self.graphics_widget, 0, 0)
+            layout.addWidget(self.graphics_widget)
+
+        # Add status bar at the bottom
+        layout.addWidget(status_widget)
+
         self.widget.setLayout(layout)
         self.setCentralWidget(self.widget)
 
@@ -2976,8 +3024,92 @@ class ImageDisplayWindow(QMainWindow):
         # Connect mouse click handler
         if self.show_LUT:
             self.graphics_widget.view.getView().scene().sigMouseClicked.connect(self.handle_mouse_click)
+            self.graphics_widget.view.getView().scene().sigMouseMoved.connect(self.handle_mouse_move)
         else:
             self.graphics_widget.view.scene().sigMouseClicked.connect(self.handle_mouse_click)
+            self.graphics_widget.view.scene().sigMouseMoved.connect(self.handle_mouse_move)
+
+        # Set up timer for updating stage and piezo positions
+        self.update_timer = QTimer()
+        self.update_timer.timeout.connect(self.update_stage_piezo_positions)
+        self.update_timer.start(100)  # Update every 100ms
+
+    def update_stage_piezo_positions(self):
+        try:
+            if self.liveController and self.liveController.microscope:
+                stage = self.liveController.microscope.stage
+                if stage:
+                    pos = stage.get_pos()
+                    self.stage_position_label.setText(
+                        f"Stage: X={pos.x_mm:.2f} mm, Y={pos.y_mm:.2f} mm, Z={pos.z_mm:.3f} mm"
+                    )
+                else:
+                    self.stage_position_label.setText("Stage: N/A")
+
+                piezo = self.liveController.microscope.piezo
+                if piezo:
+                    try:
+                        piezo_pos = piezo.position
+                        self.piezo_position_label.setText(f"Piezo: {piezo_pos:.1f} µm")
+                        self.piezo_position_label.setVisible(True)
+                    except Exception as e:
+                        self._log.error(f"Error getting piezo position: {str(e)}")
+                        self.piezo_position_label.setText("Piezo: Error")
+                        self.piezo_position_label.setVisible(True)
+                else:
+                    self.piezo_position_label.setVisible(False)
+            else:
+                self.stage_position_label.setText("Stage: N/A")
+                self.piezo_position_label.setVisible(False)
+        except Exception as e:
+            self._log.error(f"Error updating stage/piezo positions: {str(e)}")
+            self.stage_position_label.setText("Stage: Error")
+            self.piezo_position_label.setVisible(False)
+
+    def closeEvent(self, event):
+        # Stop the timer when the window is closed
+        self.update_timer.stop()
+        super().closeEvent(event)
+
+    def handle_mouse_move(self, pos):
+        try:
+            if self.show_LUT:
+                view_coord = self.graphics_widget.view.getView().mapSceneToView(pos)
+            else:
+                view_coord = self.graphics_widget.view.mapSceneToView(pos)
+            image_coord = self.graphics_widget.img.mapFromView(view_coord)
+
+            if self.is_within_image(image_coord):
+                x = int(image_coord.x())
+                y = int(image_coord.y())
+                self.last_valid_x = x
+                self.last_valid_y = y
+                self.has_valid_position = True
+
+                self.cursor_position_label.setText(f"Position: ({x}, {y})")
+
+                # Get pixel value
+                if hasattr(self.graphics_widget.img, "image"):
+                    image = self.graphics_widget.img.image
+                    if image is not None and 0 <= y < image.shape[0] and 0 <= x < image.shape[1]:
+                        pixel_value = image[y, x]
+                        self.last_valid_value = pixel_value
+                        self.pixel_value_label.setText(f"Value: {pixel_value:.2f}")
+                    else:
+                        self.pixel_value_label.setText("Value: N/A")
+                else:
+                    self.pixel_value_label.setText("Value: N/A")
+            else:
+                self.cursor_position_label.setText("Position: Out of bounds")
+                self.pixel_value_label.setText("Value: N/A")
+        except:
+            # Keep last valid position if available
+            if self.has_valid_position:
+                self.cursor_position_label.setText(f"Position: ({self.last_valid_x}, {self.last_valid_y})")
+                self.pixel_value_label.setText(f"Value: {self.last_valid_value:.2f}")
+            else:
+                self.cursor_position_label.setText("Position: (0, 0)")
+                self.pixel_value_label.setText("Value: N/A")
 
     def handle_mouse_click(self, evt):
         # Only process double clicks
@@ -3039,6 +3171,19 @@ class ImageDisplayWindow(QMainWindow):
                 self.graphics_widget.img.setLevels((min_val, max_val))
 
         self.graphics_widget.img.updateImage()
+
+        # Update pixel value based on last valid position
+        if self.has_valid_position:
+            try:
+                if 0 <= self.last_valid_y < image.shape[0] and 0 <= self.last_valid_x < image.shape[1]:
+                    pixel_value = image[self.last_valid_y, self.last_valid_x]
+                    self.last_valid_value = pixel_value
+                    self.cursor_position_label.setText(f"Position: ({self.last_valid_x}, {self.last_valid_y})")
+                    self.pixel_value_label.setText(f"Value: {pixel_value:.2f}")
+            except:
+                # If there's an error, keep the last valid values
+                self.cursor_position_label.setText(f"Position: ({self.last_valid_x}, {self.last_valid_y})")
+                self.pixel_value_label.setText(f"Value: {self.last_valid_value:.2f}")
 
     def mark_spot(self, image: np.ndarray, x: float, y: float):
         """Mark the detected laserspot location on the image.
