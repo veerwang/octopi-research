@@ -6256,9 +6256,9 @@ class NapariLiveWidget(QWidget):
         self.customizeViewer()
 
     def customizeViewer(self):
-        # Hide the status bar (which includes the activity button)
-        if hasattr(self.viewer.window, "_status_bar"):
-            self.viewer.window._status_bar.hide()
+        # # Hide the status bar (which includes the activity button)
+        # if hasattr(self.viewer.window, "_status_bar"):
+        #     self.viewer.window._status_bar.hide()
 
         # Hide the layer buttons
         if hasattr(self.viewer.window._qt_viewer, "layerButtons"):
@@ -6765,9 +6765,9 @@ class NapariMultiChannelWidget(QWidget):
         self.customizeViewer()
 
     def customizeViewer(self):
-        # Hide the status bar (which includes the activity button)
-        if hasattr(self.viewer.window, "_status_bar"):
-            self.viewer.window._status_bar.hide()
+        # # Hide the status bar (which includes the activity button)
+        # if hasattr(self.viewer.window, "_status_bar"):
+        #     self.viewer.window._status_bar.hide()
 
         # Hide the layer buttons
         if hasattr(self.viewer.window._qt_viewer, "layerButtons"):
@@ -6938,10 +6938,9 @@ class NapariMosaicDisplayWidget(QWidget):
         self.mosaic_dtype = None
 
     def customizeViewer(self):
-        # hide status bar
-        if hasattr(self.viewer.window, "_status_bar"):
-            self.viewer.window._status_bar.hide()
-
+        # # hide status bar
+        # if hasattr(self.viewer.window, "_status_bar"):
+        #     self.viewer.window._status_bar.hide()
         self.viewer.bind_key("D", self.toggle_draw_mode)
 
     def toggle_draw_mode(self, viewer):
