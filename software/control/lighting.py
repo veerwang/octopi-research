@@ -200,14 +200,13 @@ class IlluminationController:
                 # Otherwise, the wrong channel will be opened when turn_on_illumination() is called.
                 self.microcontroller.set_illumination(self.channel_mappings_TTL[channel], intensity)
         else:
-            if int(100 * intensity) != int(100 * self.intensity_settings[channel]):
-                if channel in self.intensity_luts:
-                    # Apply LUT to convert power percentage to DAC percent (0-100)
-                    dac_percent = self._apply_lut(channel, intensity)
-                    self.microcontroller.set_illumination(self.channel_mappings_TTL[channel], dac_percent)
-                else:
-                    self.microcontroller.set_illumination(self.channel_mappings_TTL[channel], intensity)
-                self.intensity_settings[channel] = intensity
+            if channel in self.intensity_luts:
+                # Apply LUT to convert power percentage to DAC percent (0-100)
+                dac_percent = self._apply_lut(channel, intensity)
+                self.microcontroller.set_illumination(self.channel_mappings_TTL[channel], dac_percent)
+            else:
+                self.microcontroller.set_illumination(self.channel_mappings_TTL[channel], intensity)
+            self.intensity_settings[channel] = intensity
 
     def get_shutter_state(self):
         return self.is_on
