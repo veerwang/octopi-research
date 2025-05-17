@@ -3000,11 +3000,19 @@ class ImageDisplayWindow(QMainWindow):
         self.cursor_position_label.setMinimumWidth(150)
         self.pixel_value_label = QLabel()
         self.pixel_value_label.setMinimumWidth(150)
+        self.stage_position_label = QLabel()
+        self.stage_position_label.setMinimumWidth(200)
+        self.piezo_position_label = QLabel()
+        self.piezo_position_label.setMinimumWidth(150)
 
         # Add labels to status layout with spacing
         status_layout.addWidget(self.cursor_position_label)
         status_layout.addWidget(QLabel(" | "))  # Add separator
         status_layout.addWidget(self.pixel_value_label)
+        status_layout.addWidget(QLabel(" | "))  # Add separator
+        status_layout.addWidget(self.stage_position_label)
+        status_layout.addWidget(QLabel(" | "))  # Add separator
+        status_layout.addWidget(self.piezo_position_label)
         status_layout.addStretch()  # Push labels to the left
 
         status_widget.setLayout(status_layout)
@@ -3012,6 +3020,8 @@ class ImageDisplayWindow(QMainWindow):
         # Initialize labels with default text
         self.cursor_position_label.setText("Position: (0, 0)")
         self.pixel_value_label.setText("Value: N/A")
+        self.stage_position_label.setText("Stage: X: 0.00 mm, Y: 0.00 mm, Z: 0.00 mm")
+        self.piezo_position_label.setText("Piezo: N/A")
 
         # interpret image data as row-major instead of col-major
         pg.setConfigOptions(imageAxisOrder="row-major")
@@ -3083,6 +3093,48 @@ class ImageDisplayWindow(QMainWindow):
         else:
             self.graphics_widget.view.scene().sigMouseClicked.connect(self.handle_mouse_click)
             self.graphics_widget.view.scene().sigMouseMoved.connect(self.handle_mouse_move)
+
+        # Set up timer for updating stage and piezo positions
+        self.update_timer = QTimer()
+        self.update_timer.timeout.connect(self.update_stage_piezo_positions)
+        self.update_timer.start(100)  # Update every 100ms
+
+    def update_stage_piezo_positions(self):
+        try:
+            if self.liveController and self.liveController.microscope:
+                stage = self.liveController.microscope.stage
+                if stage:
+                    pos = stage.get_pos()
+                    self.stage_position_label.setText(
+                        f"Stage: X={pos.x_mm:.2f} mm, Y={pos.y_mm:.2f} mm, Z={pos.z_mm:.3f} mm"
+                    )
+                else:
+                    self.stage_position_label.setText("Stage: N/A")
+
+                piezo = self.liveController.microscope.piezo
+                if piezo:
+                    try:
+                        piezo_pos = piezo.position
+                        self.piezo_position_label.setText(f"Piezo: {piezo_pos:.1f} µm")
+                        self.piezo_position_label.setVisible(True)
+                    except Exception as e:
+                        self._log.error(f"Error getting piezo position: {str(e)}")
+                        self.piezo_position_label.setText("Piezo: Error")
+                        self.piezo_position_label.setVisible(True)
+                else:
+                    self.piezo_position_label.setVisible(False)
+            else:
+                self.stage_position_label.setText("Stage: N/A")
+                self.piezo_position_label.setVisible(False)
+        except Exception as e:
+            self._log.error(f"Error updating stage/piezo positions: {str(e)}")
+            self.stage_position_label.setText("Stage: Error")
+            self.piezo_position_label.setVisible(False)
+
+    def closeEvent(self, event):
+        # Stop the timer when the window is closed
+        self.update_timer.stop()
+        super().closeEvent(event)
 
     def handle_mouse_move(self, pos):
         try:
