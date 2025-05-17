@@ -2614,6 +2614,12 @@ class FlexibleMultiPointWidget(QFrame):
         self.btn_startAcquisition.setChecked(False)
         # self.btn_startAcquisition.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
 
+        # Add snap images button
+        self.btn_snap_images = QPushButton("Snap Images")
+        self.btn_snap_images.clicked.connect(self.on_snap_images)
+        self.btn_snap_images.setCheckable(False)
+        self.btn_snap_images.setChecked(False)
+
         self.progress_label = QLabel("Region -/-")
         self.progress_bar = QProgressBar()
         self.eta_label = QLabel("--:--:--")
@@ -2745,10 +2751,14 @@ class FlexibleMultiPointWidget(QFrame):
         grid_config.addWidget(self.list_configurations)
         grid_config.addSpacerItem(edge_spacer)
 
+        button_layout = QVBoxLayout()
+        button_layout.addWidget(self.btn_snap_images)
+        button_layout.addWidget(self.btn_startAcquisition)
+
         grid_acquisition = QHBoxLayout()
         grid_acquisition.addSpacerItem(edge_spacer)
         grid_acquisition.addLayout(grid_af)
-        grid_acquisition.addWidget(self.btn_startAcquisition)
+        grid_acquisition.addLayout(button_layout)
 
         self.grid_acquisition.addLayout(grid_config, 6, 0, 3, 4)
         self.grid_acquisition.addLayout(grid_acquisition, 6, 4, 3, 4)
@@ -3530,6 +3540,29 @@ class FlexibleMultiPointWidget(QFrame):
                     self._log.warning("Duplicate values not added based on x and y.")
             self._log.debug(self.location_list)
 
+    def on_snap_images(self):
+        if not self.list_configurations.selectedItems():
+            QMessageBox.warning(self, "Warning", "Please select at least one imaging channel")
+            return
+
+        # Set the selected channels for acquisition
+        self.multipointController.set_selected_configurations(
+            [item.text() for item in self.list_configurations.selectedItems()]
+        )
+        # Set the acquisition parameters
+        self.multipointController.set_deltaZ(0)
+        self.multipointController.set_NZ(1)
+        self.multipointController.set_deltat(0)
+        self.multipointController.set_Nt(1)
+        self.multipointController.set_use_piezo(False)
+        self.multipointController.set_af_flag(False)
+        self.multipointController.set_reflection_af_flag(False)
+        self.multipointController.set_use_fluidics(False)
+
+        # Start the acquisition process for the single FOV
+        self.multipointController.start_new_experiment("snapped images" + self.lineEdit_experimentID.text())
+        self.multipointController.run_acquisition(acquire_current_fov=True)
+
     def acquisition_is_finished(self):
         self._log.debug(
             f"In FlexibleMultiPointWidget, got acquisition_is_finished with {self.is_current_acquisition_widget=}"
@@ -3787,6 +3820,12 @@ class WellplateMultiPointWidget(QFrame):
         self.eta_label.setVisible(False)
         self.eta_timer = QTimer()
 
+        # Add snap images button
+        self.btn_snap_images = QPushButton("Snap Images")
+        self.btn_snap_images.clicked.connect(self.on_snap_images)
+        self.btn_snap_images.setCheckable(False)
+        self.btn_snap_images.setChecked(False)
+
         # Main layout
         main_layout = QVBoxLayout()
         self.setLayout(main_layout)
@@ -3874,10 +3913,14 @@ class WellplateMultiPointWidget(QFrame):
         if ENABLE_STITCHER:
             options_layout.addWidget(self.checkbox_stitchOutput)
 
+        button_layout = QVBoxLayout()
+        button_layout.addWidget(self.btn_snap_images)
+        button_layout.addWidget(self.btn_startAcquisition)
+
         bottom_right = QHBoxLayout()
         bottom_right.addLayout(options_layout)
         bottom_right.addSpacing(2)
-        bottom_right.addWidget(self.btn_startAcquisition)
+        bottom_right.addLayout(button_layout)
 
         grid.addLayout(bottom_right, 2, 2)
         spacer_widget = QWidget()
@@ -4371,6 +4414,29 @@ class WellplateMultiPointWidget(QFrame):
         self.multipointController.set_base_path(save_dir_base)
         self.lineEdit_savingDir.setText(save_dir_base)
         self.base_path_is_set = True
+
+    def on_snap_images(self):
+        if not self.list_configurations.selectedItems():
+            QMessageBox.warning(self, "Warning", "Please select at least one imaging channel")
+            return
+
+        # Set the selected channels for acquisition
+        self.multipointController.set_selected_configurations(
+            [item.text() for item in self.list_configurations.selectedItems()]
+        )
+        # Set the acquisition parameters
+        self.multipointController.set_deltaZ(0)
+        self.multipointController.set_NZ(1)
+        self.multipointController.set_deltat(0)
+        self.multipointController.set_Nt(1)
+        self.multipointController.set_use_piezo(False)
+        self.multipointController.set_af_flag(False)
+        self.multipointController.set_reflection_af_flag(False)
+        self.multipointController.set_use_fluidics(False)
+
+        # Start the acquisition process for the single FOV
+        self.multipointController.start_new_experiment("snapped images" + self.lineEdit_experimentID.text())
+        self.multipointController.run_acquisition(acquire_current_fov=True)
 
     def set_deltaZ(self, value):
         if self.checkbox_usePiezo.isChecked():
