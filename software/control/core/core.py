@@ -51,6 +51,7 @@ import pandas as pd
 import cv2
 import imageio as iio
 import squid.abc
+import scipy.ndimage
 
 
 class ObjectiveStore:
@@ -2928,11 +2929,23 @@ class ImageDisplayWindow(QMainWindow):
         self.show_LUT = show_LUT
         self.autoLevels = autoLevels
 
+        self.first_image = True
+
         # Store last valid cursor position
         self.last_valid_x = 0
         self.last_valid_y = 0
         self.last_valid_value = 0
         self.has_valid_position = False
+
+        # Line profiler state
+        self.line_roi = None
+        self.is_drawing_line = False
+        self.line_start_pos = None
+        self.line_end_pos = None
+        self.drawing_cursor = QCursor(Qt.CrossCursor)  # Cross cursor for drawing mode
+        self.normal_cursor = QCursor(Qt.ArrowCursor)  # Normal cursor
+        self.preview_line = None
+        self.start_point_marker = None
 
         # Create main layout
         layout = QVBoxLayout()
@@ -2955,6 +2968,13 @@ class ImageDisplayWindow(QMainWindow):
         self.piezo_position_label = QLabel()
         self.piezo_position_label.setMinimumWidth(150)
 
+        # Add line profiler toggle button
+        self.btn_line_profiler = QPushButton("Line Profiler")
+        self.btn_line_profiler.setCheckable(True)
+        self.btn_line_profiler.setChecked(False)
+        self.btn_line_profiler.setEnabled(False)
+        self.btn_line_profiler.clicked.connect(self.toggle_line_profiler)
+
         # Add labels to status layout with spacing
         status_layout.addWidget(self.cursor_position_label)
         status_layout.addWidget(QLabel(" | "))  # Add separator
@@ -2964,6 +2984,8 @@ class ImageDisplayWindow(QMainWindow):
         status_layout.addWidget(QLabel(" | "))  # Add separator
         status_layout.addWidget(self.piezo_position_label)
         status_layout.addStretch()  # Push labels to the left
+        status_layout.addWidget(QLabel(" | "))  # Add separator
+        status_layout.addWidget(self.btn_line_profiler)  # Add button after stretch
 
         status_widget.setLayout(status_layout)
 
@@ -2975,6 +2997,12 @@ class ImageDisplayWindow(QMainWindow):
 
         # interpret image data as row-major instead of col-major
         pg.setConfigOptions(imageAxisOrder="row-major")
+
+        # Create a container widget for the image display
+        self.image_container = QWidget()
+        image_layout = QVBoxLayout()
+        image_layout.setContentsMargins(0, 0, 0, 0)
+        image_layout.setSpacing(0)
 
         self.graphics_widget = pg.GraphicsLayoutWidget()
         self.graphics_widget.view = self.graphics_widget.addViewBox()
@@ -3018,11 +3046,32 @@ class ImageDisplayWindow(QMainWindow):
         self.centroid = None
         self.image_offset = np.array([0, 0])
 
-        ## Layout
+        # Add image widget to container
         if self.show_LUT:
-            layout.addWidget(self.graphics_widget.view)
+            image_layout.addWidget(self.graphics_widget.view)
         else:
-            layout.addWidget(self.graphics_widget)
+            image_layout.addWidget(self.graphics_widget)
+        self.image_container.setLayout(image_layout)
+
+        # Create line profiler widget
+        self.line_profiler_widget = pg.GraphicsLayoutWidget()
+        self.line_profiler_plot = self.line_profiler_widget.addPlot()
+        self.line_profiler_plot.setLabel("left", "Intensity")
+        self.line_profiler_plot.setLabel("bottom", "Position")
+        self.line_profiler_widget.hide()  # Initially hidden
+
+        # Create splitter
+        self.splitter = QSplitter(Qt.Vertical)
+        self.splitter.addWidget(self.image_container)
+        self.splitter.addWidget(self.line_profiler_widget)
+        self.splitter.setStretchFactor(0, 1)  # Image container gets more space
+        self.splitter.setStretchFactor(1, 0)  # Line profiler starts collapsed
+
+        # Set initial sizes (80% image, 20% profiler)
+        self.splitter.setSizes([800, 200])
+
+        # Add splitter to main layout
+        layout.addWidget(self.splitter)
 
         # Add status bar at the bottom
         layout.addWidget(status_widget)
@@ -3086,12 +3135,178 @@ class ImageDisplayWindow(QMainWindow):
         self.update_timer.stop()
         super().closeEvent(event)
 
+    def toggle_line_profiler(self):
+        """Toggle the visibility of the line profiler widget."""
+        if self.btn_line_profiler.isChecked():
+            self.line_profiler_widget.show()
+            if self.line_roi is None:
+                # Start in drawing mode
+                self.is_drawing_line = True
+                self.line_start_pos = None
+                self.line_end_pos = None
+                # Set cross cursor
+                if self.show_LUT:
+                    self.graphics_widget.view.getView().setCursor(self.drawing_cursor)
+                else:
+                    self.graphics_widget.view.setCursor(self.drawing_cursor)
+                self._log.info("Line profiler opened - ready to draw line")
+            else:
+                self.line_roi.show()
+                self.update_line_profile()
+        else:
+            self.line_profiler_widget.hide()
+            if self.line_roi is not None:
+                self.line_roi.hide()
+            # Reset cursor to normal
+            if self.show_LUT:
+                self.graphics_widget.view.getView().setCursor(self.normal_cursor)
+            else:
+                self.graphics_widget.view.setCursor(self.normal_cursor)
+
+    def create_line_roi(self):
+        """Create a line ROI for intensity profiling."""
+        if self.line_roi is None and self.line_start_pos is not None and self.line_end_pos is not None:
+            try:
+                # Convert coordinates to Point objects
+                start_point = pg.Point(self.line_start_pos[0], self.line_start_pos[1])
+                end_point = pg.Point(self.line_end_pos[0], self.line_end_pos[1])
+
+                # Create the line ROI with width parameter
+                self.line_roi = pg.LineROI(
+                    pos1=start_point,
+                    pos2=end_point,
+                    width=5,  # Default width in pixels
+                    pen=pg.mkPen("y", width=2),
+                    hoverPen=pg.mkPen("y", width=2),
+                    handlePen=pg.mkPen("y", width=2),
+                    handleHoverPen=pg.mkPen("y", width=2),
+                    movable=True,
+                    rotatable=True,
+                    resizable=True,
+                )
+
+                # Add the ROI to the view
+                if self.show_LUT:
+                    self.graphics_widget.view.getView().addItem(self.line_roi)
+                else:
+                    self.graphics_widget.view.addItem(self.line_roi)
+
+                # Connect signal
+                self.line_roi.sigRegionChanged.connect(self.update_line_profile)
+                self.update_line_profile()
+                self._log.info("Line ROI created successfully")
+            except Exception as e:
+                self._log.error(f"Error creating line ROI: {str(e)}")
+                self.line_roi = None
+                self.line_start_pos = None
+                self.line_end_pos = None
+
+    def update_line_profile(self):
+        """Update the line profile plot based on the line ROI."""
+        if not self.btn_line_profiler.isChecked() or self.line_roi is None:
+            return
+
+        try:
+            if hasattr(self.graphics_widget.img, "image"):
+                image = self.graphics_widget.img.image
+                if image is not None:
+                    # Get the line ROI state
+                    state = self.line_roi.getState()
+                    pos = state["pos"]
+                    size = state["size"]
+                    angle = state["angle"]
+                    print(angle)
+                    angle = np.radians(angle)
+
+                    # Calculate start and end points
+                    start = (pos[0], pos[1])
+                    end = (pos[0] + size[0] * np.cos(angle), pos[1] + size[0] * np.sin(angle))
+
+                    # Convert ROI coordinates to image coordinates
+                    start_img = self.graphics_widget.img.mapFromView(pg.Point(start[0], start[1]))
+                    end_img = self.graphics_widget.img.mapFromView(pg.Point(end[0], end[1]))
+
+                    # Get the profile along the line
+                    profile = self.get_line_profile(image, start_img, end_img, size[1])  # size[1] is the width
+
+                    # Clear previous plots
+                    self.line_profiler_plot.clear()
+
+                    # Calculate pixel distance for x-axis
+                    pixel_distance = np.linspace(0, size[0], len(profile))
+
+                    # Plot the profile
+                    self.line_profiler_plot.plot(pixel_distance, profile, pen="w", name="Intensity Profile")
+
+                    # Set labels
+                    self.line_profiler_plot.setLabel("left", "Intensity")
+                    self.line_profiler_plot.setLabel("bottom", "Distance (pixels)")
+
+                    # Add legend
+                    self.line_profiler_plot.addLegend()
+
+                    # Auto-scale the plot
+                    self.line_profiler_plot.autoRange()
+        except Exception as e:
+            self._log.error(f"Error updating line profile: {str(e)}")
+
+    def get_line_profile(self, image, start, end, width=1):
+        """Get intensity profile along a line with specified width."""
+        try:
+            # Calculate the line vector
+            line_vec = np.array([end.x() - start.x(), end.y() - start.y()])
+            line_length = np.linalg.norm(line_vec)
+
+            # Calculate the number of points along the line
+            num_points = int(line_length)
+            if num_points < 2:
+                num_points = 2  # Ensure at least 2 points
+
+            # Create coordinate arrays
+            x = np.linspace(start.x(), end.x(), num_points)
+            y = np.linspace(start.y(), end.y(), num_points)
+
+            # Calculate perpendicular vector
+            perp_vec = np.array([-line_vec[1], line_vec[0]]) / line_length
+
+            # Create meshgrid for width sampling
+            width_points = max(1, int(width))  # Ensure at least 1 point
+            width_offsets = np.linspace(-width / 2, width / 2, width_points)
+
+            # Initialize profile array
+            profile = np.zeros(num_points)
+
+            # Sample points along the width
+            for w in width_offsets:
+                x_offset = x + perp_vec[0] * w
+                y_offset = y + perp_vec[1] * w
+
+                # Get values at these points
+                values = scipy.ndimage.map_coordinates(image, [y_offset, x_offset], order=1)
+                profile += values
+
+            # Average the values
+            profile /= width_points
+
+            return profile
+
+        except Exception as e:
+            self._log.error(f"Error getting line profile: {str(e)}")
+            return np.zeros(1)
+
     def handle_mouse_move(self, pos):
         try:
             if self.show_LUT:
                 view_coord = self.graphics_widget.view.getView().mapSceneToView(pos)
             else:
                 view_coord = self.graphics_widget.view.mapSceneToView(pos)
+
+            # Update preview line if we're drawing
+            if self.is_drawing_line and self.line_start_pos is not None and self.preview_line is not None:
+                self.preview_line.setData(
+                    x=[self.line_start_pos[0], view_coord.x()], y=[self.line_start_pos[1], view_coord.y()]
+                )
+
             image_coord = self.graphics_widget.img.mapFromView(view_coord)
 
             if self.is_within_image(image_coord):
@@ -3127,7 +3342,88 @@ class ImageDisplayWindow(QMainWindow):
                 self.pixel_value_label.setText("Value: N/A")
 
     def handle_mouse_click(self, evt):
-        # Only process double clicks
+        """Handle mouse clicks for both line drawing and other interactions."""
+        if self.is_drawing_line:
+            try:
+                # Get the view that received the click
+                if self.show_LUT:
+                    view = self.graphics_widget.view.getView()
+                else:
+                    view = self.graphics_widget.view
+
+                # Convert click position to view coordinates
+                pos = evt.pos()
+                view_coord = view.mapSceneToView(pos)
+
+                if self.line_start_pos is None:
+                    # First click - start drawing
+                    self.line_start_pos = (view_coord.x(), view_coord.y())
+                    self._log.info(f"Line start position set to: {self.line_start_pos}")
+
+                    # Add a point marker at the start position
+                    self.start_point_marker = pg.ScatterPlotItem(
+                        pos=[(self.line_start_pos[0], self.line_start_pos[1])],
+                        size=10,
+                        symbol="o",
+                        pen=pg.mkPen("y", width=2),
+                        brush=pg.mkBrush("y"),
+                    )
+                    if self.show_LUT:
+                        self.graphics_widget.view.getView().addItem(self.start_point_marker)
+                    else:
+                        self.graphics_widget.view.addItem(self.start_point_marker)
+
+                    # Create preview line
+                    self.preview_line = pg.PlotDataItem(pen=pg.mkPen("y", width=2, style=Qt.DashLine))
+                    if self.show_LUT:
+                        self.graphics_widget.view.getView().addItem(self.preview_line)
+                    else:
+                        self.graphics_widget.view.addItem(self.preview_line)
+                else:
+                    # Second click - finish drawing
+                    self.line_end_pos = (view_coord.x(), view_coord.y())
+                    self._log.info(f"Line end position set to: {self.line_end_pos}")
+
+                    # Remove preview line and start point marker
+                    if self.preview_line is not None:
+                        if self.show_LUT:
+                            self.graphics_widget.view.getView().removeItem(self.preview_line)
+                        else:
+                            self.graphics_widget.view.removeItem(self.preview_line)
+                        self.preview_line = None
+
+                    if self.start_point_marker is not None:
+                        if self.show_LUT:
+                            self.graphics_widget.view.getView().removeItem(self.start_point_marker)
+                        else:
+                            self.graphics_widget.view.removeItem(self.start_point_marker)
+                        self.start_point_marker = None
+
+                    self.create_line_roi()
+                    self.is_drawing_line = False
+                    # Reset cursor to normal
+                    view.setCursor(self.normal_cursor)
+            except Exception as e:
+                self._log.error(f"Error drawing line: {str(e)}")
+                self.is_drawing_line = False
+                self.line_start_pos = None
+                self.line_end_pos = None
+                # Clean up any remaining preview items
+                if self.preview_line is not None:
+                    if self.show_LUT:
+                        self.graphics_widget.view.getView().removeItem(self.preview_line)
+                    else:
+                        self.graphics_widget.view.removeItem(self.preview_line)
+                    self.preview_line = None
+                if self.start_point_marker is not None:
+                    if self.show_LUT:
+                        self.graphics_widget.view.getView().removeItem(self.start_point_marker)
+                    else:
+                        self.graphics_widget.view.removeItem(self.start_point_marker)
+                    self.start_point_marker = None
+            return
+
+        # Handle double clicks for other purposes
         if not evt.double():
             return
 
@@ -3156,8 +3452,13 @@ class ImageDisplayWindow(QMainWindow):
         except:
             return False
 
-    # [Rest of the methods remain exactly the same...]
     def display_image(self, image):
+        # enable the line profiler button after the first image is displayed
+        if self.first_image:
+            self.first_image = False
+            self.btn_line_profiler.setEnabled(True)
+            return
+
         if ENABLE_TRACKING:
             image = np.copy(image)
             self.image_height, self.image_width = image.shape[:2]
@@ -3199,6 +3500,9 @@ class ImageDisplayWindow(QMainWindow):
                 # If there's an error, keep the last valid values
                 self.cursor_position_label.setText(f"Position: ({self.last_valid_x}, {self.last_valid_y})")
                 self.pixel_value_label.setText(f"Value: {self.last_valid_value:.2f}")
+
+        if self.line_roi is not None and self.btn_line_profiler.isChecked():
+            self.update_line_profile()
 
     def mark_spot(self, image: np.ndarray, x: float, y: float):
         """Mark the detected laserspot location on the image.
