@@ -3457,7 +3457,6 @@ class ImageDisplayWindow(QMainWindow):
         if self.first_image:
             self.first_image = False
             self.btn_line_profiler.setEnabled(True)
-            return
 
         if ENABLE_TRACKING:
             image = np.copy(image)
