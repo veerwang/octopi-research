@@ -3319,27 +3319,19 @@ class ImageDisplayWindow(QMainWindow):
                 self.cursor_position_label.setText(f"Position: ({x}, {y})")
 
                 # Get pixel value
-                if hasattr(self.graphics_widget.img, "image"):
-                    image = self.graphics_widget.img.image
-                    if image is not None and 0 <= y < image.shape[0] and 0 <= x < image.shape[1]:
-                        pixel_value = image[y, x]
-                        self.last_valid_value = pixel_value
-                        self.pixel_value_label.setText(f"Value: {pixel_value:.2f}")
-                    else:
-                        self.pixel_value_label.setText("Value: N/A")
+                image = self.graphics_widget.img.image
+                if image is not None and 0 <= y < image.shape[0] and 0 <= x < image.shape[1]:
+                    pixel_value = image[y, x]
+                    self.last_valid_value = pixel_value
+                    self.pixel_value_label.setText(f"Value: {pixel_value}")
                 else:
-                    self.pixel_value_label.setText("Value: N/A")
+                    self.pixel_value_label.setText("Value:")
             else:
-                self.cursor_position_label.setText("Position: Out of bounds")
-                self.pixel_value_label.setText("Value: N/A")
+                self.cursor_position_label.setText("Position:")
+                self.pixel_value_label.setText("Value:")
+                self.has_valid_position = False
         except:
-            # Keep last valid position if available
-            if self.has_valid_position:
-                self.cursor_position_label.setText(f"Position: ({self.last_valid_x}, {self.last_valid_y})")
-                self.pixel_value_label.setText(f"Value: {self.last_valid_value:.2f}")
-            else:
-                self.cursor_position_label.setText("Position: (0, 0)")
-                self.pixel_value_label.setText("Value: N/A")
+            pass
 
     def handle_mouse_click(self, evt):
         """Handle mouse clicks for both line drawing and other interactions."""
@@ -3494,11 +3486,11 @@ class ImageDisplayWindow(QMainWindow):
                     pixel_value = image[self.last_valid_y, self.last_valid_x]
                     self.last_valid_value = pixel_value
                     self.cursor_position_label.setText(f"Position: ({self.last_valid_x}, {self.last_valid_y})")
-                    self.pixel_value_label.setText(f"Value: {pixel_value:.2f}")
+                    self.pixel_value_label.setText(f"Value: {pixel_value}")
             except:
                 # If there's an error, keep the last valid values
                 self.cursor_position_label.setText(f"Position: ({self.last_valid_x}, {self.last_valid_y})")
-                self.pixel_value_label.setText(f"Value: {self.last_valid_value:.2f}")
+                self.pixel_value_label.setText(f"Value: {self.last_valid_value}")
 
         if self.line_roi is not None and self.btn_line_profiler.isChecked():
             self.update_line_profile()
