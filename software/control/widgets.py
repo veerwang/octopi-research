@@ -3559,6 +3559,9 @@ class FlexibleMultiPointWidget(QFrame):
         self.multipointController.set_reflection_af_flag(False)
         self.multipointController.set_use_fluidics(False)
 
+        z = self.stage.get_pos().z_mm
+        self.multipointController.set_z_range(z, z)
+
         # Start the acquisition process for the single FOV
         self.multipointController.start_new_experiment("snapped images" + self.lineEdit_experimentID.text())
         self.multipointController.run_acquisition(acquire_current_fov=True)
@@ -4434,6 +4437,8 @@ class WellplateMultiPointWidget(QFrame):
         self.multipointController.set_reflection_af_flag(False)
         self.multipointController.set_use_fluidics(False)
 
+        z = self.stage.get_pos().z_mm
+        self.multipointController.set_z_range(z, z)
         # Start the acquisition process for the single FOV
         self.multipointController.start_new_experiment("snapped images" + self.lineEdit_experimentID.text())
         self.multipointController.run_acquisition(acquire_current_fov=True)
