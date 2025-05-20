@@ -18,6 +18,7 @@ try:
 except:
     print("gxipy import error")
 
+
 def get_sn_by_model(model_name):
     try:
         device_manager = gx.DeviceManager()
@@ -29,6 +30,7 @@ def get_sn_by_model(model_name):
             if device_info_list[i]["model_name"] == model_name:
                 return device_info_list[i]["sn"]
     return None  # return None if no device with the specified model_name is connected
+
 
 class DefaultCameraCapabilities(pydantic.BaseModel):
     is_color: bool

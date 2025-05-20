@@ -266,7 +266,7 @@ _camera_config = CameraConfig(
     rotate_image_angle=_def.ROTATE_IMAGE_ANGLE,
     flip=_def.FLIP_IMAGE,
     default_white_balance_gains=RGBValue(r=_def.AWB_RATIOS_R, g=_def.AWB_RATIOS_G, b=_def.AWB_RATIOS_B),
-    sn_model = _def.MAIN_CAMERA_MODEL
+    sn_model=_def.MAIN_CAMERA_MODEL,
 )
 
 
@@ -284,7 +284,7 @@ _autofocus_camera_config = CameraConfig(
     rotate_image_angle=None,
     flip=None,
     default_white_balance_gains=RGBValue(r=_def.AWB_RATIOS_R, g=_def.AWB_RATIOS_G, b=_def.AWB_RATIOS_B),
-    sn_model = _def.FOCUS_CAMERA_MODEL
+    sn_model=_def.FOCUS_CAMERA_MODEL,
 )
 
 
