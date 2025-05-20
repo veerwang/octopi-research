@@ -219,6 +219,9 @@ class CameraConfig(pydantic.BaseModel):
     # NOTE(imo): Not "type" because that's a python builtin and can cause confusion
     camera_type: CameraVariant
 
+    # camera's model SN
+    sn_model: Optional[str]
+
     default_resolution: Tuple[int, int]
 
     default_pixel_format: CameraPixelFormat
@@ -236,9 +239,6 @@ class CameraConfig(pydantic.BaseModel):
 
     # After initialization, set the white balance gains to this once. Only valid for color cameras.
     default_white_balance_gains: Optional[RGBValue]
-
-    #
-    sn_model: str
 
 
 def _old_camera_variant_to_enum(old_string) -> CameraVariant:
@@ -261,12 +261,12 @@ def _old_camera_variant_to_enum(old_string) -> CameraVariant:
 
 _camera_config = CameraConfig(
     camera_type=_old_camera_variant_to_enum(_def.CAMERA_TYPE),
+    sn_model=_def.MAIN_CAMERA_MODEL,
     default_resolution=(_def.CAMERA_CONFIG.ROI_WIDTH_DEFAULT, _def.CAMERA_CONFIG.ROI_HEIGHT_DEFAULT),
     default_pixel_format=_def.DEFAULT_PIXEL_FORMAT,
     rotate_image_angle=_def.ROTATE_IMAGE_ANGLE,
     flip=_def.FLIP_IMAGE,
     default_white_balance_gains=RGBValue(r=_def.AWB_RATIOS_R, g=_def.AWB_RATIOS_G, b=_def.AWB_RATIOS_B),
-    sn_model=_def.MAIN_CAMERA_MODEL,
 )
 
 
@@ -279,12 +279,12 @@ def get_camera_config() -> CameraConfig:
 
 _autofocus_camera_config = CameraConfig(
     camera_type=_old_camera_variant_to_enum(_def.FOCUS_CAMERA_TYPE),
+    sn_model=_def.FOCUS_CAMERA_MODEL,
     default_resolution=(_def.LASER_AF_CROP_WIDTH, _def.LASER_AF_CROP_HEIGHT),
     default_pixel_format=CameraPixelFormat.MONO8,
     rotate_image_angle=None,
     flip=None,
     default_white_balance_gains=RGBValue(r=_def.AWB_RATIOS_R, g=_def.AWB_RATIOS_G, b=_def.AWB_RATIOS_B),
-    sn_model=_def.FOCUS_CAMERA_MODEL,
 )
 
 
