@@ -506,9 +506,7 @@ class MultiPointWorker(QObject):
                 self._current_round_images[info.configuration.name] = np.copy(image)
 
             with self._timing.get_timer("handle_rgb_generation"):
-                MultiPointWorker.handle_rgb_generation(
-                    self._current_round_images, info
-                )
+                MultiPointWorker.handle_rgb_generation(self._current_round_images, info)
 
     def _frame_wait_timeout_s(self):
         return (self.camera.get_total_frame_time() / 1e3) + 10
@@ -656,7 +654,13 @@ class MultiPointWorker(QObject):
                 self.init_napari_layers = True
                 self.napari_layers_init.emit(image.shape[0], image.shape[1], image.dtype)
             objective_magnification = str(int(self.objectiveStore.get_current_objective_info()["magnification"]))
-            self.napari_layers_update.emit(image, capture_info.position.x_mm, capture_info.position.y_mm, capture_info.z_index, objective_magnification + "x " + capture_info.configuration.name)
+            self.napari_layers_update.emit(
+                image,
+                capture_info.position.x_mm,
+                capture_info.position.y_mm,
+                capture_info.z_index,
+                objective_magnification + "x " + capture_info.configuration.name,
+            )
 
     @staticmethod
     def handle_rgb_generation(current_round_images, capture_info: CaptureInfo):
@@ -677,10 +681,18 @@ class MultiPointWorker(QObject):
             if len(rgb_image.shape) == 3:
                 print("writing RGB image")
                 if rgb_image.dtype == np.uint16:
-                    iio.imwrite(os.path.join(capture_info.save_directory, capture_info.file_id + "_BF_LED_matrix_full_RGB.tiff"), rgb_image)
+                    iio.imwrite(
+                        os.path.join(
+                            capture_info.save_directory, capture_info.file_id + "_BF_LED_matrix_full_RGB.tiff"
+                        ),
+                        rgb_image,
+                    )
                 else:
                     iio.imwrite(
-                        os.path.join(capture_info.save_directory, capture_info.file_id + "_BF_LED_matrix_full_RGB." + Acquisition.IMAGE_FORMAT),
+                        os.path.join(
+                            capture_info.save_directory,
+                            capture_info.file_id + "_BF_LED_matrix_full_RGB." + Acquisition.IMAGE_FORMAT,
+                        ),
                         rgb_image,
                     )
 
@@ -709,8 +721,6 @@ class MultiPointWorker(QObject):
         rgb_image[:, :, 0] = images["BF LED matrix full_R"]
         rgb_image[:, :, 1] = images["BF LED matrix full_G"]
         rgb_image[:, :, 2] = images["BF LED matrix full_B"]
-
-
 
         # send image to display
         height, width = rgb_image.shape[:2]
@@ -746,7 +756,6 @@ class MultiPointWorker(QObject):
         self._log.info("Waiting for any outstanding frames at end of acquisition.")
         if not self._ready_for_next_trigger.wait(self._frame_wait_timeout_s()):
             self._log.warning("Timed out waiting for the last outstanding frames at end of acquisition!")
-
 
     def move_z_for_stack(self):
         if self.use_piezo:
