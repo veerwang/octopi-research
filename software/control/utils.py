@@ -443,6 +443,7 @@ def get_directory_disk_usage(directory: pathlib.Path) -> int:
 
     return total_size
 
+
 class TimingManager:
     @dataclass
     class TimingPair:
@@ -491,7 +492,6 @@ class TimingManager:
                     return "N/A"
                 return f"{statistics.mean(i):.4f}"
 
-
             def median(i):
                 if not len(i):
                     return "N/A"
@@ -520,8 +520,8 @@ class TimingManager:
         timer_names = sorted(self._timers.keys())
         report = f"Timings For {self._name}:\n"
         for name in timer_names:
-           timer = self._timers[name]
-           report += f"  {timer.get_report()}\n"
+            timer = self._timers[name]
+            report += f"  {timer.get_report()}\n"
 
         return report
 

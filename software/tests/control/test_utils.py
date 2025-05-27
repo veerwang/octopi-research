@@ -138,6 +138,7 @@ def test_get_available_disk_space():
     with pytest.raises(ValueError):
         get_available_disk_space(temp_dir)
 
+
 def test_timing_manager():
     tma = control.utils.TimingManager("a")
     tmb = control.utils.TimingManager("b")
