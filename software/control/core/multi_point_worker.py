@@ -380,12 +380,13 @@ class MultiPointWorker(QObject):
                     self.handle_z_offset(config, True)
 
                 # acquire image
-                if "USB Spectrometer" not in config.name and "RGB" not in config.name:
-                    self.acquire_camera_image(config, file_ID, current_path, current_round_images, z_level)
-                elif "RGB" in config.name:
-                    self.acquire_rgb_image(config, file_ID, current_path, current_round_images, z_level)
-                else:
-                    self.acquire_spectrometer_data(config, file_ID, current_path, z_level)
+                with self._timing.get_timer("acquire_camera_image"):
+                    if "USB Spectrometer" not in config.name and "RGB" not in config.name:
+                        self.acquire_camera_image(config, file_ID, current_path, current_round_images, z_level)
+                    elif "RGB" in config.name:
+                        self.acquire_rgb_image(config, file_ID, current_path, current_round_images, z_level)
+                    else:
+                        self.acquire_spectrometer_data(config, file_ID, current_path, z_level)
 
                 if self.NZ == 1:  # TODO: handle z offset for z stack
                     self.handle_z_offset(config, False)
