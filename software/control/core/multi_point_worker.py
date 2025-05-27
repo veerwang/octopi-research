@@ -287,8 +287,7 @@ class MultiPointWorker(QObject):
         piezo_column = ["z_piezo (um)"] if self.use_piezo else []
         self.coordinates_pd = pd.DataFrame(columns=["region", "fov"] + base_columns + piezo_column)
 
-    def update_coordinates_dataframe(self, region_id, z_level, fov=None):
-        pos = self.stage.get_pos()
+    def update_coordinates_dataframe(self, region_id, z_level, pos: squid.abc.Pos, fov=None):
         base_data = {
             "z_level": [z_level],
             "x (mm)": [pos.x_mm],
@@ -386,7 +385,7 @@ class MultiPointWorker(QObject):
                     elif "RGB" in config.name:
                         self.acquire_rgb_image(config, file_ID, current_path, current_round_images, z_level)
                     else:
-                        self.acquire_spectrometer_data(config, file_ID, current_path, z_level)
+                        self.acquire_spectrometer_data(config, file_ID, current_path)
 
                 if self.NZ == 1:  # TODO: handle z offset for z stack
                     self.handle_z_offset(config, False)
@@ -400,8 +399,8 @@ class MultiPointWorker(QObject):
                 self.signal_region_progress.emit(current_image, self.total_scans)
 
             # updates coordinates df
-            self.update_coordinates_dataframe(region_id, z_level, fov)
-            self.signal_register_current_fov.emit(self.stage.get_pos().x_mm, self.stage.get_pos().y_mm)
+            self.update_coordinates_dataframe(region_id, z_level, acquire_pos, fov)
+            self.signal_register_current_fov.emit(acquire_pos.x_mm, acquire_pos.y_mm)
 
             # check if the acquisition should be aborted
             if self.multiPointController.abort_acqusition_requested:
@@ -502,13 +501,13 @@ class MultiPointWorker(QObject):
             with self._timing.get_timer("save_image"):
                 self.save_image(image, info.file_id, info.configuration, info.save_directory, camera_frame.is_color())
             with self._timing.get_timer("update_napari"):
-                self.update_napari(image, info.configuration.name, info.z_index)
+                self.update_napari(image, info)
             with self._timing.get_timer("_current_round_images"):
                 self._current_round_images[info.configuration.name] = np.copy(image)
 
             with self._timing.get_timer("handle_rgb_generation"):
                 MultiPointWorker.handle_rgb_generation(
-                    self._current_round_images, info.file_id, info.save_directory, info.z_index
+                    self._current_round_images, info
                 )
 
     def _frame_wait_timeout_s(self):
@@ -649,19 +648,18 @@ class MultiPointWorker(QObject):
 
         return
 
-    def update_napari(self, image, config_name, k):
+    def update_napari(self, image, capture_info: CaptureInfo):
         if not self.performance_mode and (USE_NAPARI_FOR_MOSAIC_DISPLAY or USE_NAPARI_FOR_MULTIPOINT):
 
             if not self.init_napari_layers:
                 print("init napari layers")
                 self.init_napari_layers = True
                 self.napari_layers_init.emit(image.shape[0], image.shape[1], image.dtype)
-            pos = self.stage.get_pos()
             objective_magnification = str(int(self.objectiveStore.get_current_objective_info()["magnification"]))
-            self.napari_layers_update.emit(image, pos.x_mm, pos.y_mm, k, objective_magnification + "x " + config_name)
+            self.napari_layers_update.emit(image, capture_info.position.x_mm, capture_info.position.y_mm, capture_info.z_index, objective_magnification + "x " + capture_info.configuration.name)
 
     @staticmethod
-    def handle_rgb_generation(current_round_images, file_ID, current_path, k):
+    def handle_rgb_generation(current_round_images, capture_info: CaptureInfo):
         keys_to_check = ["BF LED matrix full_R", "BF LED matrix full_G", "BF LED matrix full_B"]
         if all(key in current_round_images for key in keys_to_check):
             print("constructing RGB image")
@@ -679,14 +677,14 @@ class MultiPointWorker(QObject):
             if len(rgb_image.shape) == 3:
                 print("writing RGB image")
                 if rgb_image.dtype == np.uint16:
-                    iio.imwrite(os.path.join(current_path, file_ID + "_BF_LED_matrix_full_RGB.tiff"), rgb_image)
+                    iio.imwrite(os.path.join(capture_info.save_directory, capture_info.file_id + "_BF_LED_matrix_full_RGB.tiff"), rgb_image)
                 else:
                     iio.imwrite(
-                        os.path.join(current_path, file_ID + "_BF_LED_matrix_full_RGB." + Acquisition.IMAGE_FORMAT),
+                        os.path.join(capture_info.save_directory, capture_info.file_id + "_BF_LED_matrix_full_RGB." + Acquisition.IMAGE_FORMAT),
                         rgb_image,
                     )
 
-    def handle_rgb_channels(self, images, file_ID, current_path, config, k):
+    def handle_rgb_channels(self, images, capture_info: CaptureInfo):
         for channel in ["BF LED matrix full_R", "BF LED matrix full_G", "BF LED matrix full_B"]:
             image_to_display = utils.crop_image(
                 images[channel],
@@ -694,23 +692,25 @@ class MultiPointWorker(QObject):
                 round(images[channel].shape[0] * self.display_resolution_scaling),
             )
             self.image_to_display.emit(image_to_display)
-            self.image_to_display_multi.emit(image_to_display, config.illumination_source)
+            self.image_to_display_multi.emit(image_to_display, capture_info.configuration.illumination_source)
 
-            self.update_napari(images[channel], channel, k)
+            self.update_napari(images[channel], capture_info)
 
             file_name = (
-                file_ID
+                capture_info.file_id
                 + "_"
                 + channel.replace(" ", "_")
                 + (".tiff" if images[channel].dtype == np.uint16 else "." + Acquisition.IMAGE_FORMAT)
             )
-            iio.imwrite(os.path.join(current_path, file_name), images[channel])
+            iio.imwrite(os.path.join(capture_info.save_directory, file_name), images[channel])
 
-    def construct_rgb_image(self, images, file_ID, current_path, config, k):
+    def construct_rgb_image(self, images, capture_info: CaptureInfo):
         rgb_image = np.zeros((*images["BF LED matrix full_R"].shape, 3), dtype=images["BF LED matrix full_R"].dtype)
         rgb_image[:, :, 0] = images["BF LED matrix full_R"]
         rgb_image[:, :, 1] = images["BF LED matrix full_G"]
         rgb_image[:, :, 2] = images["BF LED matrix full_B"]
+
+
 
         # send image to display
         height, width = rgb_image.shape[:2]
@@ -720,14 +720,14 @@ class MultiPointWorker(QObject):
             round(height * self.display_resolution_scaling),
         )
         self.image_to_display.emit(image_to_display)
-        self.image_to_display_multi.emit(image_to_display, config.illumination_source)
+        self.image_to_display_multi.emit(image_to_display, capture_info.configuration.illumination_source)
 
-        self.update_napari(rgb_image, config.name, k)
+        self.update_napari(rgb_image, capture_info)
 
         # write the RGB image
         print("writing RGB image")
         file_name = (
-            file_ID
+            capture_info.file_id
             + "_BF_LED_matrix_full_RGB"
             + (".tiff" if rgb_image.dtype == np.uint16 else "." + Acquisition.IMAGE_FORMAT)
         )
