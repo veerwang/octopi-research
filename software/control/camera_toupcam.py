@@ -235,6 +235,11 @@ class ToupcamCamera(AbstractCamera):
         self._start_raw_camera_stream()
         self._update_internal_settings()
 
+    def __del__(self):
+        if self.get_is_streaming():
+            self.stop_streaming()
+        self._close()
+
     def _start_raw_camera_stream(self):
         """
         Make sure the camera is setup to tell us when frames are available.
@@ -488,6 +493,9 @@ class ToupcamCamera(AbstractCamera):
 
     def get_pixel_format(self) -> CameraPixelFormat:
         return self._pixel_format
+
+    def get_available_pixel_formats(self) -> Sequence[CameraPixelFormat]:
+        raise NotImplementedError("get_available_pixel_formats is not implemented for Toupcam")
 
     def set_auto_exposure(self, enabled: bool):
         try:

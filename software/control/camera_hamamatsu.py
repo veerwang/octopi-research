@@ -13,7 +13,7 @@ import control.utils
 
 
 class HamamatsuCapabilities(pydantic.BaseModel):
-    bining_to_resolution: Dict[Tuple[int, int], Tuple[int, int]]
+    binning_to_resolution: Dict[Tuple[int, int], Tuple[int, int]]
 
 
 class HamamatsuCamera(AbstractCamera):
@@ -252,8 +252,11 @@ class HamamatsuCamera(AbstractCamera):
 
         return _dcam_to_pixel[dcam_pixel_format]
 
+    def get_available_pixel_formats(self) -> Sequence[CameraPixelFormat]:
+        return list(self._PIXEL_FORMAT_TO_DCAM_FORMAT.keys())
+
     def get_resolution(self) -> Tuple[int, int]:
-        return self._capabilities.binning_to_resolution[self._binning]
+        return self._capabilities.binning_to_resolution[self.get_binning()]
 
     def set_binning(self, binning_factor_x: int, binning_factor_y: int):
         # TODO: We only support 1x1 binning for now. More may be added later.
