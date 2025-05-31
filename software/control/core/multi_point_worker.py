@@ -1,11 +1,18 @@
 import os
+import threading
 import time
+from typing import List, Optional
+from dataclasses import dataclass
 from datetime import datetime
 
 import cv2
 import imageio as iio
+import tifffile
 import numpy as np
+from numpy.typing import NDArray
 import pandas as pd
+
+import control.utils
 
 os.environ["QT_API"] = "pyqt5"
 from qtpy.QtCore import Signal, QObject
@@ -15,7 +22,7 @@ from control._def import *
 from control import utils, utils_acquisition
 from control.piezo import PiezoStage
 from control.utils_config import ChannelMode
-from squid.abc import AbstractCamera
+from squid.abc import AbstractCamera, CameraFrame
 import squid.logging
 
 try:
@@ -24,6 +31,19 @@ try:
     print("custom multipoint script found")
 except:
     pass
+
+
+@dataclass
+class CaptureInfo:
+    position: squid.abc.Pos
+    z_index: int
+    capture_time: float
+    configuration: ChannelMode
+    save_directory: str
+    file_id: str
+    region_id: int
+    fov: int
+    configuration_idx: int
 
 
 class MultiPointWorker(QObject):
@@ -46,6 +66,7 @@ class MultiPointWorker(QObject):
         QObject.__init__(self)
         self.multiPointController = multiPointController
         self._log = squid.logging.get_logger(__class__.__name__)
+        self._timing = control.utils.TimingManager("MultiPointWorker Timer Manager")
         self.start_time = 0
         self.camera: AbstractCamera = self.multiPointController.camera
         self.microcontroller = self.multiPointController.microcontroller
@@ -100,14 +121,31 @@ class MultiPointWorker(QObject):
         self.merged_image = None
         self.image_count = 0
 
+        # This is for keeping track of whether or not we have the last image we tried to capture.
+        # NOTE(imo): Once we do overlapping triggering, we'll want to keep a queue of images we are expecting.
+        # For now, this is an improvement over blocking immediately while waiting for the next image!
+        self._ready_for_next_trigger = threading.Event()
+        # Set this to true so that the first frame capture can proceed.
+        self._ready_for_next_trigger.set()
+        # This is cleared when the image callback is no longer processing an image.  If true, an image is still
+        # in flux and we need to make sure the object doesn't disappear.
+        self._image_callback_idle = threading.Event()
+        self._image_callback_idle.set()
+        # This is protected by the threading event above (aka set after clear, take copy before set)
+        self._current_capture_info: Optional[CaptureInfo] = None
+        # This is only touched via the image callback path.  Don't touch it outside of there!
+        self._current_round_images = {}
+
     def update_use_piezo(self, value):
         self.use_piezo = value
         self._log.info(f"MultiPointWorker: updated use_piezo to {value}")
 
     def run(self):
+        this_image_callback_id = None
         try:
             self.start_time = time.perf_counter_ns()
             self.camera.start_streaming()
+            this_image_callback_id = self.camera.add_frame_callback(self._image_callback)
 
             while self.time_point < self.Nt:
                 # check if abort acquisition has been requested
@@ -121,7 +159,8 @@ class MultiPointWorker(QObject):
                     self.fluidics.run_before_imaging()
                     self.fluidics.wait_for_completion()
 
-                self.run_single_time_point()
+                with self._timing.get_timer("run_single_time_point"):
+                    self.run_single_time_point()
 
                 if self.fluidics and self.multiPointController.use_fluidics:
                     # For MERFISH, after imaging, run the following 2 sequences (Cleavage buffer, SSC rinse)
@@ -152,6 +191,8 @@ class MultiPointWorker(QObject):
             elapsed_time = time.perf_counter_ns() - self.start_time
             self._log.info("Time taken for acquisition: " + str(elapsed_time / 10**9))
 
+            # Since we use callback based acquisition, make sure to wait for any final images to come in
+            self._wait_for_outstanding_callback_images()
             self._log.info(
                 f"Time taken for acquisition/processing: {(time.perf_counter_ns() - self.start_time) / 1e9} [s]"
             )
@@ -159,8 +200,28 @@ class MultiPointWorker(QObject):
             self._log.error(f"Operation timed out during acquisition, aborting acquisition!")
             self._log.error(te)
             self.multiPointController.request_abort_aquisition()
+        finally:
+            # We do this above, but there are some paths that skip the proper end of the acquisition so make
+            # sure to always wait for final images here before removing our callback.
+            self._wait_for_outstanding_callback_images()
+            self._log.debug(self._timing.get_report())
+            if this_image_callback_id:
+                self.camera.remove_frame_callback(this_image_callback_id)
         if not self.headless:
             self.finished.emit()
+
+    def _wait_for_outstanding_callback_images(self):
+        # If there are outstanding frames, wait for them to come in.
+        self._log.info("Waiting for any outstanding frames.")
+        if not self._ready_for_next_trigger.wait(self._frame_wait_timeout_s()):
+            self._log.warning("Timed out waiting for the last outstanding frames at end of acquisition!")
+
+        if not self._image_callback_idle.wait(self._frame_wait_timeout_s()):
+            self._log.warning("Timed out waiting for the last image to process!")
+
+        # No matter what, set the flags so things can continue
+        self._ready_for_next_trigger.set()
+        self._image_callback_idle.set()
 
     def wait_till_operation_is_completed(self):
         self.microcontroller.wait_till_operation_is_completed()
@@ -183,7 +244,8 @@ class MultiPointWorker(QObject):
         # init z parameters, z range
         self.initialize_z_stack()
 
-        self.run_coordinate_acquisition(current_path)
+        with self._timing.get_timer("run_coordinate_acquisition"):
+            self.run_coordinate_acquisition(current_path)
 
         # finished region scan
         self.coordinates_pd.to_csv(os.path.join(current_path, "coordinates.csv"), index=False, header=True)
@@ -297,9 +359,10 @@ class MultiPointWorker(QObject):
             self.total_scans = self.num_fovs * self.NZ * len(self.selected_configurations)
 
             for fov_count, coordinate_mm in enumerate(coordinates):
-
-                self.move_to_coordinate(coordinate_mm)
-                self.acquire_at_position(region_id, current_path, fov_count)
+                with self._timing.get_timer("move_to_coordinate"):
+                    self.move_to_coordinate(coordinate_mm)
+                with self._timing.get_timer("acquire_at_position"):
+                    self.acquire_at_position(region_id, current_path, fov_count)
 
                 if self.multiPointController.abort_acqusition_requested:
                     self.handle_acquisition_abort(current_path, region_id)
@@ -319,15 +382,8 @@ class MultiPointWorker(QObject):
         if self.NZ > 1:
             self.prepare_z_stack()
 
-        pos = self.stage.get_pos()
         if self.use_piezo:
             self.z_piezo_um = self.piezo.position
-
-        # Initialize TIFF writer if using Multi-Page TIFF format
-        tiff_writer = None
-        if FILE_SAVING_OPTION == FileSavingOption.MULTI_PAGE_TIFF:
-            output_path = os.path.join(current_path, f"{region_id}_{fov:0{FILE_ID_PADDING}}_stack.tiff")
-            tiff_writer = iio.get_writer(output_path, format="TIFF")
 
         for z_level in range(self.NZ):
             file_ID = f"{region_id}_{fov:0{FILE_ID_PADDING}}_{z_level:0{FILE_ID_PADDING}}"
@@ -349,37 +405,13 @@ class MultiPointWorker(QObject):
                     self.handle_z_offset(config, True)
 
                 # acquire image
-                if "USB Spectrometer" not in config.name and "RGB" not in config.name:
-                    image = self.acquire_camera_image(
-                        config,
-                        file_ID,
-                        current_path,
-                        current_round_images,
-                        z_level,
-                        save_individual_images=(FILE_SAVING_OPTION == FileSavingOption.INDIVIDUAL_IMAGES),
-                    )
-
-                    # Write image to multipage TIFF if FILE_FORMAT is "Multi-Page TIFF"
-                    if FILE_SAVING_OPTION == FileSavingOption.MULTI_PAGE_TIFF and tiff_writer is not None:
-                        # Add metadata for the image
-                        metadata = {
-                            "z_level": z_level,
-                            "channel": config.name,
-                            "channel_index": config_idx,
-                            "region_id": region_id,
-                            "fov": fov,
-                            "x_mm": acquire_pos.x_mm,
-                            "y_mm": acquire_pos.y_mm,
-                            "z_mm": acquire_pos.z_mm,
-                        }
-
-                        # Write the image to TIFF
-                        tiff_writer.append_data(image, meta=metadata)
-
-                elif "RGB" in config.name:
-                    self.acquire_rgb_image(config, file_ID, current_path, current_round_images, z_level)
-                else:
-                    self.acquire_spectrometer_data(config, file_ID, current_path, z_level)
+                with self._timing.get_timer("acquire_camera_image"):
+                    if "USB Spectrometer" not in config.name and "RGB" not in config.name:
+                        self.acquire_camera_image(config, file_ID, current_path, z_level, region_id=region_id, fov=fov, config_idx=config_idx)
+                    elif "RGB" in config.name:
+                        self.acquire_rgb_image(config, file_ID, current_path, current_round_images, z_level)
+                    else:
+                        self.acquire_spectrometer_data(config, file_ID, current_path)
 
                 if self.NZ == 1:  # TODO: handle z offset for z stack
                     self.handle_z_offset(config, False)
@@ -399,10 +431,6 @@ class MultiPointWorker(QObject):
             # check if the acquisition should be aborted
             if self.multiPointController.abort_acqusition_requested:
                 self.handle_acquisition_abort(current_path, region_id)
-                # Close TIFF writer if open
-                if tiff_writer is not None:
-                    tiff_writer.close()
-                return
 
             # update FOV counter
             self.af_fov_count = self.af_fov_count + 1
@@ -412,10 +440,6 @@ class MultiPointWorker(QObject):
 
         if self.NZ > 1:
             self.move_z_back_after_stack()
-
-        # Close TIFF writer if open
-        if tiff_writer is not None:
-            tiff_writer.close()
 
     def _select_config(self, config: ChannelMode):
         self.signal_current_configuration.emit(config)
@@ -471,7 +495,48 @@ class MultiPointWorker(QObject):
                 self.wait_till_operation_is_completed()
                 self._sleep(SCAN_STABILIZATION_TIME_MS_Z / 1000)
 
-    def acquire_camera_image(self, config, file_ID, current_path, current_round_images, k):
+    def _image_callback(self, camera_frame: CameraFrame):
+        try:
+            self._image_callback_idle.clear()
+            with self._timing.get_timer("_image_callback"):
+                self._log.debug(f"In Image callback for frame_id={camera_frame.frame_id}")
+                info = self._current_capture_info
+                self._current_capture_info = None
+
+                self._ready_for_next_trigger.set()
+                if not info:
+                    self._log.error("In image callback, no current capture info! Something is wrong. Aborting.")
+                    self.multiPointController.request_abort_aquisition()
+                    return
+
+                image = camera_frame.frame
+                if not camera_frame or image is None:
+                    self._log.warning("image in frame callback is None. Something is really wrong, aborting!")
+                    self.multiPointController.request_abort_aquisition()
+                    return
+
+                height, width = image.shape[:2]
+                with self._timing.get_timer("crop_image"):
+                    image_to_display = utils.crop_image(
+                        image,
+                        round(width * self.display_resolution_scaling),
+                        round(height * self.display_resolution_scaling),
+                    )
+                with self._timing.get_timer("image_to_display*.emit"):
+                    self.image_to_display.emit(image_to_display)
+                    self.image_to_display_multi.emit(image_to_display, info.configuration.illumination_source)
+
+                with self._timing.get_timer("save_image"):
+                    self.save_image(image, info, camera_frame.is_color())
+                with self._timing.get_timer("update_napari"):
+                    self.update_napari(image, info)
+        finally:
+            self._image_callback_idle.set()
+
+    def _frame_wait_timeout_s(self):
+        return (self.camera.get_total_frame_time() / 1e3) + 10
+
+    def acquire_camera_image(self, config, file_ID: str, current_path: str, k: int, region_id: int, fov: int, config_idx: int):
         self._select_config(config)
 
         # trigger acquisition (including turning on the illumination) and read frame
@@ -486,47 +551,43 @@ class MultiPointWorker(QObject):
                 #  "reset_image_ready_flag" arg, so this is broken for all other cameras.  Also this used to do some other funky stuff like setting internal camera flags.
                 #   I am pretty sure this is broken!
                 self.microscope.nl5.start_acquisition()
+        # This is some large timeout that we use just so as to not block forever
+        if not self._ready_for_next_trigger.wait(self._frame_wait_timeout_s()):
+            self._log.error("Frame callback never set _have_last_triggered_image callback! Aborting acquisition.")
+            self.multiPointController.request_abort_aquisition()
+            return
+
+        # This should be a noop - we have the frame already.  Still, check!
         while not self.camera.get_ready_for_trigger():
             self._sleep(0.001)
+
+        self._ready_for_next_trigger.clear()
+        # Even though the capture time will be slightly after this, we need to capture and set the capture info
+        # before the trigger to be 100% sure the callback doesn't stomp on it.
+        current_capture_info = CaptureInfo(
+            position=self.stage.get_pos(),
+            z_index=k,
+            capture_time=time.time(),
+            configuration=config,
+            save_directory=current_path,
+            file_id=file_ID,
+            region_id=region_id,
+            fov=fov,
+            configuration_idx=config_idx
+        )
+        self._current_capture_info = current_capture_info
         self.camera.send_trigger(illumination_time=camera_illumination_time)
-        camera_frame = self.camera.read_camera_frame()
-        image = camera_frame.frame
-        if not camera_frame or image is None:
-            self._log.warning("self.camera.read_frame() returned None")
-            return
+        exposure_done_time = time.time() + self.camera.get_total_frame_time() / 1e3
+        # Even though we can do overlapping triggers, we want to make sure that we don't move before our exposure
+        # is done.  So we still need to at least sleep for the total frame time corresponding to this exposure.
+        self._sleep(max(0.0, exposure_done_time - time.time()))
 
         # turn off the illumination if using software trigger
         if self.liveController.trigger_mode == TriggerMode.SOFTWARE:
             self.liveController.turn_off_illumination()
 
-        height, width = image.shape[:2]
-        self._log.info("Cropping image...")
-        image_to_display = utils.crop_image(
-            image,
-            round(width * self.display_resolution_scaling),
-            round(height * self.display_resolution_scaling),
-        )
-        self._log.info("Emitting display image...")
-        self.image_to_display.emit(image_to_display)
-        self.image_to_display_multi.emit(image_to_display, config.illumination_source)
-
-        self._log.info("Saving image...")
-        self.save_image(image, file_ID, config, current_path, camera_frame.is_color())
-        self._log.info("Updating napari...")
-        self.update_napari(image, config.name, k)
-        self._log.info("storing current round...")
-        current_round_images[config.name] = np.copy(image)
-
-        # current_round_images[config.name] = np.copy(image) # to remove
-        # MultiPointWorker.handle_rgb_generation(current_round_images, file_ID, current_path, k) # to remove
-
         if not self.headless:
             QApplication.processEvents()
-
-        if save_individual_images:
-            self.save_image(image, file_ID, config, current_path, camera_frame.is_color())
-
-        return image
 
     def _sleep(self, sec):
         self._log.info(f"Sleeping for {sec} [s]")
@@ -586,13 +647,29 @@ class MultiPointWorker(QObject):
                 )
                 np.savetxt(saving_path, data, delimiter=",")
 
-    def save_image(self, image: np.array, file_ID: str, config: ChannelMode, current_path: str, is_color: bool):
-        saved_image = utils_acquisition.save_image(
-            image=image, file_id=file_ID, save_directory=current_path, config=config, is_color=is_color
-        )
+    def save_image(self, image: np.array, info: CaptureInfo, is_color: bool):
+        # NOTE(imo): We silently fall back to individual image saving here.  We should warn or do something.
+        if FILE_SAVING_OPTION == FileSavingOption.MULTI_PAGE_TIFF:
+            metadata = {
+                "z_level": info.z_index,
+                "channel": info.configuration.name,
+                "channel_index": info.configuration_idx,
+                "region_id": info.region_id,
+                "fov": info.fov,
+                "x_mm": info.position.x_mm,
+                "y_mm": info.position.y_mm,
+                "z_mm": info.position.z_mm,
+            }
+            output_path = os.path.join(info.save_directory, f"{info.region_id}_{info.fov:0{FILE_ID_PADDING}}_stack.tiff")
+            with tifffile.TiffWriter(output_path, append=True) as tiff_writer:
+                tiff_writer.write(image, metadata=metadata)
+        else:
+            saved_image = utils_acquisition.save_image(
+                image=image, file_id=info.file_id, save_directory=info.save_directory, config=info.configuration, is_color=is_color
+            )
 
-        if MERGE_CHANNELS:
-            self._save_merged_image(saved_image, file_ID, current_path)
+            if MERGE_CHANNELS:
+                self._save_merged_image(saved_image, info.file_id, info.save_directory)
 
     def _save_merged_image(self, image: np.array, file_ID: str, current_path: str):
         self.image_count += 1
@@ -613,7 +690,7 @@ class MultiPointWorker(QObject):
 
         return
 
-    def update_napari(self, image, config_name, k):
+    def update_napari(self, image, capture_info: CaptureInfo):
         if not self.performance_mode and (USE_NAPARI_FOR_MOSAIC_DISPLAY or USE_NAPARI_FOR_MULTIPOINT):
 
             if not self.init_napari_layers:
@@ -625,7 +702,7 @@ class MultiPointWorker(QObject):
             self.napari_layers_update.emit(image, pos.x_mm, pos.y_mm, k, objective_magnification + "x " + config_name)
 
     @staticmethod
-    def handle_rgb_generation(current_round_images, file_ID, current_path, k):
+    def handle_rgb_generation(current_round_images, capture_info: CaptureInfo):
         keys_to_check = ["BF LED matrix full_R", "BF LED matrix full_G", "BF LED matrix full_B"]
         if all(key in current_round_images for key in keys_to_check):
             print("constructing RGB image")
@@ -643,14 +720,22 @@ class MultiPointWorker(QObject):
             if len(rgb_image.shape) == 3:
                 print("writing RGB image")
                 if rgb_image.dtype == np.uint16:
-                    iio.imwrite(os.path.join(current_path, file_ID + "_BF_LED_matrix_full_RGB.tiff"), rgb_image)
+                    iio.imwrite(
+                        os.path.join(
+                            capture_info.save_directory, capture_info.file_id + "_BF_LED_matrix_full_RGB.tiff"
+                        ),
+                        rgb_image,
+                    )
                 else:
                     iio.imwrite(
-                        os.path.join(current_path, file_ID + "_BF_LED_matrix_full_RGB." + Acquisition.IMAGE_FORMAT),
+                        os.path.join(
+                            capture_info.save_directory,
+                            capture_info.file_id + "_BF_LED_matrix_full_RGB." + Acquisition.IMAGE_FORMAT,
+                        ),
                         rgb_image,
                     )
 
-    def handle_rgb_channels(self, images, file_ID, current_path, config, k):
+    def handle_rgb_channels(self, images, capture_info: CaptureInfo):
         for channel in ["BF LED matrix full_R", "BF LED matrix full_G", "BF LED matrix full_B"]:
             image_to_display = utils.crop_image(
                 images[channel],
@@ -658,19 +743,19 @@ class MultiPointWorker(QObject):
                 round(images[channel].shape[0] * self.display_resolution_scaling),
             )
             self.image_to_display.emit(image_to_display)
-            self.image_to_display_multi.emit(image_to_display, config.illumination_source)
+            self.image_to_display_multi.emit(image_to_display, capture_info.configuration.illumination_source)
 
-            self.update_napari(images[channel], channel, k)
+            self.update_napari(images[channel], capture_info)
 
             file_name = (
-                file_ID
+                capture_info.file_id
                 + "_"
                 + channel.replace(" ", "_")
                 + (".tiff" if images[channel].dtype == np.uint16 else "." + Acquisition.IMAGE_FORMAT)
             )
-            iio.imwrite(os.path.join(current_path, file_name), images[channel])
+            iio.imwrite(os.path.join(capture_info.save_directory, file_name), images[channel])
 
-    def construct_rgb_image(self, images, file_ID, current_path, config, k):
+    def construct_rgb_image(self, images, capture_info: CaptureInfo):
         rgb_image = np.zeros((*images["BF LED matrix full_R"].shape, 3), dtype=images["BF LED matrix full_R"].dtype)
         rgb_image[:, :, 0] = images["BF LED matrix full_R"]
         rgb_image[:, :, 1] = images["BF LED matrix full_G"]
@@ -684,18 +769,18 @@ class MultiPointWorker(QObject):
             round(height * self.display_resolution_scaling),
         )
         self.image_to_display.emit(image_to_display)
-        self.image_to_display_multi.emit(image_to_display, config.illumination_source)
+        self.image_to_display_multi.emit(image_to_display, capture_info.configuration.illumination_source)
 
-        self.update_napari(rgb_image, config.name, k)
+        self.update_napari(rgb_image, capture_info)
 
         # write the RGB image
         print("writing RGB image")
         file_name = (
-            file_ID
+            capture_info.file_id
             + "_BF_LED_matrix_full_RGB"
             + (".tiff" if rgb_image.dtype == np.uint16 else "." + Acquisition.IMAGE_FORMAT)
         )
-        iio.imwrite(os.path.join(current_path, file_name), rgb_image)
+        iio.imwrite(os.path.join(capture_info.save_directory, file_name), rgb_image)
 
     def handle_acquisition_abort(self, current_path, region_id=0):
         # Move to the current region center
@@ -705,6 +790,8 @@ class MultiPointWorker(QObject):
         # Save coordinates.csv
         self.coordinates_pd.to_csv(os.path.join(current_path, "coordinates.csv"), index=False, header=True)
         self.microcontroller.enable_joystick(True)
+
+        self._wait_for_outstanding_callback_images()
 
     def move_z_for_stack(self):
         if self.use_piezo:
