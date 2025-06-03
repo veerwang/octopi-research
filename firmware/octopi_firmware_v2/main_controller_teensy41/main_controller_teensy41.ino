@@ -25,7 +25,7 @@
 // byte[2]: how many micro steps - upper 8 bits
 // byte[3]: how many micro steps - lower 8 bits
 
-static const int CMD_LENGTH = 8;
+static const int CMD_LENGTH = 24;
 static const int MSG_LENGTH = 24;
 byte buffer_rx[512];
 byte buffer_tx[MSG_LENGTH];
@@ -67,6 +67,8 @@ static const int SET_PID_ARGUMENTS = 29;
 static const int SEND_HARDWARE_TRIGGER = 30;
 static const int SET_STROBE_DELAY = 31;
 static const int SET_AXIS_DISABLE_ENABLE = 32;
+static const int MOVE_XY = 33;
+static const int MOVETO_XY = 34;
 static const int SET_PIN_LEVEL = 41;
 static const int INITFILTERWHEEL = 253;
 static const int INITIALIZE = 254;
@@ -909,6 +911,21 @@ void loop() {
               Y_commanded_movement_in_progress = true;
               mcu_cmd_execution_in_progress = true;
             }
+            break;
+          }
+        case MOVETO_XY:
+          {
+            long x_absolute_position = int32_t(uint32_t(buffer_rx[2]) << 24 | uint32_t(buffer_rx[3]) << 16 | uint32_t(buffer_rx[4]) << 8 | uint32_t(buffer_rx[5]));
+            X_direction = sgn(x_absolute_position - tmc4361A_currentPosition(&tmc4361[x]));
+            X_commanded_target_position = x_absolute_position;
+            if (tmc4361A_moveTo(&tmc4361[x], X_commanded_target_position) == 0)
+              X_commanded_movement_in_progress = true;
+            long y_absolute_position = int32_t(uint32_t(buffer_rx[6]) << 24 | uint32_t(buffer_rx[7]) << 16 | uint32_t(buffer_rx[8]) << 8 | uint32_t(buffer_rx[9]));
+            Y_direction = sgn(y_absolute_position - tmc4361A_currentPosition(&tmc4361[y]));
+            Y_commanded_target_position = y_absolute_position;
+            if (tmc4361A_moveTo(&tmc4361[y], Y_commanded_target_position) == 0)
+              Y_commanded_movement_in_progress = true;
+            mcu_cmd_execution_in_progress = true;
             break;
           }
         case MOVETO_Z:
@@ -2181,9 +2198,9 @@ void loop() {
     buffer_tx[18] &= ~ (1 << BIT_POS_JOYSTICK_BUTTON); // clear the joystick button bit
     buffer_tx[18] = buffer_tx[18] | joystick_button_pressed << BIT_POS_JOYSTICK_BUTTON;
 
-   // Calculate and fill out the checksum.  NOTE: This must be after all other buffer_tx modifications are done!
-   uint8_t checksum = crc8ccitt(buffer_tx, MSG_LENGTH - 1);
-   buffer_tx[MSG_LENGTH - 1] = checksum;
+    // Calculate and fill out the checksum.  NOTE: This must be after all other buffer_tx modifications are done!
+    uint8_t checksum = crc8ccitt(buffer_tx, MSG_LENGTH - 1);
+    buffer_tx[MSG_LENGTH - 1] = checksum;
 
     if(!DEBUG_MODE)
       SerialUSB.write(buffer_tx,MSG_LENGTH);
@@ -2202,7 +2219,6 @@ void loop() {
       SerialUSB.println(digitalRead(pin_PG));
     }
     flag_send_pos_update = false;
-    
   }
 
   // keep checking position process at suitable frequence
