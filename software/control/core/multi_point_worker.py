@@ -484,7 +484,6 @@ class MultiPointWorker(QObject):
         camera_illumination_time = self.camera.get_exposure_time()
         if self.liveController.trigger_mode == TriggerMode.SOFTWARE:
             self.liveController.turn_on_illumination()
-            self.wait_till_operation_is_completed()
             camera_illumination_time = None
         elif self.liveController.trigger_mode == TriggerMode.HARDWARE:
             if "Fluorescence" in config.name and ENABLE_NL5 and NL5_USE_DOUT:
@@ -549,7 +548,6 @@ class MultiPointWorker(QObject):
                 if self.liveController.trigger_mode == TriggerMode.SOFTWARE:
                     # TODO(imo): use illum controller
                     self.liveController.turn_on_illumination()
-                    self.wait_till_operation_is_completed()
 
                 # read camera frame
                 self.camera.send_trigger(illumination_time=self.camera.get_exposure_time())
