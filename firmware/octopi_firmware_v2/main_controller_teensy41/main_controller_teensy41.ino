@@ -308,7 +308,7 @@ volatile bool flag_send_pos_update = false;
 static const int interval_send_pos_update = 10000; // in us
 elapsedMicros us_since_last_pos_update;
 
-static const int interval_check_position = 10000; // in us
+static const int interval_check_position = 5000;   // in us
 elapsedMicros us_since_last_check_position;
 
 static const int interval_send_joystick_update = 30000; // in us
@@ -2229,22 +2229,26 @@ void loop() {
     {
       X_commanded_movement_in_progress = false;
       mcu_cmd_execution_in_progress = false || Y_commanded_movement_in_progress || Z_commanded_movement_in_progress || W_commanded_movement_in_progress;
+      us_since_last_check_position = interval_check_position + 1;
     }
     if (Y_commanded_movement_in_progress && tmc4361A_currentPosition(&tmc4361[y]) == Y_commanded_target_position && !is_homing_Y && !tmc4361A_isRunning(&tmc4361[y], stage_PID_enabled[y]))
     {
       Y_commanded_movement_in_progress = false;
       mcu_cmd_execution_in_progress = false || X_commanded_movement_in_progress || Z_commanded_movement_in_progress || W_commanded_movement_in_progress;
+      us_since_last_check_position = interval_check_position + 1;
     }
     if (Z_commanded_movement_in_progress && tmc4361A_currentPosition(&tmc4361[z]) == Z_commanded_target_position && !is_homing_Z && !tmc4361A_isRunning(&tmc4361[z], stage_PID_enabled[z]))
     {
       Z_commanded_movement_in_progress = false;
       mcu_cmd_execution_in_progress = false || X_commanded_movement_in_progress || Y_commanded_movement_in_progress || W_commanded_movement_in_progress;
+      us_since_last_check_position = interval_check_position + 1;
     }
     if (enable_filterwheel == true) {
       if (W_commanded_movement_in_progress && tmc4361A_currentPosition(&tmc4361[w]) == W_commanded_target_position && !is_homing_W && !tmc4361A_isRunning(&tmc4361[w], stage_PID_enabled[w]))
       {
         W_commanded_movement_in_progress = false;
         mcu_cmd_execution_in_progress = false || X_commanded_movement_in_progress || Y_commanded_movement_in_progress || Z_commanded_movement_in_progress;
+        us_since_last_check_position = interval_check_position + 1;
       }
     }
   }
