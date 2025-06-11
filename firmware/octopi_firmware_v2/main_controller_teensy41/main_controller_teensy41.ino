@@ -303,7 +303,6 @@ uint16_t home_safety_margin[4] = {4, 4, 4, 4};
 // IntervalTimer does not work on teensy with SPI, the below lines are to be removed
 static const int TIMER_PERIOD = 500; // in us
 volatile int counter_send_pos_update = 0;
-volatile bool flag_send_pos_update = false;
 
 static const int interval_send_pos_update = 10000; // in us
 elapsedMicros us_since_last_pos_update;
@@ -2218,7 +2217,6 @@ void loop() {
       SerialUSB.print(", PG:");
       SerialUSB.println(digitalRead(pin_PG));
     }
-    flag_send_pos_update = false;
   }
 
   // keep checking position process at suitable frequence
@@ -2289,28 +2287,6 @@ void loop() {
     }
   }
 }
-
-/***************************************************
-
-                    timer interrupt
-
- ***************************************************/
-
-// timer interrupt
-/*
-  // IntervalTimer stops working after SPI.begin()
-  void timer_interruptHandler()
-  {
-  SerialUSB.println("timer event");
-  counter_send_pos_update = counter_send_pos_update + 1;
-  if(counter_send_pos_update==interval_send_pos_update/TIMER_PERIOD)
-  {
-    flag_send_pos_update = true;
-    counter_send_pos_update = 0;
-    SerialUSB.println("send pos update");
-  }
-  }
-*/
 
 /***************************************************************************************************/
 /*********************************************  utils  *********************************************/
