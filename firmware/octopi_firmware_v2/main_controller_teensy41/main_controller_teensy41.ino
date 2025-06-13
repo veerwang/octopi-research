@@ -1697,6 +1697,7 @@ void loop() {
             // initilize TMC4361 and TMC2660
             for (int i = 0; i < STAGE_AXES; i++)
               tmc4361A_tmc2660_init(&tmc4361[i], clk_Hz_TMC4361); // set up ICs with SPI control and other parameters
+            tmc4361[z].ramp_mode = TMC4361A_RAMP_TRAPEZ;
 
             // enable limit switch reading
             tmc4361A_enableLimitSwitch(&tmc4361[x], lft_sw_pol[x], LEFT_SW, flip_limit_switch_x);
