@@ -513,16 +513,17 @@ class HighContentScreeningGui(QMainWindow):
 
             if HOMING_ENABLED_X and HOMING_ENABLED_Y:
                 # The plate clamp actuation post can get in the way of homing if we start with
-                # the stage in "just the wrong" position.  Blindly moving the Y out 20, then the
-                # x over 20, guarantees we'll clear the post for homing.  If we are <20mm from the
-                # end travel of either axis, we'll just stop at the extent without consequence.
+                # the stage in "just the wrong" position.  Blindly moving the Y out 20, then home x
+                # and move x over 20 , guarantees we'll clear the post for homing.  If we are <20mm
+                # from the end travel of either axis, we'll just stop at the extent without consequence.
                 #
                 # The one odd corner case is if the system gets shut down in the loading position.
                 # in that case, we drive off of the loading position and the clamp closes quickly.
                 # This doesn't seem to cause problems, and there isn't a clean way to avoid the corner
                 # case.
-                self.log.info("Moving y+20, then x+20 to make sure system is clear for homing.")
+                self.log.info("Moving y+20, then x->home->+20 to make sure system is clear for homing.")
                 self.stage.move_y(20)
+                self.stage.home(x=True, y=False, z=False, theta=False)
                 self.stage.move_x(20)
 
                 self.log.info("Homing the X and Y axes...")
@@ -1017,7 +1018,7 @@ class HighContentScreeningGui(QMainWindow):
             self.movement_updater.position_after_move.connect(self.wellplateMultiPointWidget.update_live_coordinates)
             self.is_live_scan_grid_on = True
         self.multipointController.signal_register_current_fov.connect(self.navigationViewer.register_fov)
-        self.multipointController.signal_current_configuration.connect(self.liveControlWidget.set_microscope_mode)
+        self.multipointController.signal_current_configuration.connect(self.liveControlWidget.update_ui_for_mode)
         if self.piezoWidget:
             self.multipointController.signal_z_piezo_um.connect(self.piezoWidget.update_displacement_um_display)
         self.multipointController.signal_set_display_tabs.connect(self.setAcquisitionDisplayTabs)
@@ -1027,7 +1028,7 @@ class HighContentScreeningGui(QMainWindow):
             self.imageDisplayTabs.currentChanged.connect(self.onDisplayTabChanged)
 
         if USE_NAPARI_FOR_LIVE_VIEW and not self.live_only_mode:
-            self.multipointController.signal_current_configuration.connect(self.napariLiveWidget.set_microscope_mode)
+            self.multipointController.signal_current_configuration.connect(self.napariLiveWidget.update_ui_for_mode)
             self.autofocusController.image_to_display.connect(
                 lambda image: self.napariLiveWidget.updateLiveLayer(image, from_autofocus=True)
             )
@@ -1067,12 +1068,12 @@ class HighContentScreeningGui(QMainWindow):
             self.objectivesWidget.signal_objective_changed.connect(self.wellplateMultiPointWidget.update_coordinates)
 
         self.profileWidget.signal_profile_changed.connect(
-            lambda: self.liveControlWidget.update_microscope_mode_by_name(
+            lambda: self.liveControlWidget.select_new_microscope_mode_by_name(
                 self.liveControlWidget.currentConfiguration.name
             )
         )
         self.objectivesWidget.signal_objective_changed.connect(
-            lambda: self.liveControlWidget.update_microscope_mode_by_name(
+            lambda: self.liveControlWidget.select_new_microscope_mode_by_name(
                 self.liveControlWidget.currentConfiguration.name
             )
         )
@@ -1131,7 +1132,7 @@ class HighContentScreeningGui(QMainWindow):
                 self.channelConfigurationManager.toggle_confocal_widefield
             )
             self.spinningDiskConfocalWidget.signal_toggle_confocal_widefield.connect(
-                lambda: self.liveControlWidget.update_microscope_mode_by_name(
+                lambda: self.liveControlWidget.select_new_microscope_mode_by_name(
                     self.liveControlWidget.currentConfiguration.name
                 )
             )
@@ -1160,7 +1161,7 @@ class HighContentScreeningGui(QMainWindow):
         # Setup live view connections
         if USE_NAPARI_FOR_LIVE_VIEW and not self.live_only_mode:
             self.napari_connections["napariLiveWidget"] = [
-                (self.multipointController.signal_current_configuration, self.napariLiveWidget.set_microscope_mode),
+                (self.multipointController.signal_current_configuration, self.napariLiveWidget.update_ui_for_mode),
                 (
                     self.autofocusController.image_to_display,
                     lambda image: self.napariLiveWidget.updateLiveLayer(image, from_autofocus=True),
@@ -1660,10 +1661,25 @@ class HighContentScreeningGui(QMainWindow):
         self.stage.move_y_to(y_mm)
 
     def closeEvent(self, event):
+        # Show confirmation dialog
+        reply = QMessageBox.question(
+            self,
+            "Confirm Exit",
+            "Are you sure you want to exit the software?",
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.No,
+        )
+
+        if reply == QMessageBox.No:
+            event.ignore()
+            return
+
         try:
             squid.stage.utils.cache_position(pos=self.stage.get_pos(), stage_config=self.stage.get_config())
         except ValueError as e:
             self.log.error(f"Couldn't cache position while closing.  Ignoring and continuing. Error is: {e}")
+        self.movement_update_timer.stop()
+
         if USE_ZABER_EMISSION_FILTER_WHEEL:
             self.emission_filter_wheel.set_emission_filter(1)
         if USE_OPTOSPIN_EMISSION_FILTER_WHEEL:
@@ -1677,6 +1693,7 @@ class HighContentScreeningGui(QMainWindow):
 
         self.liveController.stop_live()
         self.camera.stop_streaming()
+        self.camera.close()
 
         self.microcontroller.turn_off_all_pid()
 

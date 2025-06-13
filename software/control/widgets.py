@@ -1379,7 +1379,8 @@ class LiveControlWidget(QFrame):
 
         self.add_components(show_trigger_options, show_display_options, show_autolevel, autolevel, stretch)
         self.setFrameStyle(QFrame.Panel | QFrame.Raised)
-        self.update_microscope_mode_by_name(self.currentConfiguration.name)
+        self.liveController.set_microscope_mode(self.currentConfiguration)
+        self.update_ui_for_mode(self.currentConfiguration)
 
         self.is_switching_mode = False  # flag used to prevent from settings being set by twice - from both mode change slot and value change slot; another way is to use blockSignals(True)
 
@@ -1425,18 +1426,19 @@ class LiveControlWidget(QFrame):
         self.entry_exposureTime.setSizePolicy(sizePolicy)
 
         self.entry_analogGain = QDoubleSpinBox()
-        self.entry_analogGain.setMinimum(0)
-        self.entry_analogGain.setMaximum(24)
-        # self.entry_analogGain.setSuffix('x')
-        self.entry_analogGain.setSingleStep(0.1)
-        self.entry_analogGain.setValue(0)
-        self.entry_analogGain.setSizePolicy(sizePolicy)
         # Not all cameras support analog gain, so attempt to get the gain
         # to check this
         try:
-            self.liveController.camera.get_analog_gain()
+            gain_range = self.liveController.camera.get_gain_range()
+            self.entry_analogGain.setMinimum(gain_range.min_gain)
+            self.entry_analogGain.setMaximum(gain_range.max_gain)
+            self.entry_analogGain.setSingleStep(gain_range.gain_step)
+            self.entry_analogGain.setValue(gain_range.min_gain)
+            self.entry_analogGain.setSizePolicy(sizePolicy)
+            self.liveController.camera.set_analog_gain(gain_range.min_gain)
         except NotImplementedError:
-            self._log.info("Analog gain not supported, disabling it in live control widget.")
+            self._log.info("Analog gain not supported,  disabling it in live control widget.")
+            self.entry_analogGain.setValue(0)
             self.entry_analogGain.setEnabled(False)
 
         self.slider_illuminationIntensity = QSlider(Qt.Horizontal)
@@ -1498,7 +1500,7 @@ class LiveControlWidget(QFrame):
         self.entry_displayFPS.valueChanged.connect(self.streamHandler.set_display_fps)
         self.slider_resolutionScaling.valueChanged.connect(self.streamHandler.set_display_resolution_scaling)
         self.slider_resolutionScaling.valueChanged.connect(self.liveController.set_display_resolution_scaling)
-        self.dropdown_modeSelection.currentTextChanged.connect(self.update_microscope_mode_by_name)
+        self.dropdown_modeSelection.activated[str].connect(self.select_new_microscope_mode_by_name)
         self.dropdown_triggerManu.currentIndexChanged.connect(self.update_trigger_mode)
         self.btn_live.clicked.connect(self.toggle_live)
         self.entry_exposureTime.valueChanged.connect(self.update_config_exposure_time)
@@ -1583,30 +1585,46 @@ class LiveControlWidget(QFrame):
         # Update the mode selection dropdown
         self.dropdown_modeSelection.blockSignals(True)
         self.dropdown_modeSelection.clear()
+        first_config = None
         for microscope_configuration in self.channelConfigurationManager.get_channel_configurations_for_objective(
             self.objectiveStore.current_objective
         ):
+            if not first_config:
+                first_config = microscope_configuration
             self.dropdown_modeSelection.addItem(microscope_configuration.name)
         self.dropdown_modeSelection.blockSignals(False)
 
         # Update to first configuration
         if self.dropdown_modeSelection.count() > 0:
-            self.update_microscope_mode_by_name(self.dropdown_modeSelection.currentText())
+            self.update_ui_for_mode(first_config)
+            self.liveController.set_microscope_mode(first_config)
 
-    def update_microscope_mode_by_name(self, current_microscope_mode_name):
-        self.is_switching_mode = True
-        # identify the mode selected (note that this references the object in self.channelConfigurationManager.get_channel_configurations_for_objective(self.objectiveStore.current_objective))
-        self.currentConfiguration = self.channelConfigurationManager.get_channel_configuration_by_name(
-            self.objectiveStore.current_objective, current_microscope_mode_name
+    def select_new_microscope_mode_by_name(self, config_name):
+        maybe_new_config = self.channelConfigurationManager.get_channel_configuration_by_name(
+            self.objectiveStore.current_objective, config_name
         )
-        self.signal_live_configuration.emit(self.currentConfiguration)
-        # update the microscope to the current configuration
-        self.liveController.set_microscope_mode(self.currentConfiguration)
-        # update the exposure time and analog gain settings according to the selected configuration
-        self.entry_exposureTime.setValue(self.currentConfiguration.exposure_time)
-        self.entry_analogGain.setValue(self.currentConfiguration.analog_gain)
-        self.entry_illuminationIntensity.setValue(self.currentConfiguration.illumination_intensity)
-        self.is_switching_mode = False
+
+        if not maybe_new_config:
+            self._log.error(f"User attempted to select config named '{config_name}' but it does not exist!")
+            return
+
+        self.liveController.set_microscope_mode(maybe_new_config)
+        self.update_ui_for_mode(maybe_new_config)
+
+    def update_ui_for_mode(self, config):
+        try:
+            self.is_switching_mode = True
+            self.currentConfiguration = config
+            self.dropdown_modeSelection.setCurrentText(config.name if config else "Unknown")
+            if self.currentConfiguration:
+                self.signal_live_configuration.emit(self.currentConfiguration)
+
+                # update the exposure time and analog gain settings according to the selected configuration
+                self.entry_exposureTime.setValue(self.currentConfiguration.exposure_time)
+                self.entry_analogGain.setValue(self.currentConfiguration.analog_gain)
+                self.entry_illuminationIntensity.setValue(self.currentConfiguration.illumination_intensity)
+        finally:
+            self.is_switching_mode = False
 
     def update_trigger_mode(self):
         self.liveController.set_trigger_mode(self.dropdown_triggerManu.currentText())
@@ -1634,10 +1652,6 @@ class LiveControlWidget(QFrame):
                 self.objectiveStore.current_objective, self.currentConfiguration.id, "IlluminationIntensity", new_value
             )
             self.liveController.update_illumination()
-
-    def set_microscope_mode(self, config):
-        # self.liveController.set_microscope_mode(config)
-        self.dropdown_modeSelection.setCurrentText(config.name)
 
     def set_trigger_mode(self, trigger_mode):
         self.dropdown_triggerManu.setCurrentText(trigger_mode)
@@ -6244,6 +6258,7 @@ class NapariLiveWidget(QWidget):
         parent=None,
     ):
         super().__init__(parent)
+        self._log = squid.logging.get_logger(self.__class__.__name__)
         self.streamHandler = streamHandler
         self.liveController = liveController
         self.stage = stage
@@ -6268,7 +6283,7 @@ class NapariLiveWidget(QWidget):
         self.initNapariViewer()
         self.addNapariGrayclipColormap()
         self.initControlWidgets(show_trigger_options, show_display_options, show_autolevel, autolevel)
-        self.update_microscope_mode_by_name(self.live_configuration.name)
+        self.update_ui_for_mode(self.live_configuration)
 
     def initNapariViewer(self):
         self.viewer = napari.Viewer(show=False)
@@ -6325,7 +6340,7 @@ class NapariLiveWidget(QWidget):
         ):
             self.dropdown_modeSelection.addItem(config.name)
         self.dropdown_modeSelection.setCurrentText(self.live_configuration.name)
-        self.dropdown_modeSelection.currentTextChanged.connect(self.update_microscope_mode_by_name)
+        self.dropdown_modeSelection.activated(self.select_new_microscope_mode_by_name)
 
         # Live button
         self.btn_live = QPushButton("Start Live")
@@ -6572,15 +6587,23 @@ class NapariLiveWidget(QWidget):
             well_selector_dock_widget, area="bottom", name="well selector", tabify=True
         )
 
-    def set_microscope_mode(self, config):
-        self.dropdown_modeSelection.setCurrentText(config.name)
-
-    def update_microscope_mode_by_name(self, current_microscope_mode_name):
-        self.live_configuration = self.channelConfigurationManager.get_channel_configuration_by_name(
-            self.objectiveStore.current_objective, current_microscope_mode_name
+    def select_new_microscope_mode_by_name(self, config_index):
+        config_name = self.dropdown_modeSelection.itemText(config_index)
+        maybe_new_config = self.channelConfigurationManager.get_channel_configuration_by_name(
+            self.objectiveStore.current_objective, config_name
         )
+
+        if not maybe_new_config:
+            self._log.error(f"User attempted to select config named '{config_name}' but it does not exist!")
+            return
+
+        self.liveController.set_microscope_mode(maybe_new_config)
+        self.update_ui_for_mode(maybe_new_config)
+
+    def update_ui_for_mode(self, config):
+        self.live_configuration = config
+        self.dropdown_modeSelection.setCurrentText(config.name if config else "Unknown")
         if self.live_configuration:
-            self.liveController.set_microscope_mode(self.live_configuration)
             self.entry_exposureTime.setValue(self.live_configuration.exposure_time)
             self.entry_analogGain.setValue(self.live_configuration.analog_gain)
             self.slider_illuminationIntensity.setValue(int(self.live_configuration.illumination_intensity))
@@ -9670,6 +9693,7 @@ class SurfacePlotWidget(QWidget):
 
     def __init__(self, parent=None):
         super().__init__(parent)
+        self._log = squid.logging.get_logger(__name__)
 
         # Setup canvas and figure
         self.fig = Figure()
@@ -9696,42 +9720,52 @@ class SurfacePlotWidget(QWidget):
             y (np.array): Y coordinates (1D array)
             z (np.array): Z coordinates (1D array)
         """
-        # Store the original coordinates
-        self.x = x
-        self.y = y
-        self.z = z
+        try:
+            # Store the original coordinates
+            self.x = x
+            self.y = y
+            self.z = z
 
-        # Clear previous plot
-        self.ax.clear()
+            # Clear previous plot
+            self.ax.clear()
 
-        # plot surface by region
-        for r in np.unique(region):
-            mask = region == r
-            grid_x, grid_y = np.mgrid[min(x[mask]) : max(x[mask]) : 10j, min(y[mask]) : max(y[mask]) : 10j]
-            grid_z = griddata((x[mask], y[mask]), z[mask], (grid_x, grid_y), method="cubic")
-            self.ax.plot_surface(grid_x, grid_y, grid_z, cmap="viridis", edgecolor="none")
-            # self.ax.plot_trisurf(x[mask], y[mask], z[mask], cmap='viridis', edgecolor='none')
+            # plot surface by region
+            for r in np.unique(region):
+                try:
+                    mask = region == r
+                    num_points = np.sum(mask)
+                    if num_points >= 4:
+                        grid_x, grid_y = np.mgrid[min(x[mask]) : max(x[mask]) : 10j, min(y[mask]) : max(y[mask]) : 10j]
+                        grid_z = griddata((x[mask], y[mask]), z[mask], (grid_x, grid_y), method="cubic")
+                        self.ax.plot_surface(grid_x, grid_y, grid_z, cmap="viridis", edgecolor="none")
+                        # self.ax.plot_trisurf(x[mask], y[mask], z[mask], cmap='viridis', edgecolor='none')
+                    else:
+                        self._log.debug(f"Region {r} has only {num_points} point(s), skipping surface interpolation")
+                except Exception as e:
+                    raise Exception(f"Cannot plot region {r}: {e}")
 
-        # Create scatter plot using original coordinates
-        self.colors = ["r"] * len(self.x)
-        self.scatter = self.ax.scatter(self.x, self.y, self.z, c=self.colors, s=30)
+            # Create scatter plot using original coordinates
+            self.colors = ["r"] * len(self.x)
+            self.scatter = self.ax.scatter(self.x, self.y, self.z, c=self.colors, s=30)
 
-        # Set labels
-        self.ax.set_xlabel("X (mm)")
-        self.ax.set_ylabel("Y (mm)")
-        self.ax.set_zlabel("Z (um)")
-        self.ax.set_title("Double-click a point to go to that position")
+            # Set labels
+            self.ax.set_xlabel("X (mm)")
+            self.ax.set_ylabel("Y (mm)")
+            self.ax.set_zlabel("Z (um)")
+            self.ax.set_title("Double-click a point to go to that position")
 
-        # Force x and y to have same scale
-        max_range = max(np.ptp(self.x), np.ptp(self.y))
-        center_x = np.mean(self.x)
-        center_y = np.mean(self.y)
+            # Force x and y to have same scale
+            max_range = max(np.ptp(self.x), np.ptp(self.y))
+            center_x = np.mean(self.x)
+            center_y = np.mean(self.y)
 
-        self.ax.set_xlim(center_x - max_range / 2, center_x + max_range / 2)
-        self.ax.set_ylim(center_y - max_range / 2, center_y + max_range / 2)
+            self.ax.set_xlim(center_x - max_range / 2, center_x + max_range / 2)
+            self.ax.set_ylim(center_y - max_range / 2, center_y + max_range / 2)
 
-        self.canvas.draw()
-        self.plot_populated = True
+            self.canvas.draw()
+            self.plot_populated = True
+        except Exception as e:
+            self._log.error(f"Error plotting surface: {e}")
 
     def on_scroll(self, event):
         scale = 1.1 if event.button == "up" else 0.9

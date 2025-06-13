@@ -105,7 +105,7 @@ class HamamatsuCamera(AbstractCamera):
         self._exposure_time_ms: int = 20
         self.set_exposure_time(self._exposure_time_ms)
 
-    def __del__(self):
+    def close(self):
         self._cleanup_read_thread()
 
     def _set_prop(self, dcam_prop, prop_value):
@@ -198,7 +198,7 @@ class HamamatsuCamera(AbstractCamera):
 
     def get_exposure_limits(self) -> Tuple[float, float]:
         exposure_attr = self._camera.prop_getattr(DCAM_IDPROP.EXPOSURETIME)
-        return exposure_attr.valuemin, exposure_attr.valuemax  # in ms
+        return exposure_attr.valuemin * 1000.0, exposure_attr.valuemax * 1000.0  # in ms
 
     def get_strobe_time(self) -> float:
         resolution = self.get_resolution()
