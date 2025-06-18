@@ -69,6 +69,7 @@ static const int SET_STROBE_DELAY = 31;
 static const int SET_AXIS_DISABLE_ENABLE = 32;
 static const int MOVE_XY = 33;
 static const int MOVETO_XY = 34;
+static const int SET_SRAMP_MOD = 36;
 static const int SET_PIN_LEVEL = 41;
 static const int INITFILTERWHEEL = 253;
 static const int INITIALIZE = 254;
@@ -954,6 +955,21 @@ void loop() {
             }
             break;
           }
+        case SET_SRAMP_MOD:
+          {
+            uint8_t axis = buffer_rx[2];
+            uint8_t mode = buffer_rx[3];
+            // map to w axis, in the host w axis index is 5
+            if (axis == 5)
+              axis = 3;
+            
+            // guard code
+            if (axis > STAGE_AXES)
+              return;
+
+            tmc4361[axis].ramp_mode = mode;
+            break;
+          }
         case SET_LIM:
           {
             switch (buffer_rx[2])
@@ -1697,7 +1713,6 @@ void loop() {
             // initilize TMC4361 and TMC2660
             for (int i = 0; i < STAGE_AXES; i++)
               tmc4361A_tmc2660_init(&tmc4361[i], clk_Hz_TMC4361); // set up ICs with SPI control and other parameters
-            tmc4361[z].ramp_mode = TMC4361A_RAMP_TRAPEZ;
 
             // enable limit switch reading
             tmc4361A_enableLimitSwitch(&tmc4361[x], lft_sw_pol[x], LEFT_SW, flip_limit_switch_x);

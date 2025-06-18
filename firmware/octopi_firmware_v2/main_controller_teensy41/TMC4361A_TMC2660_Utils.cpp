@@ -468,9 +468,6 @@ void tmc4361A_tmc2660_init(TMC4361ATypeDef *tmc4361A, uint32_t clk_Hz_TMC4361) {
   // microstepping setting
   tmc4361A_writeMicrosteps(tmc4361A);
   tmc4361A_writeSPR(tmc4361A);
-
-  // default value is S-ramp
-  tmc4361A->ramp_mode = TMC4361A_RAMP_SSHAPE;
   return;
 }
 
