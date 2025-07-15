@@ -67,7 +67,6 @@ static const int SET_PID_ARGUMENTS = 29;
 static const int SEND_HARDWARE_TRIGGER = 30;
 static const int SET_STROBE_DELAY = 31;
 static const int SET_AXIS_DISABLE_ENABLE = 32;
-static const int MOVE_XY = 33;
 static const int MOVETO_XY = 34;
 static const int SET_SRAMP_MOD = 36;
 static const int SET_PIN_LEVEL = 41;
