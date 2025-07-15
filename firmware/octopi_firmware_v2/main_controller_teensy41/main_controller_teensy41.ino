@@ -960,8 +960,8 @@ void loop() {
             uint8_t axis = buffer_rx[2];
             uint8_t mode = buffer_rx[3];
             // map to w axis, in the host w axis index is 5
-            if (axis == 5)
-              axis = 3;
+            if (axis == AXIS_W)
+              axis = w;
             
             // guard code
             if (axis > STAGE_AXES)
