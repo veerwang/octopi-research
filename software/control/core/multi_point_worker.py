@@ -328,24 +328,16 @@ class MultiPointWorker(QObject):
         self.coordinates_pd = pd.concat([self.coordinates_pd, new_row], ignore_index=True)
 
     def move_to_coordinate(self, coordinate_mm):
-        print("moving to coordinate", coordinate_mm)
+        x_mm = coordinate_mm[0]
+        y_mm = coordinate_mm[1]
+        have_z = len(coordinate_mm) >= 3
+        self.stage.move_xy_to(x_mm, y_mm, blocking=not have_z)
 
-        # check if z is included in the coordinate
-        if len(coordinate_mm) == 3:
-            x_mm = coordinate_mm[0]
-            y_mm = coordinate_mm[1]
+        if have_z:
             z_mm = coordinate_mm[2]
-
-            self.stage.move_xy_to(x_mm, y_mm, blocking=False)
             self.move_to_z_level(z_mm)
 
-            time.sleep(SCAN_STABILIZATION_TIME_MS_Y / 1000)
-        else:
-            x_mm = coordinate_mm[0]
-            y_mm = coordinate_mm[1]
-
-            self.stage.move_xy_to(x_mm, y_mm)
-            time.sleep(SCAN_STABILIZATION_TIME_MS_Y / 1000)
+        time._sleep(SCAN_STABILIZATION_TIME_MS / 1000)
 
     def move_to_z_level(self, z_mm):
         print("moving z")
