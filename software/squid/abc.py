@@ -162,7 +162,7 @@ class AbstractStage(metaclass=abc.ABCMeta):
     @abc.abstractmethod
     def move_y_to(self, abs_mm: float, blocking: bool = True):
         pass
-    
+
     @abc.abstractmethod
     def move_xy_to(self, x_abs_mm: float, y_abs_mm: float, blocking: bool = True):
         pass
