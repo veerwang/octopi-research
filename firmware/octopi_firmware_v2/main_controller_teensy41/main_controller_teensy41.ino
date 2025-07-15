@@ -25,7 +25,7 @@
 // byte[2]: how many micro steps - upper 8 bits
 // byte[3]: how many micro steps - lower 8 bits
 
-static const int CMD_LENGTH = 24;
+static const int CMD_LENGTH = 10;
 static const int MSG_LENGTH = 24;
 byte buffer_rx[512];
 byte buffer_tx[MSG_LENGTH];
