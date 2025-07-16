@@ -86,7 +86,7 @@ class PosUpdate:
 
 class MicrocontrollerDef:
     MSG_LENGTH = 24
-    CMD_LENGTH = 24
+    CMD_LENGTH = 10
     N_BYTES_POS = 4
 
 
