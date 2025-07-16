@@ -337,7 +337,7 @@ class MultiPointWorker(QObject):
             z_mm = coordinate_mm[2]
             self.move_to_z_level(z_mm)
 
-        time._sleep(SCAN_STABILIZATION_TIME_MS / 1000)
+        self._sleep(SCAN_STABILIZATION_TIME_MS / 1000)
 
     def move_to_z_level(self, z_mm):
         print("moving z")
