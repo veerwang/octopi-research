@@ -117,6 +117,7 @@ class HighContentScreeningGui(QMainWindow):
         self.is_live_scan_grid_on = False
         self.performance_mode = False
         self.napari_connections = {}
+        self.well_selector_visible = False  # Add this line to track well selector visibility
 
         self.loadObjects(is_simulation)
 
@@ -265,7 +266,7 @@ class HighContentScreeningGui(QMainWindow):
                 self.autofocusController,
                 self.imageDisplayWindow,
             )
-        if WELLPLATE_FORMAT == "glass slide":
+        if WELLPLATE_FORMAT == "glass slide" and IS_HCS:
             self.navigationViewer = core.NavigationViewer(
                 self.objectiveStore, self.camera.get_pixel_size_unbinned_um(), sample="4 glass slide"
             )
@@ -312,6 +313,12 @@ class HighContentScreeningGui(QMainWindow):
                 self.objectiveStore,
                 self.laserAFSettingManager,
             )
+        else:
+            self.liveController_focus_camera = None
+            self.streamHandler_focus_camera = None
+            self.imageDisplayWindow_focus = None
+            self.displacementMeasurementController = None
+            self.laserAutofocusController = None
 
         if USE_SQUID_FILTERWHEEL:
             self.squid_filter_wheel = filterwheel.SquidFilterWheelWrapper(self.microcontroller)
@@ -521,14 +528,13 @@ class HighContentScreeningGui(QMainWindow):
                 # in that case, we drive off of the loading position and the clamp closes quickly.
                 # This doesn't seem to cause problems, and there isn't a clean way to avoid the corner
                 # case.
-                self.log.info("Moving y+20, then x->home->+20 to make sure system is clear for homing.")
+                self.log.info("Moving y+20, then x->home->+50 to make sure system is clear for homing.")
                 self.stage.move_y(20)
                 self.stage.home(x=True, y=False, z=False, theta=False)
-                self.stage.move_x(20)
+                self.stage.move_x(50)
 
-                self.log.info("Homing the X and Y axes...")
+                self.log.info("Homing the Y axis...")
                 self.stage.home(x=False, y=True, z=False, theta=False)
-                self.stage.home(x=True, y=False, z=False, theta=False)
                 self.slidePositionController.homing_done = True
             if USE_ZABER_EMISSION_FILTER_WHEEL:
                 self.emission_filter_wheel.wait_for_homing_complete()
@@ -569,9 +575,9 @@ class HighContentScreeningGui(QMainWindow):
             self.objective_changer.home()
             self.objective_changer.setSpeed(XERYON_SPEED)
             if DEFAULT_OBJECTIVE in XERYON_OBJECTIVE_SWITCHER_POS_1:
-                self.objective_changer.moveToPosition1()
+                self.objective_changer.moveToPosition1(move_z=False)
             elif DEFAULT_OBJECTIVE in XERYON_OBJECTIVE_SWITCHER_POS_2:
-                self.objective_changer.moveToPosition2()
+                self.objective_changer.moveToPosition2(move_z=False)
 
     def waitForMicrocontroller(self, timeout=5.0, error_message=None):
         try:
@@ -616,6 +622,7 @@ class HighContentScreeningGui(QMainWindow):
         self.navigationWidget = widgets.NavigationWidget(
             self.stage, self.slidePositionController, widget_configuration=f"{WELLPLATE_FORMAT} well plate"
         )
+        self.stageUtils = widgets.StageUtils(self.stage, self.slidePositionController)
         self.dacControlWidget = widgets.DACControWidget(self.microcontroller)
         self.autofocusWidget = widgets.AutoFocusWidget(self.autofocusController)
         if self.piezo:
@@ -921,6 +928,19 @@ class HighContentScreeningGui(QMainWindow):
         else:
             self.setupMultiWindowLayout()
 
+    def _getMainWindowMinimumSize(self):
+        """
+        We want our main window to fit on the primary screen, so grab the users primary screen and return
+        something slightly smaller than that.
+        """
+        desktop_info = QDesktopWidget()
+        primary_screen_size = desktop_info.screen(desktop_info.primaryScreen()).size()
+
+        height_min = int(0.9 * primary_screen_size.height())
+        width_min = int(0.96 * primary_screen_size.width())
+
+        return (width_min, height_min)
+
     def setupSingleWindowLayout(self):
         main_dockArea = dock.DockArea()
 
@@ -944,10 +964,7 @@ class HighContentScreeningGui(QMainWindow):
         main_dockArea.addDock(dock_controlPanel, "right")
         self.setCentralWidget(main_dockArea)
 
-        desktopWidget = QDesktopWidget()
-        height_min = 0.9 * desktopWidget.height()
-        width_min = 0.96 * desktopWidget.width()
-        self.setMinimumSize(int(width_min), int(height_min))
+        self.setMinimumSize(*self._getMainWindowMinimumSize())
         self.onTabChanged(self.recordTabWidget.currentIndex())
 
     def setupMultiWindowLayout(self):
@@ -956,10 +973,8 @@ class HighContentScreeningGui(QMainWindow):
         self.tabbedImageDisplayWindow.setCentralWidget(self.imageDisplayTabs)
         self.tabbedImageDisplayWindow.setWindowFlags(self.windowFlags() | Qt.CustomizeWindowHint)
         self.tabbedImageDisplayWindow.setWindowFlags(self.windowFlags() & ~Qt.WindowCloseButtonHint)
-        desktopWidget = QDesktopWidget()
-        width = 0.96 * desktopWidget.height()
-        height = width
-        self.tabbedImageDisplayWindow.setFixedSize(int(width), int(height))
+        (width_min, height_min) = self._getMainWindowMinimumSize()
+        self.tabbedImageDisplayWindow.setFixedSize(width_min, height_min)
         self.tabbedImageDisplayWindow.show()
 
     def makeConnections(self):
@@ -1139,6 +1154,12 @@ class HighContentScreeningGui(QMainWindow):
 
         # Connect to plot xyz data when coordinates are saved
         self.multipointController.signal_coordinates.connect(self.zPlotWidget.plot)
+
+        # Connect well selector button
+        if hasattr(self.imageDisplayWindow, "btn_well_selector"):
+            self.imageDisplayWindow.btn_well_selector.clicked.connect(
+                lambda: self.toggleWellSelector(not self.dock_wellSelection.isVisible())
+            )
 
     def setup_movement_updater(self):
         # We provide a few signals about the system's physical movement to other parts of the UI.  Ideally, they other
@@ -1422,17 +1443,11 @@ class HighContentScreeningGui(QMainWindow):
             if not is_laser_focus_tab:
                 self.laserAutofocusSettingWidget.stop_live()
 
-        is_wellplate_acquisition = (
-            (index == self.recordTabWidget.indexOf(self.wellplateMultiPointWidget))
-            if ENABLE_WELLPLATE_MULTIPOINT
-            else False
-        )
-        if self.imageDisplayTabs.tabText(index) != "Live View" or not (
-            is_wellplate_acquisition and self.wellSelectionWidget.format != "glass slide"
-        ):
-            self.toggleWellSelector(False)
+        # Only show well selector in Live View tab if it was previously shown
+        if self.imageDisplayTabs.tabText(index) == "Live View":
+            self.toggleWellSelector(self.well_selector_visible)  # Use stored visibility state
         else:
-            self.toggleWellSelector(True)
+            self.toggleWellSelector(False)
 
     def onWellplateChanged(self, format_):
         if isinstance(format_, QVariant):
@@ -1479,11 +1494,11 @@ class HighContentScreeningGui(QMainWindow):
             self.stage, self.liveController, is_for_wellplate=is_for_wellplate
         )
         self.connectSlidePositionController()
-        self.navigationWidget.replace_slide_controller(self.slidePositionController)
+        self.stageUtils.replace_slide_controller(self.slidePositionController)
 
     def connectSlidePositionController(self):
         self.slidePositionController.signal_slide_loading_position_reached.connect(
-            self.navigationWidget.slot_slide_loading_position_reached
+            self.stageUtils.slot_slide_loading_position_reached
         )
         if ENABLE_FLEXIBLE_MULTIPOINT:
             self.slidePositionController.signal_slide_loading_position_reached.connect(
@@ -1499,7 +1514,7 @@ class HighContentScreeningGui(QMainWindow):
             )
 
         self.slidePositionController.signal_slide_scanning_position_reached.connect(
-            self.navigationWidget.slot_slide_scanning_position_reached
+            self.stageUtils.slot_slide_scanning_position_reached
         )
         if ENABLE_FLEXIBLE_MULTIPOINT:
             self.slidePositionController.signal_slide_scanning_position_reached.connect(
@@ -1532,12 +1547,20 @@ class HighContentScreeningGui(QMainWindow):
         if ENABLE_WELLPLATE_MULTIPOINT:
             self.wellSelectionWidget.signal_wellSelected.connect(self.wellplateMultiPointWidget.update_well_coordinates)
 
-    def toggleWellSelector(self, show):
-        if USE_NAPARI_WELL_SELECTION and not self.performance_mode and not self.live_only_mode:
-            self.napariLiveWidget.toggle_well_selector(show)
+    def toggleWellSelector(self, show, remember_state=True):
+        if show and self.imageDisplayTabs.tabText(self.imageDisplayTabs.currentIndex()) == "Live View":
+            self.dock_wellSelection.setVisible(True)
         else:
-            self.dock_wellSelection.setVisible(show)
-        self.wellSelectionWidget.setVisible(show)
+            self.dock_wellSelection.setVisible(False)
+
+        # Only update visibility state if we're in Live View tab and we want to remember the state
+        # remember_state is False when we're toggling the well selector for starting/stopping an acquisition
+        if self.imageDisplayTabs.tabText(self.imageDisplayTabs.currentIndex()) == "Live View" and remember_state:
+            self.well_selector_visible = show
+
+        # Update button text
+        if hasattr(self.imageDisplayWindow, "btn_well_selector"):
+            self.imageDisplayWindow.btn_well_selector.setText("Hide Well Selector" if show else "Show Well Selector")
 
     def toggleAcquisitionStart(self, acquisition_started):
         self.log.debug(f"toggleAcquisitionStarted({acquisition_started=})")
@@ -1575,7 +1598,7 @@ class HighContentScreeningGui(QMainWindow):
             else False
         )
         if is_wellplate_acquisition and self.wellSelectionWidget.format != "glass slide":
-            self.toggleWellSelector(not acquisition_started)
+            self.toggleWellSelector(not acquisition_started, remember_state=False)
         else:
             self.toggleWellSelector(False)
 
@@ -1694,6 +1717,13 @@ class HighContentScreeningGui(QMainWindow):
         self.liveController.stop_live()
         self.camera.stop_streaming()
         self.camera.close()
+
+        # retract z
+        self.stage.move_z_to(0.1)
+
+        # reset objective changer
+        if USE_XERYON:
+            self.objective_changer.moveToZero()
 
         self.microcontroller.turn_off_all_pid()
 

@@ -386,6 +386,176 @@ class ConfigEditorBackwardsCompatible(ConfigEditor):
         self.close()
 
 
+class StageUtils(QDialog):
+    """Dialog containing microscope utility functions like homing, zeroing, and slide positioning."""
+
+    def __init__(self, stage: AbstractStage, slidePositionController=None, parent=None):
+        super().__init__(parent)
+        self.log = squid.logging.get_logger(self.__class__.__name__)
+        self.stage = stage
+        self.slidePositionController = slidePositionController
+        self.slide_position = None
+
+        self.setWindowTitle("Stage Utils")
+        self.setModal(False)  # Allow interaction with main window while dialog is open
+        self.setup_ui()
+
+        # Connect slide position controller signals if available
+        if self.slidePositionController:
+            self.setup_slide_position_signals()
+
+    def setup_ui(self):
+        """Setup the UI components."""
+        # Create buttons
+        self.btn_home_X = QPushButton("Home X")
+        self.btn_home_X.setDefault(False)
+        self.btn_home_X.setEnabled(HOMING_ENABLED_X)
+
+        self.btn_home_Y = QPushButton("Home Y")
+        self.btn_home_Y.setDefault(False)
+        self.btn_home_Y.setEnabled(HOMING_ENABLED_Y)
+
+        self.btn_home_Z = QPushButton("Home Z")
+        self.btn_home_Z.setDefault(False)
+        self.btn_home_Z.setEnabled(HOMING_ENABLED_Z)
+
+        self.btn_zero_X = QPushButton("Zero X")
+        self.btn_zero_X.setDefault(False)
+
+        self.btn_zero_Y = QPushButton("Zero Y")
+        self.btn_zero_Y.setDefault(False)
+
+        self.btn_zero_Z = QPushButton("Zero Z")
+        self.btn_zero_Z.setDefault(False)
+
+        self.btn_load_slide = QPushButton("Move To Loading Position")
+        self.btn_load_slide.setStyleSheet("background-color: #C2C2FF")
+
+        # Connect buttons to functions
+        self.btn_home_X.clicked.connect(self.home_x)
+        self.btn_home_Y.clicked.connect(self.home_y)
+        self.btn_home_Z.clicked.connect(self.home_z)
+        self.btn_zero_X.clicked.connect(self.zero_x)
+        self.btn_zero_Y.clicked.connect(self.zero_y)
+        self.btn_zero_Z.clicked.connect(self.zero_z)
+        self.btn_load_slide.clicked.connect(self.switch_position)
+
+        # Layout
+        main_layout = QVBoxLayout()
+
+        # Homing section
+        homing_group = QGroupBox("Homing")
+        homing_layout = QHBoxLayout()
+        homing_layout.addWidget(self.btn_home_X)
+        homing_layout.addWidget(self.btn_home_Y)
+        homing_layout.addWidget(self.btn_home_Z)
+        homing_group.setLayout(homing_layout)
+
+        # Zero section
+        zero_group = QGroupBox("Zero Position")
+        zero_layout = QHBoxLayout()
+        zero_layout.addWidget(self.btn_zero_X)
+        zero_layout.addWidget(self.btn_zero_Y)
+        zero_layout.addWidget(self.btn_zero_Z)
+        zero_group.setLayout(zero_layout)
+
+        # Slide positioning section
+        slide_group = QGroupBox("Slide Positioning")
+        slide_layout = QVBoxLayout()
+        slide_layout.addWidget(self.btn_load_slide)
+        slide_group.setLayout(slide_layout)
+
+        # Add sections to main layout
+        main_layout.addWidget(homing_group)
+        main_layout.addWidget(zero_group)
+        main_layout.addWidget(slide_group)
+
+        # Close button
+        close_button = QPushButton("Close")
+        close_button.clicked.connect(self.accept)
+        main_layout.addWidget(close_button)
+
+        self.setLayout(main_layout)
+
+    def setup_slide_position_signals(self):
+        """Connect slide position controller signals."""
+        self.slidePositionController.signal_slide_loading_position_reached.connect(
+            self.slot_slide_loading_position_reached
+        )
+        self.slidePositionController.signal_slide_scanning_position_reached.connect(
+            self.slot_slide_scanning_position_reached
+        )
+
+    def home_x(self):
+        """Home X axis with confirmation dialog."""
+        self._show_confirmation_dialog(x=True, y=False, z=False, theta=False)
+
+    def home_y(self):
+        """Home Y axis with confirmation dialog."""
+        self._show_confirmation_dialog(x=False, y=True, z=False, theta=False)
+
+    def home_z(self):
+        """Home Z axis with confirmation dialog."""
+        self._show_confirmation_dialog(x=False, y=False, z=True, theta=False)
+
+    def _show_confirmation_dialog(self, x: bool, y: bool, z: bool, theta: bool):
+        """Display a confirmation dialog and home the specified axis if confirmed."""
+        msg = QMessageBox()
+        msg.setIcon(QMessageBox.Information)
+        msg.setText("Confirm your action")
+        msg.setInformativeText("Click OK to run homing")
+        msg.setWindowTitle("Confirmation")
+        msg.setStandardButtons(QMessageBox.Ok | QMessageBox.Cancel)
+        msg.setDefaultButton(QMessageBox.Cancel)
+        retval = msg.exec_()
+        if QMessageBox.Ok == retval:
+            self.stage.home(x=x, y=y, z=z, theta=theta)
+
+    def zero_x(self):
+        """Zero X axis position."""
+        self.stage.zero(x=True, y=False, z=False, theta=False)
+
+    def zero_y(self):
+        """Zero Y axis position."""
+        self.stage.zero(x=False, y=True, z=False, theta=False)
+
+    def zero_z(self):
+        """Zero Z axis position."""
+        self.stage.zero(x=False, y=False, z=True, theta=False)
+
+    def switch_position(self):
+        """Switch between loading and scanning positions."""
+        if not self.slidePositionController:
+            QMessageBox.warning(self, "Warning", "Slide position controller not available")
+            return
+
+        if self.slide_position != "loading":
+            self.slidePositionController.move_to_slide_loading_position()
+        else:
+            self.slidePositionController.move_to_slide_scanning_position()
+        self.btn_load_slide.setEnabled(False)
+
+    def slot_slide_loading_position_reached(self):
+        """Handle slide loading position reached signal."""
+        self.slide_position = "loading"
+        self.btn_load_slide.setStyleSheet("background-color: #C2FFC2")
+        self.btn_load_slide.setText("Move to Scanning Position")
+        self.btn_load_slide.setEnabled(True)
+
+    def slot_slide_scanning_position_reached(self):
+        """Handle slide scanning position reached signal."""
+        self.slide_position = "scanning"
+        self.btn_load_slide.setStyleSheet("background-color: #C2C2FF")
+        self.btn_load_slide.setText("Move to Loading Position")
+        self.btn_load_slide.setEnabled(True)
+
+    def replace_slide_controller(self, slidePositionController):
+        """Replace the slide position controller."""
+        self.slidePositionController = slidePositionController
+        if self.slidePositionController:
+            self.setup_slide_position_signals()
+
+
 class LaserAutofocusSettingWidget(QWidget):
 
     signal_newExposureTime = Signal(float)
@@ -491,6 +661,7 @@ class LaserAutofocusSettingWidget(QWidget):
         self._add_spinbox(spot_detection_layout, "Min Peak Distance:", "min_peak_distance", 1, 100, 1)
         self._add_spinbox(spot_detection_layout, "Min Peak Prominence:", "min_peak_prominence", 0.01, 1.0, 2, 0.1)
         self._add_spinbox(spot_detection_layout, "Spot Spacing (pixels):", "spot_spacing", 1, 1000, 1)
+        self._add_spinbox(spot_detection_layout, "Filter Sigma:", "filter_sigma", 0, 100, 1, allow_none=True)
 
         # Spot detection mode combo box
         spot_mode_layout = QHBoxLayout()
@@ -549,19 +720,34 @@ class LaserAutofocusSettingWidget(QWidget):
         self.characterization_checkbox.toggled.connect(self.toggle_characterization_mode)
 
     def _add_spinbox(
-        self, layout, label: str, property_name: str, min_val: float, max_val: float, decimals: int, step: float = 1
+        self,
+        layout,
+        label: str,
+        property_name: str,
+        min_val: float,
+        max_val: float,
+        decimals: int,
+        step: float = 1,
+        allow_none=False,
     ) -> None:
         """Helper method to add a labeled spinbox to the layout."""
         box_layout = QHBoxLayout()
         box_layout.addWidget(QLabel(label))
 
         spinbox = QDoubleSpinBox()
-        spinbox.setRange(min_val, max_val)
+        if allow_none:
+            spinbox.setRange(min_val - step, max_val)
+            spinbox.setSpecialValueText("None")
+        else:
+            spinbox.setRange(min_val, max_val)
         spinbox.setDecimals(decimals)
         spinbox.setSingleStep(step)
         # Get initial value from laser_af_properties
         current_value = getattr(self.laserAutofocusController.laser_af_properties, property_name)
-        spinbox.setValue(current_value)
+        if allow_none and current_value is None:
+            spinbox.setValue(min_val - step)
+        else:
+            spinbox.setValue(current_value)
 
         box_layout.addWidget(spinbox)
         layout.addLayout(box_layout)
@@ -632,6 +818,7 @@ class LaserAutofocusSettingWidget(QWidget):
             "min_peak_distance": self.spinboxes["min_peak_distance"].value(),
             "min_peak_prominence": self.spinboxes["min_peak_prominence"].value(),
             "spot_spacing": self.spinboxes["spot_spacing"].value(),
+            "filter_sigma": self.spinboxes["filter_sigma"].value(),
             "focus_camera_exposure_time_ms": self.exposure_spinbox.value(),
             "focus_camera_analog_gain": self.analog_gain_spinbox.value(),
             "has_reference": False,
@@ -700,11 +887,12 @@ class LaserAutofocusSettingWidget(QWidget):
             "spot_spacing": self.spinboxes["spot_spacing"].value(),
         }
         mode = self.spot_mode_combo.currentData()
+        sigma = self.spinboxes["filter_sigma"].value()
 
         frame = self.illuminate_and_get_frame()
         if frame is not None:
             try:
-                result = utils.find_spot_location(frame, mode=mode, params=params, debug_plot=True)
+                result = utils.find_spot_location(frame, mode=mode, params=params, filter_sigma=sigma, debug_plot=True)
                 if result is not None:
                     x, y = result
                     self.signal_laser_spot_location.emit(frame, x, y)
@@ -1919,12 +2107,6 @@ class NavigationWidget(QFrame):
         self.btn_moveX_backward = QPushButton("Backward")
         self.btn_moveX_backward.setDefault(False)
 
-        self.btn_home_X = QPushButton("Home X")
-        self.btn_home_X.setDefault(False)
-        self.btn_home_X.setEnabled(HOMING_ENABLED_X)
-        self.btn_zero_X = QPushButton("Zero X")
-        self.btn_zero_X.setDefault(False)
-
         self.checkbox_clickToMove = QCheckBox("Click to Move")
         self.checkbox_clickToMove.setChecked(False)
         self.checkbox_clickToMove.setSizePolicy(QSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed))
@@ -1948,12 +2130,6 @@ class NavigationWidget(QFrame):
         self.btn_moveY_backward = QPushButton("Backward")
         self.btn_moveY_backward.setDefault(False)
 
-        self.btn_home_Y = QPushButton("Home Y")
-        self.btn_home_Y.setDefault(False)
-        self.btn_home_Y.setEnabled(HOMING_ENABLED_Y)
-        self.btn_zero_Y = QPushButton("Zero Y")
-        self.btn_zero_Y.setDefault(False)
-
         z_label = QLabel("Z :")
         z_label.setFixedWidth(20)
         self.label_Zpos = QLabel()
@@ -1971,15 +2147,6 @@ class NavigationWidget(QFrame):
         self.btn_moveZ_forward.setDefault(False)
         self.btn_moveZ_backward = QPushButton("Backward")
         self.btn_moveZ_backward.setDefault(False)
-
-        self.btn_home_Z = QPushButton("Home Z")
-        self.btn_home_Z.setDefault(False)
-        self.btn_home_Z.setEnabled(HOMING_ENABLED_Z)
-        self.btn_zero_Z = QPushButton("Zero Z")
-        self.btn_zero_Z.setDefault(False)
-
-        self.btn_load_slide = QPushButton("Move To Loading Position")
-        self.btn_load_slide.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
 
         grid_line0 = QGridLayout()
         grid_line0.addWidget(x_label, 0, 0)
@@ -2000,27 +2167,13 @@ class NavigationWidget(QFrame):
         grid_line0.addWidget(self.btn_moveZ_forward, 2, 3)
         grid_line0.addWidget(self.btn_moveZ_backward, 2, 4)
 
-        grid_line3 = QHBoxLayout()
-
-        if self.widget_configuration == "full":
-            grid_line3.addWidget(self.btn_home_X)
-            grid_line3.addWidget(self.btn_home_Y)
-            grid_line3.addWidget(self.btn_home_Z)
-            grid_line3.addWidget(self.btn_zero_X)
-            grid_line3.addWidget(self.btn_zero_Y)
-            grid_line3.addWidget(self.btn_zero_Z)
-        else:
-            grid_line3.addWidget(self.btn_load_slide, 1)
-            grid_line3.addWidget(self.btn_home_Z, 1)
-            grid_line3.addWidget(self.btn_zero_Z, 1)
-
-        self.set_click_to_move(ENABLE_CLICK_TO_MOVE_BY_DEFAULT)
-        if not ENABLE_CLICK_TO_MOVE_BY_DEFAULT:
-            grid_line3.addWidget(self.checkbox_clickToMove, 1)
-
         self.grid = QVBoxLayout()
         self.grid.addLayout(grid_line0)
-        self.grid.addLayout(grid_line3)
+        self.set_click_to_move(ENABLE_CLICK_TO_MOVE_BY_DEFAULT)
+        if not ENABLE_CLICK_TO_MOVE_BY_DEFAULT:
+            grid_line3 = QHBoxLayout()
+            grid_line3.addWidget(self.checkbox_clickToMove, 1)
+            self.grid.addLayout(grid_line3)
         self.setLayout(self.grid)
 
         self.entry_dX.valueChanged.connect(self.set_deltaX)
@@ -2034,16 +2187,6 @@ class NavigationWidget(QFrame):
         self.btn_moveZ_forward.clicked.connect(self.move_z_forward)
         self.btn_moveZ_backward.clicked.connect(self.move_z_backward)
 
-        self.btn_home_X.clicked.connect(self.home_x)
-        self.btn_home_Y.clicked.connect(self.home_y)
-        self.btn_home_Z.clicked.connect(self.home_z)
-        self.btn_zero_X.clicked.connect(self.zero_x)
-        self.btn_zero_Y.clicked.connect(self.zero_y)
-        self.btn_zero_Z.clicked.connect(self.zero_z)
-
-        self.btn_load_slide.clicked.connect(self.switch_position)
-        self.btn_load_slide.setStyleSheet("background-color: #C2C2FF")
-
     def set_click_to_move(self, enabled):
         self.log.info(f"Click to move enabled={enabled}")
         self.setEnabled_all(enabled)
@@ -2054,19 +2197,12 @@ class NavigationWidget(QFrame):
 
     def setEnabled_all(self, enabled):
         self.checkbox_clickToMove.setEnabled(enabled)
-        self.btn_home_X.setEnabled(enabled)
-        self.btn_zero_X.setEnabled(enabled)
         self.btn_moveX_forward.setEnabled(enabled)
         self.btn_moveX_backward.setEnabled(enabled)
-        self.btn_home_Y.setEnabled(enabled)
-        self.btn_zero_Y.setEnabled(enabled)
         self.btn_moveY_forward.setEnabled(enabled)
         self.btn_moveY_backward.setEnabled(enabled)
-        self.btn_home_Z.setEnabled(enabled)
-        self.btn_zero_Z.setEnabled(enabled)
         self.btn_moveZ_forward.setEnabled(enabled)
         self.btn_moveZ_backward.setEnabled(enabled)
-        self.btn_load_slide.setEnabled(enabled)
 
     def move_x_forward(self):
         self.stage.move_x(self.entry_dX.value())
@@ -2100,91 +2236,6 @@ class NavigationWidget(QFrame):
         mm_per_ustep = 1.0 / self.stage.z_mm_to_usteps(1.0)
         deltaZ = round(value / 1000 / mm_per_ustep) * mm_per_ustep * 1000
         self.entry_dZ.setValue(deltaZ)
-
-    def home_x(self):
-        msg = QMessageBox()
-        msg.setIcon(QMessageBox.Information)
-        msg.setText("Confirm your action")
-        msg.setInformativeText("Click OK to run homing")
-        msg.setWindowTitle("Confirmation")
-        msg.setStandardButtons(QMessageBox.Ok | QMessageBox.Cancel)
-        msg.setDefaultButton(QMessageBox.Cancel)
-        retval = msg.exec_()
-        if QMessageBox.Ok == retval:
-            self.stage.home(x=True, y=False, z=False, theta=False)
-
-    def home_y(self):
-        msg = QMessageBox()
-        msg.setIcon(QMessageBox.Information)
-        msg.setText("Confirm your action")
-        msg.setInformativeText("Click OK to run homing")
-        msg.setWindowTitle("Confirmation")
-        msg.setStandardButtons(QMessageBox.Ok | QMessageBox.Cancel)
-        msg.setDefaultButton(QMessageBox.Cancel)
-        retval = msg.exec_()
-        if QMessageBox.Ok == retval:
-            self.stage.home(x=False, y=True, z=False, theta=False)
-
-    def home_z(self):
-        msg = QMessageBox()
-        msg.setIcon(QMessageBox.Information)
-        msg.setText("Confirm your action")
-        msg.setInformativeText("Click OK to run homing")
-        msg.setWindowTitle("Confirmation")
-        msg.setStandardButtons(QMessageBox.Ok | QMessageBox.Cancel)
-        msg.setDefaultButton(QMessageBox.Cancel)
-        retval = msg.exec_()
-        if QMessageBox.Ok == retval:
-            self.stage.home(x=False, y=False, z=True, theta=False)
-
-    def zero_x(self):
-        self.stage.zero(x=True, y=False, z=False, theta=False)
-
-    def zero_y(self):
-        self.stage.zero(x=False, y=True, z=False, theta=False)
-
-    def zero_z(self):
-        self.stage.zero(x=False, y=False, z=True, theta=False)
-
-    def slot_slide_loading_position_reached(self):
-        self.slide_position = "loading"
-        self.btn_load_slide.setStyleSheet("background-color: #C2FFC2")
-        self.btn_load_slide.setText("Move to Scanning Position")
-        self.btn_moveX_forward.setEnabled(False)
-        self.btn_moveX_backward.setEnabled(False)
-        self.btn_moveY_forward.setEnabled(False)
-        self.btn_moveY_backward.setEnabled(False)
-        self.btn_moveZ_forward.setEnabled(False)
-        self.btn_moveZ_backward.setEnabled(False)
-        self.btn_load_slide.setEnabled(True)
-
-    def slot_slide_scanning_position_reached(self):
-        self.slide_position = "scanning"
-        self.btn_load_slide.setStyleSheet("background-color: #C2C2FF")
-        self.btn_load_slide.setText("Move to Loading Position")
-        self.btn_moveX_forward.setEnabled(True)
-        self.btn_moveX_backward.setEnabled(True)
-        self.btn_moveY_forward.setEnabled(True)
-        self.btn_moveY_backward.setEnabled(True)
-        self.btn_moveZ_forward.setEnabled(True)
-        self.btn_moveZ_backward.setEnabled(True)
-        self.btn_load_slide.setEnabled(True)
-
-    def switch_position(self):
-        if self.slide_position != "loading":
-            self.slidePositionController.move_to_slide_loading_position()
-        else:
-            self.slidePositionController.move_to_slide_scanning_position()
-        self.btn_load_slide.setEnabled(False)
-
-    def replace_slide_controller(self, slidePositionController):
-        self.slidePositionController = slidePositionController
-        self.slidePositionController.signal_slide_loading_position_reached.connect(
-            self.slot_slide_loading_position_reached
-        )
-        self.slidePositionController.signal_slide_scanning_position_reached.connect(
-            self.slot_slide_scanning_position_reached
-        )
 
 
 class DACControWidget(QFrame):
@@ -3162,6 +3213,7 @@ class FlexibleMultiPointWidget(QFrame):
             # @@@ to do: add a widgetManger to enable and disable widget
             # @@@ to do: emit signal to widgetManager to disable other widgets
             self.is_current_acquisition_widget = True  # keep track of what widget started the acquisition
+            self.btn_startAcquisition.setText("Stop\n Acquisition ")
             self.setEnabled_all(False)
 
             # emit signals
@@ -3611,6 +3663,7 @@ class FlexibleMultiPointWidget(QFrame):
 
         self.signal_acquisition_started.emit(False)
         self.btn_startAcquisition.setChecked(False)
+        self.btn_startAcquisition.setText("Start\n Acquisition ")
         self.setEnabled_all(True)
         self.is_current_acquisition_widget = False
 
@@ -4394,6 +4447,7 @@ class WellplateMultiPointWidget(QFrame):
 
             self.setEnabled_all(False)
             self.is_current_acquisition_widget = True
+            self.btn_startAcquisition.setText("Stop\n Acquisition ")
 
             # Emit signals
             self.signal_acquisition_started.emit(True)
@@ -4417,6 +4471,7 @@ class WellplateMultiPointWidget(QFrame):
         self.signal_acquisition_started.emit(False)
         self.is_current_acquisition_widget = False
         self.btn_startAcquisition.setChecked(False)
+        self.btn_startAcquisition.setText("Start\n Acquisition ")
         if self.focusMapWidget is not None and self.focusMapWidget.focus_points:
             self.focusMapWidget.disable_updating_focus_points_on_signal()
         self.reset_coordinates()
@@ -4586,18 +4641,19 @@ class WellplateMultiPointWidget(QFrame):
     def save_coordinates(self):
         """Save scan coordinates to a CSV file.
 
-        Opens a file dialog for the user to choose save location and filename.
-        Coordinates are saved in CSV format with headers.
+        Opens a file dialog for the user to specify a folder name and location.
+        Coordinates are saved in CSV format with headers for each objective.
         """
-        # Open file dialog for user to select save location and filename
-        file_path, _ = QFileDialog.getSaveFileName(
-            self, "Save Scan Coordinates", "", "CSV Files (*.csv);;All Files (*)"  # Default directory
+        # Open file dialog for user to specify folder name and location
+        folder_path, _ = QFileDialog.getSaveFileName(
+            self, "Create Folder for Scan Coordinates", "", "Folder"  # Default directory
         )
 
-        if file_path:
-            base_path, extension = os.path.splitext(file_path)
-            if not extension:
-                extension = ".csv"
+        if folder_path:
+            # Create the folder if it doesn't exist
+            os.makedirs(folder_path, exist_ok=True)
+
+            folder_name = os.path.basename(folder_path)
 
             current_objective = self.objectiveStore.current_objective
 
@@ -4622,17 +4678,17 @@ class WellplateMultiPointWidget(QFrame):
                     else:
                         self.objectiveStore.set_current_objective(objective_name)
                         self.update_coordinates()
-                        obj_file_path = f"{base_path}_{objective_name}{extension}"
+                        obj_file_path = os.path.join(folder_path, f"{folder_name}_{objective_name}.csv")
                         _helper_save_coordinates(self, obj_file_path)
 
                 self.objectiveStore.set_current_objective(current_objective)
                 self.update_coordinates()
-                obj_file_path = f"{base_path}_{current_objective}{extension}"
+                obj_file_path = os.path.join(folder_path, f"{folder_name}_{current_objective}.csv")
                 _helper_save_coordinates(self, obj_file_path)
 
             except Exception as e:
                 self._log.error(f"Failed to save coordinates: {str(e)}")
-                QMessageBox.warning(self, "Save Error", f"Failed to save coordinates to {file_path}\nError: {str(e)}")
+                QMessageBox.warning(self, "Save Error", f"Failed to save coordinates to {folder_path}\nError: {str(e)}")
 
 
 class MultiPointWithFluidicsWidget(QFrame):
@@ -4862,6 +4918,7 @@ class MultiPointWithFluidicsWidget(QFrame):
 
             self.setEnabled_all(False)
             self.is_current_acquisition_widget = True
+            self.btn_startAcquisition.setText("Stop\n Acquisition ")
 
             self.multipointController.set_deltaZ(self.entry_deltaZ.value())
             self.multipointController.set_NZ(self.entry_NZ.value())
@@ -4932,6 +4989,7 @@ class MultiPointWithFluidicsWidget(QFrame):
         self.signal_acquisition_started.emit(False)
         self.is_current_acquisition_widget = False
         self.btn_startAcquisition.setChecked(False)
+        self.btn_startAcquisition.setText("Start\n Acquisition ")
         self.setEnabled_all(True)
 
     def setEnabled_all(self, enabled):

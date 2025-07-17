@@ -20,6 +20,7 @@ from qtpy.QtGui import *
 # control
 from control._def import *
 from control.core.multi_point_worker import MultiPointWorker
+from control.core import job_processing
 
 import control.utils as utils
 import control.utils_acquisition as utils_acquisition
@@ -2374,7 +2375,7 @@ class MultiPointController(QObject):
                 self._log.exception("Invalid coordinates for autofocus plane, aborting.")
                 return
 
-        self.multiPointWorker = MultiPointWorker(self)
+        self.multiPointWorker = MultiPointWorker(self, extra_job_classes=[])
         self.multiPointWorker.use_piezo = self.use_piezo
 
         if not self.headless:
@@ -2943,6 +2944,10 @@ class ImageDisplayWindow(QMainWindow):
         self.btn_line_profiler.setEnabled(False)
         self.btn_line_profiler.clicked.connect(self.toggle_line_profiler)
 
+        # Add well selector toggle button
+        self.btn_well_selector = QPushButton("Show Well Selector")
+        self.btn_well_selector.setCheckable(False)
+
         # Add labels to status layout with spacing
         status_layout.addWidget(self.cursor_position_label)
         status_layout.addWidget(QLabel(" | "))  # Add separator
@@ -2952,8 +2957,9 @@ class ImageDisplayWindow(QMainWindow):
         status_layout.addWidget(QLabel(" | "))  # Add separator
         status_layout.addWidget(self.piezo_position_label)
         status_layout.addStretch()  # Push labels to the left
+        status_layout.addWidget(self.btn_well_selector)  # Add well selector button
         status_layout.addWidget(QLabel(" | "))  # Add separator
-        status_layout.addWidget(self.btn_line_profiler)  # Add button after stretch
+        status_layout.addWidget(self.btn_line_profiler)  # Add line profiler button
 
         status_widget.setLayout(status_layout)
 
@@ -3027,6 +3033,7 @@ class ImageDisplayWindow(QMainWindow):
         self.line_profiler_plot.setLabel("left", "Intensity")
         self.line_profiler_plot.setLabel("bottom", "Position")
         self.line_profiler_widget.hide()  # Initially hidden
+        self.line_profiler_manual_range = False  # Flag to track if y-range is manually set
 
         # Create splitter
         self.splitter = QSplitter(Qt.Vertical)
@@ -3131,6 +3138,13 @@ class ImageDisplayWindow(QMainWindow):
             else:
                 self.graphics_widget.view.setCursor(self.normal_cursor)
 
+        # Connect to the view range changed signal to detect manual range changes
+        self.line_profiler_plot.sigRangeChanged.connect(self._on_range_changed)
+
+    def _on_range_changed(self, view_range):
+        """Handle manual range changes in the line profiler plot."""
+        self.line_profiler_manual_range = True
+
     def create_line_roi(self):
         """Create a line ROI for intensity profiling."""
         if self.line_roi is None and self.line_start_pos is not None and self.line_end_pos is not None:
@@ -3213,8 +3227,9 @@ class ImageDisplayWindow(QMainWindow):
                     # Add legend
                     self.line_profiler_plot.addLegend()
 
-                    # Auto-scale the plot
-                    self.line_profiler_plot.autoRange()
+                    # Only auto-range if not manually set
+                    if not self.line_profiler_manual_range:
+                        self.line_profiler_plot.autoRange()
         except Exception as e:
             self._log.error(f"Error updating line profile: {str(e)}")
 
@@ -4884,7 +4899,10 @@ class LaserAutofocusController(QObject):
                     "spot_spacing": self.laser_af_properties.spot_spacing,
                 }
                 result = utils.find_spot_location(
-                    image, mode=self.laser_af_properties.spot_detection_mode, params=spot_detection_params
+                    image,
+                    mode=self.laser_af_properties.spot_detection_mode,
+                    params=spot_detection_params,
+                    filter_sigma=self.laser_af_properties.filter_sigma,
                 )
                 if result is None:
                     self._log.warning(
