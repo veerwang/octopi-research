@@ -603,7 +603,7 @@ class LaserAutofocusSettingWidget(QWidget):
         exposure_layout.addWidget(QLabel("Focus Camera Exposure (ms):"))
         self.exposure_spinbox = QDoubleSpinBox()
         self.exposure_spinbox.setSingleStep(0.1)
-        self.exposure_spinbox.setRange(*self.liveController.camera.get_exposure_limits())
+        self.exposure_spinbox.setRange(*self.liveController.microscope.camera.get_exposure_limits())
         self.exposure_spinbox.setValue(self.laserAutofocusController.laser_af_properties.focus_camera_exposure_time_ms)
         exposure_layout.addWidget(self.exposure_spinbox)
 
@@ -854,15 +854,15 @@ class LaserAutofocusSettingWidget(QWidget):
     def illuminate_and_get_frame(self):
         # Get a frame from the live controller.  We need to reach deep into the liveController here which
         # is not ideal.
-        self.liveController.microcontroller.turn_on_AF_laser()
-        self.liveController.microcontroller.wait_till_operation_is_completed()
+        self.liveController.microscope.low_level_drivers.microcontroller.turn_on_AF_laser()
+        self.liveController.microscope.low_level_drivers.microcontroller.wait_till_operation_is_completed()
         self.liveController.trigger_acquisition()
 
         try:
-            frame = self.liveController.camera.read_frame()
+            frame = self.liveController.microscope.camera.read_frame()
         finally:
-            self.liveController.microcontroller.turn_off_AF_laser()
-            self.liveController.microcontroller.wait_till_operation_is_completed()
+            self.liveController.microscope.low_level_drivers.microcontroller.turn_off_AF_laser()
+            self.liveController.microscope.low_level_drivers.microcontroller.wait_till_operation_is_completed()
 
         return frame
 
@@ -1553,6 +1553,7 @@ class LiveControlWidget(QFrame):
         super().__init__(*args, **kwargs)
         self._log = squid.logging.get_logger(self.__class__.__name__)
         self.liveController: LiveController = liveController
+        self.camera = self.liveController.microscope.camera
         self.streamHandler = streamHandler
         self.objectiveStore = objectiveStore
         self.channelConfigurationManager = channelConfigurationManager
@@ -1576,7 +1577,7 @@ class LiveControlWidget(QFrame):
         # line 0: trigger mode
         self.dropdown_triggerManu = QComboBox()
         self.dropdown_triggerManu.addItems([TriggerMode.SOFTWARE, TriggerMode.HARDWARE, TriggerMode.CONTINUOUS])
-        self.dropdown_triggerManu.setCurrentText(self.liveController.camera.get_acquisition_mode().value)
+        self.dropdown_triggerManu.setCurrentText(self.camera.get_acquisition_mode().value)
         sizePolicy = QSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         self.dropdown_triggerManu.setSizePolicy(sizePolicy)
 
@@ -1606,8 +1607,8 @@ class LiveControlWidget(QFrame):
 
         # line 3: exposure time and analog gain associated with the current mode
         self.entry_exposureTime = QDoubleSpinBox()
-        self.entry_exposureTime.setMinimum(self.liveController.camera.get_exposure_limits()[0])
-        self.entry_exposureTime.setMaximum(self.liveController.camera.get_exposure_limits()[1])
+        self.entry_exposureTime.setMinimum(self.camera.get_exposure_limits()[0])
+        self.entry_exposureTime.setMaximum(self.camera.get_exposure_limits()[1])
         self.entry_exposureTime.setSingleStep(1)
         self.entry_exposureTime.setSuffix(" ms")
         self.entry_exposureTime.setValue(0)
@@ -1617,13 +1618,13 @@ class LiveControlWidget(QFrame):
         # Not all cameras support analog gain, so attempt to get the gain
         # to check this
         try:
-            gain_range = self.liveController.camera.get_gain_range()
+            gain_range = self.camera.get_gain_range()
             self.entry_analogGain.setMinimum(gain_range.min_gain)
             self.entry_analogGain.setMaximum(gain_range.max_gain)
             self.entry_analogGain.setSingleStep(gain_range.gain_step)
             self.entry_analogGain.setValue(gain_range.min_gain)
             self.entry_analogGain.setSizePolicy(sizePolicy)
-            self.liveController.camera.set_analog_gain(gain_range.min_gain)
+            self.camera.set_analog_gain(gain_range.min_gain)
         except NotImplementedError:
             self._log.info("Analog gain not supported,  disabling it in live control widget.")
             self.entry_analogGain.setValue(0)
@@ -2384,7 +2385,7 @@ class FilterControllerWidget(QFrame):
     def __init__(self, filterController, liveController, main=None, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.filterController = filterController
-        self.liveController = liveController
+        self.liveController: LiveController = liveController
         self.add_components()
         self.setFrameStyle(QFrame.Panel | QFrame.Raised)
 
@@ -6318,7 +6319,7 @@ class NapariLiveWidget(QWidget):
         super().__init__(parent)
         self._log = squid.logging.get_logger(self.__class__.__name__)
         self.streamHandler = streamHandler
-        self.liveController = liveController
+        self.liveController: LiveController = liveController
         self.stage = stage
         self.objectiveStore = objectiveStore
         self.channelConfigurationManager = channelConfigurationManager
@@ -6433,7 +6434,7 @@ class NapariLiveWidget(QWidget):
 
         # Exposure Time
         self.entry_exposureTime = QDoubleSpinBox()
-        self.entry_exposureTime.setRange(*self.liveController.camera.get_exposure_limits())
+        self.entry_exposureTime.setRange(*self.camera.get_exposure_limits())
         self.entry_exposureTime.setValue(self.live_configuration.exposure_time)
         self.entry_exposureTime.setSuffix(" ms")
         self.entry_exposureTime.valueChanged.connect(self.update_config_exposure_time)
@@ -6468,9 +6469,6 @@ class NapariLiveWidget(QWidget):
         for display_name, mode in trigger_modes:
             self.dropdown_triggerMode.addItem(display_name, mode)
         self.dropdown_triggerMode.currentIndexChanged.connect(self.on_trigger_mode_changed)
-        # self.dropdown_triggerMode = QComboBox()
-        # self.dropdown_triggerMode.addItems([TriggerMode.SOFTWARE, TriggerMode.HARDWARE, TriggerMode.CONTINUOUS])
-        # self.dropdown_triggerMode.currentTextChanged.connect(self.liveController.set_trigger_mode)
 
         # Trigger FPS
         self.entry_triggerFPS = QDoubleSpinBox()
@@ -8454,7 +8452,7 @@ class WellplateCalibration(QDialog):
         self.stage = stage
         self.navigationViewer = navigationViewer
         self.streamHandler = streamHandler
-        self.liveController = liveController
+        self.liveController: LiveController = liveController
         self.was_live = self.liveController.is_live
         self.corners = [None, None, None]
         self.show_virtual_joystick = True  # FLAG
@@ -8654,7 +8652,7 @@ class WellplateCalibration(QDialog):
     def viewerClicked(self, x, y, width, height):
         pixel_size_um = (
             self.navigationViewer.objectiveStore.get_pixel_size_factor()
-            * self.liveController.camera.get_pixel_size_binned_um()
+            * self.liveController.microscope.camera.get_pixel_size_binned_um()
         )
 
         pixel_sign_x = 1
