@@ -5619,6 +5619,7 @@ class FocusMapWidget(QFrame):
     def __init__(self, stage: AbstractStage, navigationViewer, scanCoordinates, focusMap):
         super().__init__()
         self.setFrameStyle(QFrame.Panel | QFrame.Raised)
+        self._allow_updating_focus_points_on_signal = True
 
         # Store controllers
         self.stage = stage
@@ -5725,9 +5726,6 @@ class FocusMapWidget(QFrame):
 
         # Connect fitting method change
         self.fit_method_combo.currentTextChanged.connect(self._match_by_region_box)
-
-        # Connect to scan coordinates changes
-        self.scanCoordinates.signal_scan_coordinates_updated.connect(self.on_regions_updated)
 
     def update_point_list(self):
         """Update point selection combo showing grid coordinates for points"""
@@ -6070,14 +6068,16 @@ class FocusMapWidget(QFrame):
             QMessageBox.critical(self, "Import Error", f"Failed to import focus points: {str(e)}")
 
     def on_regions_updated(self):
+        if not self._allow_updating_focus_points_on_signal:
+            return
         if self.scanCoordinates.has_regions():
             self.generate_grid(self.rows_spin.value(), self.cols_spin.value())
 
     def disable_updating_focus_points_on_signal(self):
-        self.scanCoordinates.signal_scan_coordinates_updated.disconnect(self.on_regions_updated)
+        self._allow_updating_focus_points_on_signal = False
 
     def enable_updating_focus_points_on_signal(self):
-        self.scanCoordinates.signal_scan_coordinates_updated.connect(self.on_regions_updated)
+        self._allow_updating_focus_points_on_signal = True
 
     def setEnabled(self, enabled):
         self.enabled = enabled
