@@ -3,6 +3,7 @@ import multiprocessing
 import queue
 import os
 import time
+from datetime import datetime
 import json
 from typing import Optional, Generic, TypeVar
 from uuid import uuid4
@@ -32,6 +33,7 @@ class CaptureInfo:
     region_id: int
     fov: int
     configuration_idx: int
+    z_piezo_um: Optional[float] = None
 
 
 @dataclass()
@@ -85,6 +87,13 @@ class SaveImageJob(Job):
                 "y_mm": info.position.y_mm,
                 "z_mm": info.position.z_mm,
             }
+            # Add requested fields: human-readable time and optional piezo position
+            try:
+                metadata["time"] = datetime.fromtimestamp(info.capture_time).strftime("%Y-%m-%d %H:%M:%S.%f")
+            except Exception:
+                metadata["time"] = info.capture_time
+            if info.z_piezo_um is not None:
+                metadata["z_piezo (um)"] = info.z_piezo_um
             output_path = os.path.join(
                 info.save_directory, f"{info.region_id}_{info.fov:0{_def.FILE_ID_PADDING}}_stack.tiff"
             )
