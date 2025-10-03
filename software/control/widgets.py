@@ -3219,8 +3219,15 @@ class FlexibleMultiPointWidget(QFrame):
             if widget is not None:
                 widget.setVisible(is_visible)
 
+        # Disable reflection autofocus checkbox if Z-range is visible
+        self.checkbox_withReflectionAutofocus.setEnabled(not is_visible)
         # Enable/disable NZ entry based on the inverse of is_visible
         self.entry_NZ.setEnabled(not is_visible)
+        current_z = self.stage.get_pos().z_mm * 1000
+        self.entry_minZ.setValue(current_z)
+        if is_visible:
+            self._reset_reflection_af_reference()
+        self.entry_maxZ.setValue(current_z)
 
         if not is_visible:
             try:
@@ -3267,6 +3274,7 @@ class FlexibleMultiPointWidget(QFrame):
     def set_z_min(self):
         z_value = self.stage.get_pos().z_mm * 1000  # Convert to μm
         self.entry_minZ.setValue(z_value)
+        self._reset_reflection_af_reference()
 
     def set_z_max(self):
         z_value = self.stage.get_pos().z_mm * 1000  # Convert to μm
@@ -3275,10 +3283,18 @@ class FlexibleMultiPointWidget(QFrame):
     def update_z_min(self, z_pos_um):
         if z_pos_um < self.entry_minZ.value():
             self.entry_minZ.setValue(z_pos_um)
+            self._reset_reflection_af_reference()
 
     def update_z_max(self, z_pos_um):
         if z_pos_um > self.entry_maxZ.value():
             self.entry_maxZ.setValue(z_pos_um)
+
+    def _reset_reflection_af_reference(self):
+        if (
+            self.checkbox_withReflectionAutofocus.isChecked()
+            and not self.multipointController.laserAutoFocusController.set_reference()
+        ):
+            error_dialog("Failed to set reference for reflection autofocus. Is the laser autofocus initialized?")
 
     def update_z(self):
         z_mm = self.stage.get_pos().z_mm
@@ -4418,10 +4434,14 @@ class WellplateMultiPointWidget(QFrame):
                 if widget:
                     widget.setVisible(is_visible)
 
+        # Disable reflection autofocus checkbox if Z-range is visible
+        self.checkbox_withReflectionAutofocus.setEnabled(not is_visible)
         # Enable/disable NZ entry based on the inverse of is_visible
         self.entry_NZ.setEnabled(not is_visible)
         current_z = self.stage.get_pos().z_mm * 1000
         self.entry_minZ.setValue(current_z)
+        if is_visible:
+            self._reset_reflection_af_reference()
         self.entry_maxZ.setValue(current_z)
 
         # Safely connect or disconnect signals
@@ -4550,6 +4570,7 @@ class WellplateMultiPointWidget(QFrame):
     def set_z_min(self):
         z_value = self.stage.get_pos().z_mm * 1000  # Convert to μm
         self.entry_minZ.setValue(z_value)
+        self._reset_reflection_af_reference()
 
     def set_z_max(self):
         z_value = self.stage.get_pos().z_mm * 1000  # Convert to μm
@@ -4558,10 +4579,18 @@ class WellplateMultiPointWidget(QFrame):
     def update_z_min(self, z_pos_um):
         if z_pos_um < self.entry_minZ.value():
             self.entry_minZ.setValue(z_pos_um)
+            self._reset_reflection_af_reference()
 
     def update_z_max(self, z_pos_um):
         if z_pos_um > self.entry_maxZ.value():
             self.entry_maxZ.setValue(z_pos_um)
+
+    def _reset_reflection_af_reference(self):
+        if (
+            self.checkbox_withReflectionAutofocus.isChecked()
+            and not self.multipointController.laserAutoFocusController.set_reference()
+        ):
+            error_dialog("Failed to set reference for reflection autofocus. Is the laser autofocus initialized?")
 
     def init_z(self, z_pos_mm=None):
         # sets initial z range form the current z position used after startup of the GUI
