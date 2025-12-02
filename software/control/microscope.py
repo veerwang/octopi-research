@@ -16,6 +16,7 @@ from control.microcontroller import Microcontroller
 from control.piezo import PiezoStage
 from control.serial_peripherals import SciMicroscopyLEDArray
 from squid.abc import CameraAcquisitionMode, AbstractCamera, AbstractStage
+from squid.stage.utils import move_z_axis_to_safety_position
 from squid.stage.cephla import CephlaStage
 from squid.stage.prior import PriorStage
 import control.celesta
