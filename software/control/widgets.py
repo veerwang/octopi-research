@@ -12,7 +12,7 @@ from control.microcontroller import Microcontroller
 from control.piezo import PiezoStage
 import control.utils as utils
 from squid.abc import AbstractStage, AbstractCamera, AbstractFilterWheelController
-from squid.stage.utils import move_to_loading_position, move_to_scanning_position
+from squid.stage.utils import move_to_loading_position, move_to_scanning_position, move_z_axis_to_safety_position
 from squid.config import CameraPixelFormat
 
 # set QT_API environment variable
@@ -352,6 +352,7 @@ class StageUtils(QDialog):
     def home_z(self):
         """Home Z axis with confirmation dialog."""
         self._show_confirmation_dialog(x=False, y=False, z=True, theta=False)
+        move_z_axis_to_safety_position(self.stage)
 
     def _show_confirmation_dialog(self, x: bool, y: bool, z: bool, theta: bool):
         """Display a confirmation dialog and home the specified axis if confirmed."""

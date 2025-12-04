@@ -395,7 +395,15 @@ class HighContentScreeningGui(QMainWindow):
                 )
                 self.stage.move_x_to(cached_pos.x_mm)
                 self.stage.move_y_to(cached_pos.y_mm)
-                self.stage.move_z_to(cached_pos.z_mm)
+
+                if (int(Z_HOME_SAFETY_POINT) / 1000.0) < cached_pos.z_mm:
+                    self.stage.move_z_to(cached_pos.z_mm)
+                else:
+                    self.log.info(f"Cache z position is smaller than Z_HOME_SAFETY_POINT, move to Z_HOME_SAFETY_POINT")
+                    self.stage.move_z_to(int(Z_HOME_SAFETY_POINT) / 1000.0)
+            else:
+                self.log.info(f"Cache position is not exists.  Moving Z axis to safety position")
+                squid.stage.utils.move_z_axis_to_safety_position(self.stage)
 
             if ENABLE_WELLPLATE_MULTIPOINT:
                 self.wellplateMultiPointWidget.init_z()
