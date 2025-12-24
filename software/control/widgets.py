@@ -79,6 +79,39 @@ def check_space_available_with_error_dialog(
     return True
 
 
+def check_ram_available_with_error_dialog(
+    multi_point_controller: MultiPointController,
+    logger: logging.Logger,
+    factor_of_safety: float = 1.15,
+    performance_mode: bool = False,
+) -> bool:
+    """Check if enough RAM is available for mosaic view."""
+    import psutil
+
+    # Skip check if performance mode is enabled (mosaic view is disabled)
+    if performance_mode:
+        logger.info("Performance mode enabled, skipping RAM check for mosaic view")
+        return True
+
+    ram_required = factor_of_safety * multi_point_controller.get_estimated_mosaic_ram_bytes()
+    available_ram = psutil.virtual_memory().available
+
+    logger.info(f"Checking RAM available: {ram_required=}, {available_ram=}")
+
+    if ram_required > available_ram:
+        mb_required = int(ram_required / 1024 / 1024)
+        mb_available = int(available_ram / 1024 / 1024)
+        error_message = (
+            f"This acquisition's mosaic view will require approximately {mb_required:,} MB RAM, "
+            f"but only {mb_available:,} MB is currently available.\n\n"
+            f"Consider enabling Performance Mode to disable mosaic view during acquisition."
+        )
+        logger.error(error_message)
+        error_dialog(error_message, title="Not Enough RAM")
+        return False
+    return True
+
+
 class WrapperWindow(QMainWindow):
     def __init__(self, content_widget, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -2820,6 +2853,7 @@ class FlexibleMultiPointWidget(QFrame):
         channelConfigurationManager,
         scanCoordinates,
         focusMapWidget,
+        napariMosaicWidget=None,
         *args,
         **kwargs,
     ):
@@ -2835,6 +2869,9 @@ class FlexibleMultiPointWidget(QFrame):
         self.channelConfigurationManager = channelConfigurationManager
         self.scanCoordinates = scanCoordinates
         self.focusMapWidget = focusMapWidget
+        if napariMosaicWidget is not None:
+            self.napariMosaicWidget = napariMosaicWidget
+        self.performance_mode = False
         self.base_path_is_set = False
         self.location_list = np.empty((0, 3), dtype=float)
         self.location_ids = np.empty((0,), dtype="<U20")
@@ -3599,6 +3636,13 @@ class FlexibleMultiPointWidget(QFrame):
                 self.btn_startAcquisition.setChecked(False)
                 return
 
+            if not check_ram_available_with_error_dialog(
+                self.multipointController, self._log, performance_mode=self.performance_mode
+            ):
+                self._log.error("Failed to start acquisition.  Not enough RAM available.")
+                self.btn_startAcquisition.setChecked(False)
+                return
+
             # @@@ to do: add a widgetManger to enable and disable widget
             # @@@ to do: emit signal to widgetManager to disable other widgets
             self.is_current_acquisition_widget = True  # keep track of what widget started the acquisition
@@ -4080,6 +4124,9 @@ class FlexibleMultiPointWidget(QFrame):
     def enable_the_start_aquisition_button(self):
         self.btn_startAcquisition.setEnabled(True)
 
+    def set_performance_mode(self, enabled):
+        self.performance_mode = enabled
+
 
 class WellplateMultiPointWidget(QFrame):
 
@@ -4115,11 +4162,9 @@ class WellplateMultiPointWidget(QFrame):
         self.channelConfigurationManager = channelConfigurationManager
         self.scanCoordinates = scanCoordinates
         self.focusMapWidget = focusMapWidget
-        if napariMosaicWidget is None:
-            self.performance_mode = True
-        else:
+        if napariMosaicWidget is not None:
             self.napariMosaicWidget = napariMosaicWidget
-            self.performance_mode = False
+        self.performance_mode = False
         self.tab_widget: Optional[QTabWidget] = tab_widget
         self.well_selection_widget: Optional[WellSelectionWidget] = well_selection_widget
         self.base_path_is_set = False
@@ -5743,6 +5788,13 @@ class WellplateMultiPointWidget(QFrame):
                 self._log.error("Failed to start acquisition.  Not enough disk space available.")
                 return
 
+            if not check_ram_available_with_error_dialog(
+                self.multipointController, self._log, performance_mode=self.performance_mode
+            ):
+                self.btn_startAcquisition.setChecked(False)
+                self._log.error("Failed to start acquisition.  Not enough RAM available.")
+                return
+
             self.setEnabled_all(False)
             self.is_current_acquisition_widget = True
             self.btn_startAcquisition.setText("Stop\n Acquisition ")
@@ -5815,6 +5867,9 @@ class WellplateMultiPointWidget(QFrame):
 
     def enable_the_start_aquisition_button(self):
         self.btn_startAcquisition.setEnabled(True)
+
+    def set_performance_mode(self, enabled):
+        self.performance_mode = enabled
 
     def set_saving_dir(self):
         dialog = QFileDialog()
@@ -6056,11 +6111,9 @@ class MultiPointWithFluidicsWidget(QFrame):
         self.objectiveStore = objectiveStore
         self.channelConfigurationManager = channelConfigurationManager
         self.scanCoordinates = scanCoordinates
-        if napariMosaicWidget is None:
-            self.performance_mode = True
-        else:
+        if napariMosaicWidget is not None:
             self.napariMosaicWidget = napariMosaicWidget
-            self.performance_mode = False
+        self.performance_mode = False
 
         self.base_path_is_set = False
         self.acquisition_start_time = None
@@ -6070,6 +6123,9 @@ class MultiPointWithFluidicsWidget(QFrame):
 
         self.add_components()
         self.setFrameStyle(QFrame.Panel | QFrame.Raised)
+
+    def set_performance_mode(self, enabled):
+        self.performance_mode = enabled
 
     def add_components(self):
         self.btn_setSavingDir = QPushButton("Browse")
