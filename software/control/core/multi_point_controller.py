@@ -47,7 +47,7 @@ class MultiPointController:
         live_controller: LiveController,
         autofocus_controller: AutoFocusController,
         objective_store: ObjectiveStore,
-        channel_configuration_manager: ChannelConfigurationManager,
+        channel_configuration_mananger: ChannelConfigurationManager,
         callbacks: MultiPointControllerFunctions,
         scan_coordinates: Optional[ScanCoordinates] = None,
         laser_autofocus_controller: Optional[LaserAutofocusController] = None,
@@ -63,7 +63,7 @@ class MultiPointController:
         self.autofocusController: AutoFocusController = autofocus_controller
         self.laserAutoFocusController: LaserAutofocusController = laser_autofocus_controller
         self.objectiveStore: ObjectiveStore = objective_store
-        self.channelConfigurationManager: ChannelConfigurationManager = channel_configuration_manager
+        self.channelConfigurationManager: ChannelConfigurationManager = channel_configuration_mananger
         self.callbacks: MultiPointControllerFunctions = callbacks
         self.multiPointWorker: Optional[MultiPointWorker] = None
         self.fluidics: Optional[Any] = microscope.addons.fluidics
@@ -92,6 +92,7 @@ class MultiPointController:
         self.base_path = None
         self.use_fluidics = False
         self.skip_saving = False
+        self.xy_mode = "Current Position"
 
         self.focus_map = None
         self.gen_focus_map = False
@@ -204,6 +205,9 @@ class MultiPointController:
     def set_skip_saving(self, skip_saving):
         self.skip_saving = skip_saving
 
+    def set_xy_mode(self, xy_mode):
+        self.xy_mode = xy_mode
+
     def start_new_experiment(self, experiment_ID):  # @@@ to do: change name to prepare_folder_for_new_experiment
         # generate unique experiment ID
         self.experiment_ID = experiment_ID.replace(" ", "_") + "_" + datetime.now().strftime("%Y-%m-%d_%H-%M-%S.%f")
@@ -248,6 +252,7 @@ class MultiPointController:
         # TODO: USE OBJECTIVE STORE DATA
         acquisition_parameters["sensor_pixel_size_um"] = self.camera.get_pixel_size_binned_um()
         acquisition_parameters["tube_lens_mm"] = control._def.TUBE_LENS_MM
+        acquisition_parameters["confocal_mode"] = self.channelConfigurationManager.is_confocal_mode()
         f = open(os.path.join(self.base_path, self.experiment_ID) + "/acquisition parameters.json", "w")
         f.write(json.dumps(acquisition_parameters))
         f.close()
@@ -612,6 +617,19 @@ class MultiPointController:
                 self._stop_per_acquisition_log()
 
     def build_params(self, scan_position_information: ScanPositionInformation) -> AcquisitionParameters:
+        # Determine plate dimensions from wellplate format if available
+        plate_num_rows = 8  # Default for 96-well
+        plate_num_cols = 12
+        if hasattr(self.scanCoordinates, "format") and self.scanCoordinates.format:
+            format_settings = control._def.get_wellplate_settings(self.scanCoordinates.format)
+            if format_settings:
+                plate_num_rows = format_settings.get("rows", 8)
+                plate_num_cols = format_settings.get("cols", 12)
+            else:
+                self._log.debug(
+                    f"Unknown wellplate format '{self.scanCoordinates.format}', using default 96-well dimensions"
+                )
+
         return AcquisitionParameters(
             experiment_ID=self.experiment_ID,
             base_path=self.base_path,
@@ -634,10 +652,20 @@ class MultiPointController:
             z_range=self.z_range,
             use_fluidics=self.use_fluidics,
             skip_saving=self.skip_saving,
+            # Downsampled view generation parameters
+            generate_downsampled_views=control._def.GENERATE_DOWNSAMPLED_WELL_IMAGES or control._def.DISPLAY_PLATE_VIEW,
+            downsampled_well_resolutions_um=control._def.DOWNSAMPLED_WELL_RESOLUTIONS_UM,
+            downsampled_plate_resolution_um=control._def.DOWNSAMPLED_PLATE_RESOLUTION_UM,
+            downsampled_z_projection=control._def.DOWNSAMPLED_Z_PROJECTION,
+            plate_num_rows=plate_num_rows,
+            plate_num_cols=plate_num_cols,
+            xy_mode=self.xy_mode,
         )
 
     def _on_acquisition_completed(self):
         self._log.debug("MultiPointController._on_acquisition_completed called")
+        # Note: Plate views are saved per timepoint in the worker's run_single_time_point method
+
         # restore the previous selected mode
         if self.gen_focus_map:
             self.autofocusController.clear_focus_map()
@@ -687,3 +715,13 @@ class MultiPointController:
             )
             return False
         return True
+
+    def get_plate_view(self) -> np.ndarray:
+        """Get the current plate view array from the acquisition.
+
+        Returns:
+            Copy of the plate view array, or None if not available.
+        """
+        if self.multiPointWorker is not None:
+            return self.multiPointWorker.get_plate_view()
+        return None

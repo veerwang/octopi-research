@@ -303,6 +303,27 @@ class FocusMeasureOperator(Enum):
             raise ValueError(f"Invalid focus measure operator: {option}")
 
 
+class ZProjectionMode(Enum):
+    """Z-projection mode for downsampled view generation.
+
+    MIP: Max intensity projection - uses running maximum across all z-levels
+    MIDDLE: Middle layer - uses only the middle z-level (z = NZ // 2)
+    """
+
+    MIP = "mip"
+    MIDDLE = "middle"
+
+    @staticmethod
+    def convert_to_enum(option: Union[str, "ZProjectionMode"]) -> "ZProjectionMode":
+        """Convert string or enum to ZProjectionMode enum."""
+        if isinstance(option, ZProjectionMode):
+            return option
+        try:
+            return ZProjectionMode(option.lower())
+        except ValueError:
+            raise ValueError(f"Invalid z-projection mode: '{option}'. Expected 'mip' or 'middle'.")
+
+
 PRINT_CAMERA_FPS = True
 
 ###########################################################
@@ -441,6 +462,7 @@ LED_MATRIX_G_FACTOR = 0
 LED_MATRIX_B_FACTOR = 1
 
 DEFAULT_SAVING_PATH = str(Path.home()) + "/Downloads"
+ACQUISITION_CONFIGURATIONS_PATH = Path("acquisition_configurations")
 FILE_ID_PADDING = 0
 
 
@@ -694,6 +716,37 @@ USE_NAPARI_WELL_SELECTION = False
 USE_NAPARI_FOR_LIVE_CONTROL = False
 LIVE_ONLY_MODE = False
 MOSAIC_VIEW_TARGET_PIXEL_SIZE_UM = 2
+
+# Downsampled well image generation (for Select Well Mode)
+GENERATE_DOWNSAMPLED_WELL_IMAGES = False  # Set to True to generate downsampled well TIFFs
+DISPLAY_PLATE_VIEW = False  # Set to True to show plate view tab during acquisition
+DOWNSAMPLED_WELL_RESOLUTIONS_UM = [5.0, 10.0, 20.0]
+DOWNSAMPLED_PLATE_RESOLUTION_UM = 10.0  # Auto-added to DOWNSAMPLED_WELL_RESOLUTIONS_UM if not present
+DOWNSAMPLED_Z_PROJECTION = ZProjectionMode.MIP
+
+# Downsampled view job timeouts
+# DOWNSAMPLED_VIEW_JOB_TIMEOUT_S: Maximum time (seconds) to wait for all downsampled view
+# jobs to complete at end of each timepoint. This timeout ensures acquisition doesn't hang
+# indefinitely if a job gets stuck. For typical 96-well plates with 1-4 channels, 30 seconds
+# is sufficient. For larger plates (384-well, 1536-well) with many channels, increase this
+# value proportionally. As a rough guide: ~0.5s per well for processing, so 1536 wells
+# could need up to ~800 seconds in worst case, though parallel processing makes it faster.
+DOWNSAMPLED_VIEW_JOB_TIMEOUT_S = 30.0
+
+# DOWNSAMPLED_VIEW_IDLE_TIMEOUT_S: Time (seconds) to wait after the last job result before
+# assuming all jobs are complete. When the job input queue is empty but the last job may
+# still be processing, we poll for results. If no new results arrive within this timeout,
+# we assume all jobs have finished. 2 seconds is conservative - most jobs complete in
+# <100ms, so this handles occasional slow jobs without adding unnecessary delay.
+DOWNSAMPLED_VIEW_IDLE_TIMEOUT_S = 2.0
+
+# Plate view zoom limits
+# MIN_VISIBLE_PIXELS: At maximum zoom, ensure at least this many pixels are visible
+# in the smallest dimension. 500 pixels allows inspecting cellular-level details.
+PLATE_VIEW_MIN_VISIBLE_PIXELS = 500.0
+# MAX_ZOOM_FACTOR: Cap zoom to prevent performance issues with large texture rendering.
+# 10x is sufficient for most inspection tasks while maintaining smooth interaction.
+PLATE_VIEW_MAX_ZOOM_FACTOR = 10.0
 
 # Controller SN (needed when using multiple teensy-based connections)
 CONTROLLER_SN = None
