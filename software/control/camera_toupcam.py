@@ -827,13 +827,13 @@ class ToupcamCamera(AbstractCamera):
         self._camera.put_Option(toupcam.TOUPCAM_OPTION_TRIGGER, trigger_option_value)
 
         if acquisition_mode == CameraAcquisitionMode.HARDWARE_TRIGGER:
-            if TOUPCAMER_LEVEL_TRIGGER_ENABLE:
+            if TOUPCAM_LEVEL_TRIGGER_ENABLE:
                 try:
                     self._camera.put_Option(toupcam.TOUPCAM_OPTION_TRIGGER, 2)
                 except toupcam.HRESULTException as ex:
                     error_type = hresult_checker(ex)
                     # TODO(imo): Propagate error in some way and handle
-                    self.log.error("Unable to set option_trigger to 2: " + error_type)
+                    self._log.error("Unable to set option_trigger to 2: " + error_type)
 
                 try:
                     # set IO controltype to PWM mode
@@ -843,7 +843,7 @@ class ToupcamCamera(AbstractCamera):
                 except toupcam.HRESULTException as ex:
                     error_type = hresult_checker(ex)
                     # TODO(imo): Propagate error in some way and handle
-                    self.log.error("Unable to select trigger source: " + error_type)
+                    self._log.error("Unable to select trigger source: " + error_type)
             else:
                 # select trigger source to GPIO0
                 try:

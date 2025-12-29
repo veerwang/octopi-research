@@ -756,7 +756,7 @@ PRIOR_STAGE_SN = ""
 DISPLAY_TOUPCAMER_BLACKLEVEL_SETTINGS = False
 
 # level trigger for toupcamera settings
-TOUPCAMER_LEVEL_TRIGGER_ENABLE = False
+TOUPCAM_LEVEL_TRIGGER_ENABLE = False
 
 
 def read_objectives_csv(file_path):

@@ -158,7 +158,7 @@ static const int strobeTimer_interval_us = 100;
 
 // 0: normal trigger mode
 // 1: level trigger mode
-uint8_t trigger_mode = 0;
+volatile uint8_t trigger_mode = 0;
 
 /***************************************************************************************************/
 /******************************************* DAC80508 **********************************************/
@@ -1680,7 +1680,8 @@ void loop() {
           }
         case SET_TRIGGER_MODE:
           {
-            trigger_mode = buffer_rx[2];
+            if (buffer_rx[2] <= 1)
+              trigger_mode = buffer_rx[2];
             break;
           }
         case INITIALIZE:
