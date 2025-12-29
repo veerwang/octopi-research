@@ -39,6 +39,8 @@ from control.core.multi_point_utils import (
     AcquisitionParameters,
     OverallProgressUpdate,
     RegionProgressUpdate,
+    PlateViewInit,
+    PlateViewUpdate,
 )
 from control.core.objective_store import ObjectiveStore
 from control.core.stream_handler import StreamHandler
@@ -178,10 +180,13 @@ class QtMultiPointController(MultiPointController, QObject):
     signal_register_current_fov = Signal(float, float)
     napari_layers_init = Signal(int, int, object)
     napari_layers_update = Signal(np.ndarray, float, float, int, str)  # image, x_mm, y_mm, k, channel
-    signal_set_display_tabs = Signal(list, int)
+    signal_set_display_tabs = Signal(list, int, str)  # configs: list, Nz: int, xy_mode: str
     signal_acquisition_progress = Signal(int, int, int)
     signal_region_progress = Signal(int, int)
     signal_coordinates = Signal(float, float, float, int)  # x, y, z, region
+    # Plate view signals
+    plate_view_init = Signal(int, int, tuple, tuple, list)  # rows, cols, well_slot_shape, fov_grid_shape, channel_names
+    plate_view_update = Signal(int, str, np.ndarray)  # channel_idx, channel_name, plate_image
 
     def __init__(
         self,
@@ -209,6 +214,8 @@ class QtMultiPointController(MultiPointController, QObject):
                 signal_current_fov=self._signal_current_fov_fn,
                 signal_overall_progress=self._signal_overall_progress_fn,
                 signal_region_progress=self._signal_region_progress_fn,
+                signal_plate_view_init=self._signal_plate_view_init_fn,
+                signal_plate_view_update=self._signal_plate_view_update_fn,
             ),
             scan_coordinates=scan_coordinates,
             laser_autofocus_controller=laser_autofocus_controller,
@@ -221,9 +228,9 @@ class QtMultiPointController(MultiPointController, QObject):
         # TODO mpc napari signals
         self._napari_inited_for_this_acquisition = False
         if not self.run_acquisition_current_fov:
-            self.signal_set_display_tabs.emit(self.selected_configurations, self.NZ)
+            self.signal_set_display_tabs.emit(self.selected_configurations, self.NZ, self.xy_mode)
         else:
-            self.signal_set_display_tabs.emit(self.selected_configurations, 2)
+            self.signal_set_display_tabs.emit(self.selected_configurations, 2, self.xy_mode)
         self.signal_acquisition_start.emit()
 
     def _signal_acquisition_finished_fn(self):
@@ -259,6 +266,22 @@ class QtMultiPointController(MultiPointController, QObject):
 
     def _signal_region_progress_fn(self, region_progress: RegionProgressUpdate):
         self.signal_region_progress.emit(region_progress.current_fov, region_progress.region_fovs)
+
+    def _signal_plate_view_init_fn(self, plate_view_init: PlateViewInit):
+        self.plate_view_init.emit(
+            plate_view_init.num_rows,
+            plate_view_init.num_cols,
+            plate_view_init.well_slot_shape,
+            plate_view_init.fov_grid_shape,
+            plate_view_init.channel_names,
+        )
+
+    def _signal_plate_view_update_fn(self, plate_view_update: PlateViewUpdate):
+        self.plate_view_update.emit(
+            plate_view_update.channel_idx,
+            plate_view_update.channel_name,
+            plate_view_update.plate_image,
+        )
 
 
 class HighContentScreeningGui(QMainWindow):
@@ -763,6 +786,11 @@ class HighContentScreeningGui(QMainWindow):
                     self.objectiveStore, self.camera, self.contrastManager
                 )
                 self.imageDisplayTabs.addTab(self.napariMosaicDisplayWidget, "Mosaic View")
+
+                # Plate view for well-based acquisitions (only if enabled)
+                if control._def.DISPLAY_PLATE_VIEW:
+                    self.napariPlateViewWidget = widgets.NapariPlateViewWidget(self.contrastManager)
+                    self.imageDisplayTabs.addTab(self.napariPlateViewWidget, "Plate View")
 
             # z plot
             self.zPlotWidget = widgets.SurfacePlotWidget()
@@ -1289,16 +1317,40 @@ class HighContentScreeningGui(QMainWindow):
                         ]
                     )
 
+                # Setup plate view widget connections (only if plate view is enabled)
+                # Use Qt.QueuedConnection explicitly for thread safety since these signals
+                # are emitted from the acquisition worker thread and received on the main thread.
+                # This ensures the slot is invoked in the receiver's thread event loop.
+                if control._def.DISPLAY_PLATE_VIEW and hasattr(self, "napariPlateViewWidget"):
+                    self.napari_connections["napariPlateViewWidget"] = [
+                        (
+                            self.multipointController.plate_view_init,
+                            self.napariPlateViewWidget.initPlateLayout,
+                            Qt.QueuedConnection,
+                        ),
+                        (
+                            self.multipointController.plate_view_update,
+                            self.napariPlateViewWidget.updatePlateView,
+                            Qt.QueuedConnection,
+                        ),
+                    ]
+
             # Make initial connections
             self.updateNapariConnections()
 
     def updateNapariConnections(self):
         # Update Napari connections based on performance mode. Live widget connections are preserved
+        # Connection tuples can be:
+        #   (signal, slot) - uses default Qt.AutoConnection
+        #   (signal, slot, connection_type) - uses specified connection type (e.g., Qt.QueuedConnection)
         for widget_name, connections in self.napari_connections.items():
             if widget_name != "napariLiveWidget":  # Always keep the live widget connected
                 widget = getattr(self, widget_name, None)
                 if widget:
-                    for signal, slot in connections:
+                    for conn in connections:
+                        signal = conn[0]
+                        slot = conn[1]
+                        connection_type = conn[2] if len(conn) > 2 else None
                         if self.performance_mode:
                             try:
                                 signal.disconnect(slot)
@@ -1307,7 +1359,10 @@ class HighContentScreeningGui(QMainWindow):
                                 pass
                         else:
                             try:
-                                signal.connect(slot)
+                                if connection_type is not None:
+                                    signal.connect(slot, connection_type)
+                                else:
+                                    signal.connect(slot)
                             except TypeError:
                                 # Connection might already exist, which is fine
                                 pass
@@ -1334,14 +1389,19 @@ class HighContentScreeningGui(QMainWindow):
         self.signal_performance_mode_changed.emit(self.performance_mode)
         print(f"Performance mode {'enabled' if self.performance_mode else 'disabled'}")
 
-    def setAcquisitionDisplayTabs(self, selected_configurations, Nz):
+    def setAcquisitionDisplayTabs(self, selected_configurations, Nz, xy_mode=None):
         if self.performance_mode:
             self.imageDisplayTabs.setCurrentIndex(0)
         elif not self.live_only_mode:
             configs = [config.name for config in selected_configurations]
             print(configs)
             if USE_NAPARI_FOR_MOSAIC_DISPLAY and Nz == 1:
-                self.imageDisplayTabs.setCurrentWidget(self.napariMosaicDisplayWidget)
+                # For well-based acquisitions (Select Wells or Load Coordinates), use Plate View
+                is_well_based = xy_mode is not None and xy_mode in ("Select Wells", "Load Coordinates")
+                if is_well_based and hasattr(self, "napariPlateViewWidget") and control._def.DISPLAY_PLATE_VIEW:
+                    self.imageDisplayTabs.setCurrentWidget(self.napariPlateViewWidget)
+                else:
+                    self.imageDisplayTabs.setCurrentWidget(self.napariMosaicDisplayWidget)
 
             elif USE_NAPARI_FOR_MULTIPOINT:
                 self.imageDisplayTabs.setCurrentWidget(self.napariMultiChannelWidget)
