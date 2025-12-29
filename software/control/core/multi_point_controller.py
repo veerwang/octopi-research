@@ -47,7 +47,7 @@ class MultiPointController:
         live_controller: LiveController,
         autofocus_controller: AutoFocusController,
         objective_store: ObjectiveStore,
-        channel_configuration_manager: ChannelConfigurationManager,
+        channel_configuration_mananger: ChannelConfigurationManager,
         callbacks: MultiPointControllerFunctions,
         scan_coordinates: Optional[ScanCoordinates] = None,
         laser_autofocus_controller: Optional[LaserAutofocusController] = None,
@@ -63,7 +63,7 @@ class MultiPointController:
         self.autofocusController: AutoFocusController = autofocus_controller
         self.laserAutoFocusController: LaserAutofocusController = laser_autofocus_controller
         self.objectiveStore: ObjectiveStore = objective_store
-        self.channelConfigurationManager: ChannelConfigurationManager = channel_configuration_manager
+        self.channelConfigurationManager: ChannelConfigurationManager = channel_configuration_mananger
         self.callbacks: MultiPointControllerFunctions = callbacks
         self.multiPointWorker: Optional[MultiPointWorker] = None
         self.fluidics: Optional[Any] = microscope.addons.fluidics
@@ -252,6 +252,7 @@ class MultiPointController:
         # TODO: USE OBJECTIVE STORE DATA
         acquisition_parameters["sensor_pixel_size_um"] = self.camera.get_pixel_size_binned_um()
         acquisition_parameters["tube_lens_mm"] = control._def.TUBE_LENS_MM
+        acquisition_parameters["confocal_mode"] = self.channelConfigurationManager.is_confocal_mode()
         f = open(os.path.join(self.base_path, self.experiment_ID) + "/acquisition parameters.json", "w")
         f.write(json.dumps(acquisition_parameters))
         f.close()
