@@ -16,8 +16,8 @@ void setup() {
 
 void loop() {
 
-  // laser safety interlock
-  if (digitalRead(LASER_INTERLOCK) == HIGH)
+  // laser safety interlock - turn off all lasers if interlock is triggered
+  if (!INTERLOCK_OK())
   {
     digitalWrite(LASER_405nm,LOW);
     digitalWrite(LASER_488nm,LOW);
