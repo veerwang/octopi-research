@@ -947,6 +947,15 @@ MULTIPOINT_PIEZO_UPDATE_DISPLAY = True
 USE_TERMINAL_CONSOLE = False
 USE_JUPYTER_CONSOLE = False
 
+# MCP Control Server - allows external tools (like Claude Code) to control the microscope
+# When enabled, MCP-related menu items appear in Settings (Launch Claude Code, etc.)
+# The server itself starts on-demand when user clicks "Launch Claude Code" or enables it manually.
+# Security note: Server listens only on localhost (127.0.0.1).
+# The python_exec command is disabled by default and must be explicitly enabled in the GUI.
+ENABLE_MCP_SERVER_SUPPORT = True  # Set to False to hide all MCP-related menu items
+CONTROL_SERVER_HOST = "127.0.0.1"
+CONTROL_SERVER_PORT = 5050
+
 try:
     with open("cache/config_file_path.txt", "r") as file:
         for line in file:
