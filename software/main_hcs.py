@@ -258,4 +258,14 @@ if __name__ == "__main__":
             launch_claude_action.triggered.connect(launch_claude_code)
             settings_menu.addAction(launch_claude_action)
 
-    sys.exit(app.exec_())
+    # Use os._exit() to prevent segfault during Python's shutdown sequence.
+    # PyQt5's C++ destructor order conflicts with Python's garbage collector.
+    #
+    # Note: This does NOT skip critical cleanup because:
+    # - closeEvent() runs when the window closes (before app.exec_() returns)
+    # - aboutToQuit signal fires before app.exec_() returns
+    # All hardware cleanup (camera, stage, microcontroller) happens in closeEvent,
+    # which completes before os._exit() is called.
+    exit_code = app.exec_()
+    logging.shutdown()  # Flush log handlers before os._exit() bypasses Python cleanup
+    os._exit(exit_code)
