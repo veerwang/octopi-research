@@ -37,6 +37,7 @@ void init_callbacks()
     cmd_map[DISABLE_STAGE_PID] = &callback_disable_stage_pid;
     cmd_map[INITFILTERWHEEL] = &callback_initfilterwheel;
     cmd_map[SET_AXIS_DISABLE_ENABLE] = &callback_set_axis_disable_enable;
+    cmd_map[SET_TRIGGER_MODE] = &callback_set_trigger_mode;
 
     cmd_map[INITIALIZE] = &callback_initialize;
     cmd_map[RESET] = &callback_reset;
@@ -163,6 +164,12 @@ void callback_set_axis_disable_enable()
     else {
         tmc4361A_tmc2660_enable_driver(&tmc4361[axis]);
     }
+}
+
+void callback_set_trigger_mode()
+{
+    if (buffer_rx[2] <= 1)
+        trigger_mode = buffer_rx[2];
 }
 
 void callback_initialize()
