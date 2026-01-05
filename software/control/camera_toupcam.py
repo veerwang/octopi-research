@@ -827,7 +827,7 @@ class ToupcamCamera(AbstractCamera):
         self._camera.put_Option(toupcam.TOUPCAM_OPTION_TRIGGER, trigger_option_value)
 
         if acquisition_mode == CameraAcquisitionMode.HARDWARE_TRIGGER:
-            if TOUPCAM_LEVEL_TRIGGER_ENABLE:
+            if USE_LEVEL_TRIGGER:
                 try:
                     self._camera.put_Option(toupcam.TOUPCAM_OPTION_TRIGGER, 2)
                 except toupcam.HRESULTException as ex:

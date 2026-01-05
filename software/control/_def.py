@@ -841,8 +841,8 @@ PRIOR_STAGE_SN = ""
 # camera blacklevel settings
 DISPLAY_TOUPCAMER_BLACKLEVEL_SETTINGS = False
 
-# level trigger for toupcamera settings
-TOUPCAM_LEVEL_TRIGGER_ENABLE = False
+# level trigger mode - uses illumination_on_time for trigger pulse width
+USE_LEVEL_TRIGGER = False
 
 
 def read_objectives_csv(file_path):
