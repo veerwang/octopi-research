@@ -191,6 +191,7 @@ class CMD_SET:
     SEND_HARDWARE_TRIGGER = 30
     SET_STROBE_DELAY = 31
     SET_AXIS_DISABLE_ENABLE = 32
+    SET_TRIGGER_MODE = 33
     SET_PIN_LEVEL = 41
     INITFILTERWHEEL = 253
     INITIALIZE = 254
@@ -871,6 +872,14 @@ PRIOR_STAGE_SN = ""
 
 # camera blacklevel settings
 DISPLAY_TOUPCAMER_BLACKLEVEL_SETTINGS = False
+
+
+class HardwareTriggerMode:
+    EDGE = 0  # Fixed pulse width (TRIGGER_PULSE_LENGTH_us)
+    LEVEL = 1  # Variable pulse width (illumination_on_time)
+
+
+HARDWARE_TRIGGER_MODE = HardwareTriggerMode.EDGE
 
 
 def read_objectives_csv(file_path):
