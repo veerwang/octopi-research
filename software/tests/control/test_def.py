@@ -62,6 +62,8 @@ class TestHardwareTriggerMode:
         assert HardwareTriggerMode.EDGE in (0, 1)
         assert HardwareTriggerMode.LEVEL in (0, 1)
         assert HardwareTriggerMode.EDGE != HardwareTriggerMode.LEVEL
+
+
 class TestConfAttributeReader:
     """Tests for conf_attribute_reader function."""
 
