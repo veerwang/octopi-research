@@ -217,6 +217,9 @@ void callback_initialize()
     // DAC init
     set_DAC8050x_config();
     set_DAC8050x_default_gain();
+
+    // reset trigger mode to normal
+    trigger_mode = 0;
 }
 
 void callback_reset()
@@ -240,4 +243,5 @@ void callback_reset()
     is_preparing_for_homing_Z = false;
     is_preparing_for_homing_W = false;
     cmd_id = 0;
+    trigger_mode = 0;
 }
