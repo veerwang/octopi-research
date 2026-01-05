@@ -345,8 +345,9 @@ void do_camera_trigger()
     // for level trigger logic
     for (int camera_channel = 0; camera_channel < 6; camera_channel++)
     {
-      // end the trigger pulse
-      if (trigger_output_level[camera_channel] == LOW && (micros() - timestamp_trigger_rising_edge[camera_channel]) >= illumination_on_time[camera_channel])
+      // end the trigger pulse after strobe_delay + illumination_on_time
+      // so illumination is fully contained within the trigger pulse
+      if (trigger_output_level[camera_channel] == LOW && (micros() - timestamp_trigger_rising_edge[camera_channel]) >= strobe_delay[camera_channel] + illumination_on_time[camera_channel])
       {
         digitalWrite(camera_trigger_pins[camera_channel], HIGH);
         trigger_output_level[camera_channel] = HIGH;
