@@ -288,10 +288,7 @@ class LiveController:
             if self.is_live and self.use_internal_timer_for_hardware_trigger:
                 self._start_triggerred_acquisition()
 
-            if USE_LEVEL_TRIGGER:
-                self.microscope.low_level_drivers.microcontroller.set_trigger_mode(1)
-            else:
-                self.microscope.low_level_drivers.microcontroller.set_trigger_mode(0)
+            self.microscope.low_level_drivers.microcontroller.set_trigger_mode(HARDWARE_TRIGGER_MODE)
 
         if mode == TriggerMode.CONTINUOUS:
             if (self.trigger_mode == TriggerMode.SOFTWARE) or (

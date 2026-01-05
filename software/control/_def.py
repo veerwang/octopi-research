@@ -841,8 +841,13 @@ PRIOR_STAGE_SN = ""
 # camera blacklevel settings
 DISPLAY_TOUPCAMER_BLACKLEVEL_SETTINGS = False
 
-# level trigger mode - uses illumination_on_time for trigger pulse width
-USE_LEVEL_TRIGGER = False
+
+class HardwareTriggerMode:
+    EDGE = 0  # Fixed pulse width (TRIGGER_PULSE_LENGTH_us)
+    LEVEL = 1  # Variable pulse width (illumination_on_time)
+
+
+HARDWARE_TRIGGER_MODE = HardwareTriggerMode.EDGE
 
 
 def read_objectives_csv(file_path):
