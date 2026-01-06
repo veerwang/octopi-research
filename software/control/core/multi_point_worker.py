@@ -202,6 +202,8 @@ class MultiPointWorker:
         ]
         self._downsampled_plate_resolution_um = acquisition_parameters.downsampled_plate_resolution_um
         self._downsampled_z_projection = acquisition_parameters.downsampled_z_projection
+        self._downsampled_interpolation_method = acquisition_parameters.downsampled_interpolation_method
+        self._save_downsampled_well_images = acquisition_parameters.save_downsampled_well_images
         self._plate_num_rows = acquisition_parameters.plate_num_rows
         self._plate_num_cols = acquisition_parameters.plate_num_cols
         self._overlap_pixels: Optional[Tuple[int, int, int, int]] = None
@@ -741,6 +743,8 @@ class MultiPointWorker:
             z_index=info.z_index,
             total_z_levels=self.NZ,
             z_projection_mode=self._downsampled_z_projection,
+            interpolation_method=self._downsampled_interpolation_method,
+            skip_saving=self.skip_saving or not self._save_downsampled_well_images,
         )
 
     def _initialize_downsampled_view_manager(self, image: np.ndarray) -> None:
