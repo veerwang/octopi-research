@@ -794,7 +794,6 @@ class MultiPointController:
                 self.overlap_percent,
             )
 
-            self.callbacks.signal_acquisition_start(acquisition_params)
             self.multiPointWorker = MultiPointWorker(
                 scope=self.microscope,
                 live_controller=self.liveController,
@@ -808,6 +807,9 @@ class MultiPointController:
                 request_abort_fn=self.request_abort_aquisition,
                 extra_job_classes=[],
             )
+
+            # Signal after worker creation so backpressure_controller is available
+            self.callbacks.signal_acquisition_start(acquisition_params)
 
             self.thread = Thread(target=self.multiPointWorker.run, name="Acquisition thread", daemon=True)
             thread_started = True
@@ -937,4 +939,15 @@ class MultiPointController:
         """
         if self.multiPointWorker is not None:
             return self.multiPointWorker.get_plate_view()
+        return None
+
+    @property
+    def backpressure_controller(self) -> Optional["BackpressureController"]:
+        """Get the backpressure controller from the current worker.
+
+        Returns:
+            BackpressureController if worker exists, None otherwise.
+        """
+        if self.multiPointWorker is not None:
+            return getattr(self.multiPointWorker, "_backpressure", None)
         return None

@@ -412,6 +412,7 @@ class HighContentScreeningGui(QMainWindow):
         self.imageArrayDisplayWindow: Optional[core.ImageArrayDisplayWindow] = None
         self.zPlotWidget: Optional[widgets.SurfacePlotWidget] = None
         self.ramMonitorWidget: Optional[widgets.RAMMonitorWidget] = None
+        self.backpressureMonitorWidget: Optional[widgets.BackpressureMonitorWidget] = None
 
         self.recordTabWidget: QTabWidget = QTabWidget()
         self.cameraTabWidget: QTabWidget = QTabWidget()
@@ -975,7 +976,13 @@ class HighContentScreeningGui(QMainWindow):
 
         # RAM monitor widget (always create, visibility controlled by setting)
         self.ramMonitorWidget = widgets.RAMMonitorWidget()
-        self.ramMonitorWidget.setVisible(False)  # Initially hidden; shown when RAM monitoring setting is enabled
+        self.ramMonitorWidget.setVisible(False)
+        self._ram_monitor_should_show = False
+
+        # Backpressure monitor widget (always create, visibility controlled during acquisition)
+        self.backpressureMonitorWidget = widgets.BackpressureMonitorWidget()
+        self.backpressureMonitorWidget.setVisible(False)
+        self._bp_monitor_should_show = False
 
     def setup_layout(self):
         layout = QVBoxLayout()
@@ -1042,6 +1049,11 @@ class HighContentScreeningGui(QMainWindow):
         # Visibility update is deferred to showEvent since status bar isn't visible until window is shown
         if self.ramMonitorWidget is not None:
             self.statusBar().addWidget(self.ramMonitorWidget)  # Left-aligned
+
+        # Add backpressure monitor widget to status bar (next to RAM monitor)
+        # Only visible during acquisition when throttling is enabled
+        if self.backpressureMonitorWidget is not None:
+            self.statusBar().addWidget(self.backpressureMonitorWidget)  # Left-aligned
 
     def _getMainWindowMinimumSize(self):
         """
@@ -1136,6 +1148,10 @@ class HighContentScreeningGui(QMainWindow):
         # RAM monitor widget connections - use controller signals which fire AFTER memory monitor is created
         self.multipointController.signal_acquisition_start.connect(self._connect_ram_monitor_widget)
         self.multipointController.acquisition_finished.connect(self._disconnect_ram_monitor_widget)
+
+        # Backpressure monitor widget connections - fires AFTER worker is created
+        self.multipointController.signal_acquisition_start.connect(self._connect_backpressure_monitor_widget)
+        self.multipointController.acquisition_finished.connect(self._disconnect_backpressure_monitor_widget)
 
         self.recordTabWidget.currentChanged.connect(self.onTabChanged)
         if not self.live_only_mode:
@@ -1775,13 +1791,21 @@ class HighContentScreeningGui(QMainWindow):
             return
 
         if control._def.ENABLE_MEMORY_PROFILING:
+            self._ram_monitor_should_show = True
             self.ramMonitorWidget.setVisible(True)
             self.ramMonitorWidget.start_monitoring()
-            self.log.info(f"RAM monitor: enabled, widget visible={self.ramMonitorWidget.isVisible()}")
+            self.log.info("RAM monitor: enabled, showing widget")
         else:
+            self._ram_monitor_should_show = False
             self.ramMonitorWidget.stop_monitoring()
             self.ramMonitorWidget.setVisible(False)
             self.log.debug("RAM monitor: disabled, hiding widget")
+
+        self._update_status_bar_visibility()
+
+    def _update_status_bar_visibility(self):
+        """Show or hide status bar based on whether any monitor widgets should be visible."""
+        self.statusBar().setVisible(self._ram_monitor_should_show or self._bp_monitor_should_show)
 
     def _connect_ram_monitor_widget(self):
         """Connect RAM monitor widget to memory monitor during acquisition."""
@@ -1813,6 +1837,45 @@ class HighContentScreeningGui(QMainWindow):
                 # Stop monitoring entirely when profiling is disabled
                 self.ramMonitorWidget.stop_monitoring()
                 self.log.debug("RAM monitor: disconnected from acquisition, monitoring stopped (profiling disabled)")
+
+    def _connect_backpressure_monitor_widget(self):
+        """Connect backpressure monitor widget during acquisition."""
+        import control._def
+
+        if not control._def.ACQUISITION_THROTTLING_ENABLED:
+            self.log.debug("Backpressure monitor: throttling disabled, skipping")
+            return
+
+        if self.backpressureMonitorWidget is None:
+            self.log.warning("Backpressure monitor: widget not initialized")
+            return
+
+        # Get the backpressure controller from the multipoint worker
+        bp_controller = self.multipointController.backpressure_controller
+        if bp_controller is None:
+            self.log.debug("Backpressure monitor: no controller available from worker")
+            return
+
+        if not bp_controller.enabled:
+            self.log.debug("Backpressure monitor: controller exists but is disabled")
+            return
+
+        self.log.info("Backpressure monitor: connecting widget to backpressure controller")
+        self._bp_monitor_should_show = True
+        self.backpressureMonitorWidget.start_monitoring(bp_controller)
+        self.backpressureMonitorWidget.setVisible(True)
+        self._update_status_bar_visibility()
+
+    def _disconnect_backpressure_monitor_widget(self):
+        """Disconnect backpressure monitor widget after acquisition."""
+        if self.backpressureMonitorWidget is None:
+            return
+
+        self._bp_monitor_should_show = False
+        self.backpressureMonitorWidget.stop_monitoring()
+        self.backpressureMonitorWidget.setVisible(False)
+        self.log.debug("Backpressure monitor: disconnected from acquisition")
+        self._update_status_bar_visibility()
 
     def onStartLive(self):
         self.imageDisplayTabs.setCurrentIndex(0)
