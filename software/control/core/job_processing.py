@@ -662,6 +662,10 @@ class JobRunner(multiprocessing.Process):
         acquisition_info: Optional[AcquisitionInfo] = None,
         cleanup_stale_ome_files: bool = False,
         log_file_path: Optional[str] = None,
+        # Backpressure shared values (from BackpressureController)
+        bp_pending_jobs: Optional[multiprocessing.Value] = None,
+        bp_pending_bytes: Optional[multiprocessing.Value] = None,
+        bp_capacity_event: Optional[multiprocessing.Event] = None,
     ):
         super().__init__()
         self._log = squid.logging.get_logger(__class__.__name__)
@@ -674,6 +678,14 @@ class JobRunner(multiprocessing.Process):
         self._shutdown_event: multiprocessing.Event = multiprocessing.Event()
         # Track jobs in flight (dispatched but not yet completed)
         self._pending_count = multiprocessing.Value("i", 0)
+
+        # Backpressure tracking (shared with BackpressureController)
+        self._bp_pending_jobs = bp_pending_jobs
+        self._bp_pending_bytes = bp_pending_bytes
+        self._bp_capacity_event = bp_capacity_event
+        # Track accumulated bytes per well for DownsampledViewJob
+        # (image stays in accumulator until well completes)
+        self._well_accumulated_bytes: Dict[str, int] = {}
 
         # Clean up stale metadata files from previous crashed acquisitions
         # Only run when explicitly requested (i.e., when OME-TIFF saving is being used)
@@ -693,18 +705,41 @@ class JobRunner(multiprocessing.Process):
                 )
             job.acquisition_info = self._acquisition_info
 
-        # Increment counter BEFORE putting job in queue to prevent race condition
+        # Calculate image bytes for backpressure tracking
+        image_bytes = 0
+        if self._bp_pending_jobs is not None:
+            if job.capture_image and job.capture_image.image_array is not None:
+                image_bytes = job.capture_image.image_array.nbytes
+
+        # Increment counters BEFORE putting job in queue to prevent race condition
         # where worker processes job before counter is incremented, causing
         # has_pending() to return False while job is still in flight.
         with self._pending_count.get_lock():
             self._pending_count.value += 1
+        if self._bp_pending_jobs is not None:
+            with self._bp_pending_jobs.get_lock():
+                self._bp_pending_jobs.value += 1
+            with self._bp_pending_bytes.get_lock():
+                self._bp_pending_bytes.value += image_bytes
+
         try:
             self._input_queue.put_nowait(job)
-        except Exception:
-            # Roll back pending count if enqueue fails so has_pending() remains accurate
-            with self._pending_count.get_lock():
-                self._pending_count.value -= 1
-            raise
+        except Exception as original_exc:
+            # Roll back ALL counters if enqueue fails
+            try:
+                with self._pending_count.get_lock():
+                    self._pending_count.value -= 1
+                if self._bp_pending_jobs is not None:
+                    with self._bp_pending_jobs.get_lock():
+                        self._bp_pending_jobs.value = max(0, self._bp_pending_jobs.value - 1)
+                    with self._bp_pending_bytes.get_lock():
+                        self._bp_pending_bytes.value = max(0, self._bp_pending_bytes.value - image_bytes)
+            except Exception as rollback_exc:
+                self._log.error(
+                    f"Failed to rollback counters after dispatch failure: {rollback_exc}. "
+                    f"Counters may be inconsistent. Original error: {original_exc}"
+                )
+            raise original_exc
         return True
 
     def output_queue(self) -> multiprocessing.Queue:
@@ -762,6 +797,9 @@ class JobRunner(multiprocessing.Process):
         worker_log_msg = f", worker_log={worker_log_path}" if worker_log_path else ""
         self._log.info(f"JobRunner subprocess started (PID={os.getpid()}{worker_log_msg})")
 
+        # Clear any stale tracking from previous acquisition (defensive)
+        self._well_accumulated_bytes = {}
+
         # Start memory monitoring for the worker process
         start_worker_monitoring(sample_interval_ms=200)
         log_memory("WORKER_START", include_children=False)
@@ -811,6 +849,59 @@ class JobRunner(multiprocessing.Process):
                     with self._pending_count.get_lock():
                         self._pending_count.value -= 1
 
+                    # Backpressure tracking
+                    if self._bp_pending_jobs is not None:
+                        # Job count decrements for all jobs
+                        with self._bp_pending_jobs.get_lock():
+                            self._bp_pending_jobs.value = max(0, self._bp_pending_jobs.value - 1)
+
+                        # Calculate image bytes
+                        image_bytes = 0
+                        if job.capture_image and job.capture_image.image_array is not None:
+                            image_bytes = job.capture_image.image_array.nbytes
+                        else:
+                            self._log.debug(
+                                f"Job {job.job_id} has no capture_image or image_array, byte tracking skipped"
+                            )
+
+                        # Byte tracking: DownsampledViewJob needs special handling
+                        # because images are held in accumulator until well completes
+                        if isinstance(job, DownsampledViewJob):
+                            # Track accumulated bytes per well
+                            well_id = job.well_id
+                            self._well_accumulated_bytes[well_id] = (
+                                self._well_accumulated_bytes.get(well_id, 0) + image_bytes
+                            )
+
+                            # Check if this is the final FOV for the well
+                            # (last FOV index, last channel, last z-level)
+                            # We use indices instead of checking result because:
+                            # - If exception occurs, result is None but accumulator IS cleared
+                            #   (DownsampledViewJob.run() has a finally block that pops the accumulator
+                            #    when is_complete() returns True, regardless of success/exception)
+                            # - We must decrement bytes when accumulator is cleared (final FOV)
+                            is_final_fov = (
+                                job.fov_index == job.total_fovs_in_well - 1
+                                and job.channel_idx == job.total_channels - 1
+                                and job.z_index == job.total_z_levels - 1
+                            )
+
+                            if is_final_fov:
+                                # Final FOV: decrement ALL accumulated bytes for this well
+                                total_well_bytes = self._well_accumulated_bytes.pop(well_id, 0)
+                                with self._bp_pending_bytes.get_lock():
+                                    self._bp_pending_bytes.value = max(
+                                        0, self._bp_pending_bytes.value - total_well_bytes
+                                    )
+                            # Signal capacity available - job count decreased even for intermediate FOVs
+                            if self._bp_capacity_event is not None:
+                                self._bp_capacity_event.set()
+                        else:
+                            # Normal jobs: decrement bytes immediately
+                            with self._bp_pending_bytes.get_lock():
+                                self._bp_pending_bytes.value = max(0, self._bp_pending_bytes.value - image_bytes)
+                            if self._bp_capacity_event is not None:
+                                self._bp_capacity_event.set()
         # Stop memory monitoring and log final report
         log_memory("WORKER_SHUTDOWN", include_children=False)
         stop_worker_monitoring()
