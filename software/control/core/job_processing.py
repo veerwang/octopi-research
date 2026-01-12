@@ -668,6 +668,11 @@ class JobRunner(multiprocessing.Process):
         bp_capacity_event: Optional[multiprocessing.Event] = None,
     ):
         super().__init__()
+        # Daemon processes are terminated when the main process exits, ensuring
+        # cleanup even if the main process crashes. Note: forceful termination
+        # means the shutdown cleanup code (releasing incomplete well bytes) may
+        # be skipped - see the cleanup block after the main while loop in run().
+        self.daemon = True
         self._log = squid.logging.get_logger(__class__.__name__)
         self._acquisition_info = acquisition_info
         self._log_file_path = log_file_path  # Will be used in subprocess to set up file logging
@@ -888,6 +893,31 @@ class JobRunner(multiprocessing.Process):
                         # Signal capacity available for all job completions
                         if self._bp_capacity_event is not None:
                             self._bp_capacity_event.set()
+
+        # Release accumulated bytes for incomplete wells on shutdown
+        # (prevents bytes from being permanently "leaked" if acquisition is interrupted mid-well)
+        # Note: Forced termination (SIGTERM/SIGKILL) may skip this cleanup.
+        # Concurrency note: This code runs after the main while loop exits, so no concurrent
+        # access to _well_accumulated_bytes is possible within this process - all job
+        # processing has stopped. The _well_accumulated_bytes dict is process-local.
+        try:
+            if self._bp_pending_bytes is not None and self._well_accumulated_bytes:
+                total_unreleased = sum(self._well_accumulated_bytes.values())
+                well_count = len(self._well_accumulated_bytes)
+                self._well_accumulated_bytes.clear()
+
+                if total_unreleased > 0:
+                    self._log.info(
+                        f"Releasing {total_unreleased / (1024*1024):.1f}MB from "
+                        f"{well_count} incomplete wells on shutdown"
+                    )
+                    with self._bp_pending_bytes.get_lock():
+                        self._bp_pending_bytes.value = max(0, self._bp_pending_bytes.value - total_unreleased)
+                    if self._bp_capacity_event is not None:
+                        self._bp_capacity_event.set()
+        except Exception:
+            self._log.exception("Failed to release bytes for incomplete wells during shutdown")
+
         # Stop memory monitoring and log final report
         log_memory("WORKER_SHUTDOWN", include_children=False)
         stop_worker_monitoring()

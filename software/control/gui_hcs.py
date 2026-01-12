@@ -1943,6 +1943,13 @@ class HighContentScreeningGui(QMainWindow):
         # Save camera settings (binning, pixel format)
         squid.camera.settings_cache.save_camera_settings(self.camera)
 
+        # Stop any running acquisition and clean up multiprocessing resources
+        if self.multipointController is not None:
+            try:
+                self.multipointController.close()
+            except Exception:
+                self.log.exception("Error closing multipoint controller during shutdown")
+
         self.movement_update_timer.stop()
 
         if self.emission_filter_wheel:

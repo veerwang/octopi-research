@@ -135,3 +135,18 @@ class BackpressureController:
             self._pending_jobs.value = 0
         with self._pending_bytes.get_lock():
             self._pending_bytes.value = 0
+
+    def close(self) -> None:
+        """Allow multiprocessing resources to be garbage collected.
+
+        Clears references to multiprocessing.Value and multiprocessing.Event objects,
+        allowing the garbage collector to release their underlying system semaphores.
+        This helps prevent the "leaked semaphore objects" warning on exit.
+
+        This method is idempotent and safe to call multiple times.
+        """
+        if self._pending_jobs is None:
+            return
+        self._pending_jobs = None
+        self._pending_bytes = None
+        self._capacity_event = None

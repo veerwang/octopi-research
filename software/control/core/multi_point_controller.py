@@ -951,3 +951,72 @@ class MultiPointController:
         if self.multiPointWorker is not None:
             return getattr(self.multiPointWorker, "_backpressure", None)
         return None
+
+    _PROCESS_TERMINATE_TIMEOUT_S = 1.0
+
+    def close(self, timeout_s: float = 5.0) -> None:
+        """Clean up resources on application shutdown.
+
+        Aborts any running acquisition and waits for cleanup to complete.
+        If job runner processes do not terminate gracefully, they are forcefully
+        terminated (SIGTERM) then killed (SIGKILL). This may result in incomplete
+        well images or unsaved data.
+
+        Args:
+            timeout_s: Maximum time to wait for acquisition thread to finish.
+                      Job runner processes have a separate timeout defined by
+                      _PROCESS_TERMINATE_TIMEOUT_S.
+        """
+        # Abort any running acquisition
+        try:
+            if self.acquisition_in_progress():
+                self.request_abort_aquisition()
+                if self.thread is not None:
+                    self.thread.join(timeout=timeout_s)
+                    if self.thread.is_alive():
+                        self._log.warning(f"Acquisition thread did not stop within {timeout_s}s")
+        except Exception:
+            self._log.exception("Error aborting acquisition during close")
+
+        # Stop memory monitor if running
+        try:
+            if self._memory_monitor is not None:
+                self._memory_monitor.stop()
+                self._memory_monitor = None
+        except Exception:
+            self._log.exception("Error stopping memory monitor during close")
+
+        # Forcefully terminate any remaining job runner processes
+        if self.multiPointWorker is not None:
+            job_runners = getattr(self.multiPointWorker, "_job_runners", [])
+            for job_class, job_runner in job_runners:
+                try:
+                    if job_runner is not None and job_runner.is_alive():
+                        self._log.warning(f"Terminating {job_class.__name__} job runner (abnormal shutdown)")
+                        job_runner.terminate()
+                        job_runner.join(timeout=self._PROCESS_TERMINATE_TIMEOUT_S)
+                        # If still alive after terminate, force kill
+                        if job_runner.is_alive():
+                            self._log.warning(f"Force killing {job_class.__name__} job runner")
+                            job_runner.kill()
+                            job_runner.join(timeout=self._PROCESS_TERMINATE_TIMEOUT_S)
+                            # Final check - warn if zombie process remains
+                            if job_runner.is_alive():
+                                self._log.error(
+                                    f"{job_class.__name__} job runner could not be terminated - "
+                                    "zombie process may remain"
+                                )
+                except Exception:
+                    self._log.exception(f"Error terminating {job_class.__name__} job runner")
+
+            # Release backpressure controller resources to prevent semaphore leaks
+            try:
+                backpressure = getattr(self.multiPointWorker, "_backpressure", None)
+                if backpressure is not None:
+                    backpressure.close()
+            except Exception:
+                self._log.exception("Error closing backpressure controller during shutdown")
+
+        # Clear worker reference
+        self.multiPointWorker = None
+        self.thread = None
