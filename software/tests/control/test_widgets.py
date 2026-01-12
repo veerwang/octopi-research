@@ -1,11 +1,13 @@
 import logging
-from unittest.mock import MagicMock, patch
+import os
+import tempfile
+from unittest.mock import MagicMock, Mock, patch
 
 import pytest
 
 import control._def
 import control.microscope
-from control.widgets import check_ram_available_with_error_dialog, SurfacePlotWidget
+from control.widgets import check_ram_available_with_error_dialog, NDViewerTab, SurfacePlotWidget
 
 import tests.control.test_stubs as ts
 
@@ -1029,3 +1031,320 @@ class TestBackpressureMonitorWidgetTimer:
 
         assert widget._controller is None
         assert not widget._update_timer.isActive()
+
+
+# ============================================================================
+# NDViewerTab Tests
+# ============================================================================
+
+
+@pytest.fixture
+def ndviewer_tab(qtbot):
+    """Create an NDViewerTab instance for testing."""
+    widget = NDViewerTab()
+    qtbot.addWidget(widget)
+    return widget
+
+
+class TestNDViewerTab:
+    """Tests for NDViewerTab lifecycle and state management."""
+
+    def test_initial_state(self, ndviewer_tab):
+        """Test that widget initializes with correct state."""
+        widget = ndviewer_tab
+        assert widget._viewer is None
+        assert widget._dataset_path is None
+        # Check placeholder exists with correct text (isVisible() is False before widget shown)
+        assert widget._placeholder is not None
+        assert widget._placeholder.text() == NDViewerTab._PLACEHOLDER_WAITING
+
+    def test_set_dataset_path_none_shows_placeholder(self, ndviewer_tab):
+        """Test that setting None path shows the waiting placeholder."""
+        widget = ndviewer_tab
+        widget.set_dataset_path(None)
+
+        assert widget._dataset_path is None
+        assert widget._placeholder is not None
+        assert widget._placeholder.text() == NDViewerTab._PLACEHOLDER_WAITING
+
+    def test_set_dataset_path_invalid_shows_error(self, ndviewer_tab):
+        """Test that setting an invalid path shows error placeholder."""
+        widget = ndviewer_tab
+        invalid_path = "/nonexistent/path/to/dataset"
+
+        widget.set_dataset_path(invalid_path)
+
+        assert widget._dataset_path == invalid_path
+        assert widget._placeholder is not None
+        assert "not found" in widget._placeholder.text()
+
+    def test_set_dataset_path_same_path_skips(self, ndviewer_tab):
+        """Test that setting the same path does not re-process."""
+        widget = ndviewer_tab
+        path = "/some/path"
+
+        # First call sets path (will show error since invalid, but that's ok for this test)
+        widget.set_dataset_path(path)
+        assert widget._dataset_path == path
+
+        # Track placeholder text after first call
+        text_after_first = widget._placeholder.text()
+
+        # Second call with same path should skip processing
+        widget.set_dataset_path(path)
+
+        # State should be unchanged
+        assert widget._dataset_path == path
+        assert widget._placeholder.text() == text_after_first
+
+    def test_set_dataset_path_clears_when_none_after_valid(self, ndviewer_tab):
+        """Test that setting None after a path clears the view."""
+        widget = ndviewer_tab
+
+        # Set to an invalid path first (so we have a non-None _dataset_path)
+        widget.set_dataset_path("/invalid/path")
+        assert widget._dataset_path == "/invalid/path"
+
+        # Now set to None
+        widget.set_dataset_path(None)
+
+        assert widget._dataset_path is None
+        assert widget._placeholder is not None
+        assert widget._placeholder.text() == NDViewerTab._PLACEHOLDER_WAITING
+
+    def test_show_placeholder_hides_existing_viewer(self, ndviewer_tab):
+        """Test that _show_placeholder hides an existing viewer."""
+        widget = ndviewer_tab
+
+        # Inject a mock viewer
+        mock_viewer = Mock()
+        widget._viewer = mock_viewer
+
+        widget._show_placeholder("Test message")
+
+        mock_viewer.setVisible.assert_called_with(False)
+        assert widget._placeholder.text() == "Test message"
+
+
+class TestNDViewerTabNavigation:
+    """Tests for NDViewerTab FOV navigation."""
+
+    def test_go_to_fov_no_viewer_returns_false(self, ndviewer_tab):
+        """Test that go_to_fov returns False when no viewer is loaded."""
+        widget = ndviewer_tab
+        result = widget.go_to_fov("A1", 0)
+        assert result is False
+
+    def test_go_to_fov_with_mock_viewer(self, ndviewer_tab):
+        """Test go_to_fov with a mocked viewer."""
+        widget = ndviewer_tab
+
+        # Create mock viewer
+        mock_viewer = Mock()
+        mock_viewer.has_fov_dimension.return_value = True
+        mock_viewer.get_fov_list.return_value = [
+            {"region": "A1", "fov": 0},
+            {"region": "A1", "fov": 1},
+            {"region": "B2", "fov": 0},
+        ]
+        mock_viewer.set_current_index.return_value = True
+        widget._viewer = mock_viewer
+
+        # Navigate to A1, fov 0 (should be flat index 0)
+        result = widget.go_to_fov("A1", 0)
+
+        assert result is True
+        mock_viewer.set_current_index.assert_called_once_with("fov", 0)
+
+    def test_go_to_fov_finds_correct_flat_index(self, ndviewer_tab):
+        """Test that go_to_fov finds the correct flat index."""
+        widget = ndviewer_tab
+
+        # Create mock viewer with multiple wells
+        mock_viewer = Mock()
+        mock_viewer.has_fov_dimension.return_value = True
+        mock_viewer.get_fov_list.return_value = [
+            {"region": "A1", "fov": 0},
+            {"region": "A1", "fov": 1},
+            {"region": "B2", "fov": 0},  # flat index 2
+            {"region": "B2", "fov": 1},
+        ]
+        mock_viewer.set_current_index.return_value = True
+        widget._viewer = mock_viewer
+
+        # Navigate to B2, fov 0 (should be flat index 2)
+        result = widget.go_to_fov("B2", 0)
+
+        assert result is True
+        mock_viewer.set_current_index.assert_called_once_with("fov", 2)
+
+    def test_go_to_fov_not_found_returns_false(self, ndviewer_tab):
+        """Test that go_to_fov returns False when FOV not found."""
+        widget = ndviewer_tab
+
+        mock_viewer = Mock()
+        mock_viewer.has_fov_dimension.return_value = True
+        mock_viewer.get_fov_list.return_value = [
+            {"region": "A1", "fov": 0},
+        ]
+        widget._viewer = mock_viewer
+
+        # Try to navigate to non-existent well
+        result = widget.go_to_fov("Z9", 99)
+
+        assert result is False
+        mock_viewer.set_current_index.assert_not_called()
+
+    def test_go_to_fov_no_fov_dimension_returns_false(self, ndviewer_tab):
+        """Test that go_to_fov returns False when no fov dimension."""
+        widget = ndviewer_tab
+
+        mock_viewer = Mock()
+        mock_viewer.has_fov_dimension.return_value = False
+        widget._viewer = mock_viewer
+
+        result = widget.go_to_fov("A1", 0)
+
+        assert result is False
+
+    def test_go_to_fov_handles_exception(self, ndviewer_tab):
+        """Test that go_to_fov handles exceptions gracefully."""
+        widget = ndviewer_tab
+
+        mock_viewer = Mock()
+        mock_viewer.has_fov_dimension.side_effect = RuntimeError("Viewer error")
+        widget._viewer = mock_viewer
+
+        # Should not raise, should return False
+        result = widget.go_to_fov("A1", 0)
+
+        assert result is False
+
+    def test_go_to_fov_set_current_index_fails_returns_false(self, ndviewer_tab):
+        """Test go_to_fov returns False when set_current_index fails."""
+        widget = ndviewer_tab
+
+        mock_viewer = Mock()
+        mock_viewer.has_fov_dimension.return_value = True
+        mock_viewer.get_fov_list.return_value = [{"region": "A1", "fov": 0}]
+        mock_viewer.set_current_index.return_value = False  # Navigation fails
+        widget._viewer = mock_viewer
+
+        result = widget.go_to_fov("A1", 0)
+
+        assert result is False
+        mock_viewer.set_current_index.assert_called_once_with("fov", 0)
+
+    def test_go_to_fov_get_fov_list_exception_returns_false(self, ndviewer_tab):
+        """Test go_to_fov handles get_fov_list exceptions."""
+        widget = ndviewer_tab
+
+        mock_viewer = Mock()
+        mock_viewer.has_fov_dimension.return_value = True
+        mock_viewer.get_fov_list.side_effect = RuntimeError("FOV list error")
+        widget._viewer = mock_viewer
+
+        result = widget.go_to_fov("A1", 0)
+
+        assert result is False
+
+
+class TestNDViewerTabCleanup:
+    """Tests for NDViewerTab cleanup and close behavior."""
+
+    def test_close_with_no_viewer(self, ndviewer_tab):
+        """Test that close() is safe when no viewer exists."""
+        widget = ndviewer_tab
+        assert widget._viewer is None
+
+        # Should not raise
+        widget.close()
+
+        assert widget._viewer is None
+        assert widget._dataset_path is None
+
+    def test_close_clears_viewer(self, ndviewer_tab):
+        """Test that close() clears the viewer reference."""
+        widget = ndviewer_tab
+
+        # Create mock viewer
+        mock_viewer = Mock()
+        widget._viewer = mock_viewer
+        widget._dataset_path = "/some/path"
+
+        widget.close()
+
+        assert widget._viewer is None
+        assert widget._dataset_path is None
+        mock_viewer.close.assert_called_once()
+
+    def test_close_handles_viewer_exception(self, ndviewer_tab):
+        """Test that close() handles viewer close() exceptions."""
+        widget = ndviewer_tab
+
+        mock_viewer = Mock()
+        mock_viewer.close.side_effect = RuntimeError("Close error")
+        widget._viewer = mock_viewer
+        widget._dataset_path = "/some/path"
+
+        # Should not raise
+        widget.close()
+
+        # Should still clear references despite exception
+        assert widget._viewer is None
+        assert widget._dataset_path is None
+
+    def test_double_close_safe(self, ndviewer_tab):
+        """Test that calling close() twice is safe."""
+        widget = ndviewer_tab
+
+        mock_viewer = Mock()
+        widget._viewer = mock_viewer
+
+        widget.close()
+        assert mock_viewer.close.call_count == 1
+
+        # Second close should not raise or call viewer.close() again
+        widget.close()
+        assert mock_viewer.close.call_count == 1
+
+
+class TestNDViewerTabImportHandling:
+    """Tests for NDViewerTab import and viewer creation handling."""
+
+    def test_reload_existing_viewer(self, ndviewer_tab):
+        """Test that existing viewer is reloaded when path changes."""
+        widget = ndviewer_tab
+
+        # Set up a mock viewer that's already loaded
+        mock_viewer = Mock()
+        mock_viewer.load_dataset.return_value = None
+        mock_viewer.refresh.return_value = None
+        widget._viewer = mock_viewer
+        widget._dataset_path = "/old/path"
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            widget.set_dataset_path(tmpdir)
+
+            # Should have called load_dataset and refresh on existing viewer
+            mock_viewer.load_dataset.assert_called_once_with(tmpdir)
+            mock_viewer.refresh.assert_called_once()
+
+    def test_set_dataset_path_exception_shows_error(self, ndviewer_tab):
+        """Test that viewer creation exception is handled."""
+        widget = ndviewer_tab
+
+        # Inject a mock viewer that raises on load
+        mock_viewer = Mock()
+        mock_viewer.load_dataset.side_effect = RuntimeError("Load failed")
+        widget._viewer = mock_viewer
+        widget._dataset_path = "/old/path"
+
+        # Try to load new path - should catch exception and show error
+        with tempfile.TemporaryDirectory() as tmpdir:
+            widget.set_dataset_path(tmpdir)
+
+            # Should show error in placeholder
+            assert (
+                "failed to load" in widget._placeholder.text().lower() or "error" in widget._placeholder.text().lower()
+            )
