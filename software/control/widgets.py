@@ -7377,6 +7377,7 @@ class WellplateMultiPointWidget(AcquisitionYAMLDropMixin, QFrame):
             self.multipointController.set_use_piezo(self.checkbox_usePiezo.isChecked())
             self.multipointController.set_af_flag(self.checkbox_withAutofocus.isChecked())
             self.multipointController.set_reflection_af_flag(self.checkbox_withReflectionAutofocus.isChecked())
+            self.multipointController.set_base_path(self.lineEdit_savingDir.text())
             self.multipointController.set_use_fluidics(False)
             self.multipointController.set_skip_saving(self.checkbox_skipSaving.isChecked())
             self.multipointController.set_widget_type("wellplate")
@@ -8134,6 +8135,7 @@ class MultiPointWithFluidicsWidget(QFrame):
             self.multipointController.set_NZ(self.entry_NZ.value())
             self.multipointController.set_use_piezo(self.checkbox_usePiezo.isChecked())
             self.multipointController.set_reflection_af_flag(self.checkbox_withReflectionAutofocus.isChecked())
+            self.multipointController.set_base_path(self.lineEdit_savingDir.text())
             self.multipointController.set_use_fluidics(True)  # may be set to False from other widgets
             self.multipointController.set_selected_configurations(
                 [item.text() for item in self.list_configurations.selectedItems()]
@@ -13858,7 +13860,6 @@ class RAMMonitorWidget(QWidget):
     State Invariants:
         - When _memory_monitor is set, updates come via signals (timer is paused)
         - When _memory_monitor is None, updates come via timer
-        - _session_peak_mb tracks the peak across the entire session
 
     Attributes:
         label_current: QLabel showing current RAM usage
@@ -13868,7 +13869,7 @@ class RAMMonitorWidget(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self._memory_monitor = None
-        self._session_peak_mb = 0.0  # Track peak across the session
+        self._session_peak_mb = 0.0  # Track peak RAM usage across the session
         self._log = logging.getLogger("squid." + self.__class__.__name__)
         self._setup_ui()
         self._setup_timer()
@@ -13880,22 +13881,42 @@ class RAMMonitorWidget(QWidget):
 
         self.label_icon = QLabel("RAM usage:")
         self.label_icon.setStyleSheet("font-weight: bold;")
-        self.label_current = QLabel("--")
-        self.label_separator = QLabel("|")
-        self.label_separator.setStyleSheet("color: #666;")
+
+        # Value labels with fixed widths for stable layout
+        fm = QFontMetrics(self.font())
+        self.label_current = self._create_value_label(fm.horizontalAdvance("88.88 GB"))
+        self.label_peak = self._create_value_label(fm.horizontalAdvance("88.88 GB"))
+        self.label_available = self._create_value_label(fm.horizontalAdvance("888.8 GB"))
+
+        # Separator and descriptor labels
+        separator_style = "color: #666;"
+        self.label_separator1 = QLabel("|")
+        self.label_separator1.setStyleSheet(separator_style)
+        self.label_peak_label = QLabel("peak:")
+        self.label_peak_label.setStyleSheet(separator_style)
+        self.label_separator2 = QLabel("|")
+        self.label_separator2.setStyleSheet(separator_style)
         self.label_available_label = QLabel("available:")
-        self.label_available_label.setStyleSheet("color: #666;")
-        self.label_available = QLabel("--")
+        self.label_available_label.setStyleSheet(separator_style)
 
         layout.addWidget(self.label_icon)
         layout.addWidget(self.label_current)
-        layout.addWidget(self.label_separator)
+        layout.addWidget(self.label_separator1)
+        layout.addWidget(self.label_peak_label)
+        layout.addWidget(self.label_peak)
+        layout.addWidget(self.label_separator2)
         layout.addWidget(self.label_available_label)
         layout.addWidget(self.label_available)
 
+    def _create_value_label(self, width: int) -> QLabel:
+        """Create a left-aligned value label with fixed width."""
+        label = QLabel("--")
+        label.setFixedWidth(width)
+        label.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+        return label
+
     def _setup_timer(self):
         """Setup timer for periodic memory updates when not connected to monitor."""
-        # Note: QTimer is imported via qtpy at the top of the file
         self._update_timer = QTimer(self)
         self._update_timer.timeout.connect(self._update_memory_display)
         self._update_timer.setInterval(1000)  # Update every 1 second
@@ -13914,15 +13935,15 @@ class RAMMonitorWidget(QWidget):
         self._log.info("Starting continuous RAM monitoring timer")
         if reset_peak:
             self._session_peak_mb = 0.0
+            self.label_peak.setText("--")
         self._update_memory_display()  # Initial update
         self._update_timer.start()
-        self._log.debug(f"Timer active: {self._update_timer.isActive()}")
-        self._log.debug(f"Widget visible: {self.isVisible()}, label text: {self.label_current.text()}")
 
     def stop_monitoring(self):
         """Stop continuous memory monitoring."""
         self._update_timer.stop()
         self.label_current.setText("--")
+        self.label_peak.setText("--")
         self.label_available.setText("--")
 
     def _update_memory_display(self):
@@ -13940,10 +13961,13 @@ class RAMMonitorWidget(QWidget):
             if footprint_mb > 0:
                 self._session_peak_mb = max(self._session_peak_mb, footprint_mb)
                 current_gb = footprint_mb / 1024
+                peak_gb = self._session_peak_mb / 1024
                 self.label_current.setText(f"{current_gb:.2f} GB")
+                self.label_peak.setText(f"{peak_gb:.2f} GB")
             else:
                 # Footprint unavailable on this platform/configuration
                 self.label_current.setText("N/A")
+                self.label_peak.setText("N/A")
                 self._log.debug("Memory footprint unavailable (platform may not support this metric)")
 
             # Get system available memory
@@ -13993,9 +14017,12 @@ class RAMMonitorWidget(QWidget):
         Args:
             footprint_mb: Current memory footprint in megabytes.
         """
-        # Display in GB for readability
+        # Track peak and display in GB for readability
+        self._session_peak_mb = max(self._session_peak_mb, footprint_mb)
         current_gb = footprint_mb / 1024
+        peak_gb = self._session_peak_mb / 1024
         self.label_current.setText(f"{current_gb:.2f} GB")
+        self.label_peak.setText(f"{peak_gb:.2f} GB")
 
         # Also update available RAM
         try:
@@ -14047,12 +14074,13 @@ class BackpressureMonitorWidget(QWidget):
         self.label_prefix = QLabel("Queue:")
         self.label_prefix.setStyleSheet("font-weight: bold;")
 
-        self.label_jobs = QLabel("--")
+        # Value labels with fixed widths for stable layout
+        fm = QFontMetrics(self.font())
+        self.label_jobs = self._create_value_label(fm.horizontalAdvance("888/888 jobs"))
+        self.label_bytes = self._create_value_label(fm.horizontalAdvance("8888.8/8888.8 MB"))
 
         self.label_separator = QLabel("|")
         self.label_separator.setStyleSheet("color: #666;")
-
-        self.label_bytes = QLabel("--")
 
         self.label_throttled = QLabel("")
         self.label_throttled.setStyleSheet("color: #e74c3c; font-weight: bold;")
@@ -14062,6 +14090,13 @@ class BackpressureMonitorWidget(QWidget):
         layout.addWidget(self.label_separator)
         layout.addWidget(self.label_bytes)
         layout.addWidget(self.label_throttled)
+
+    def _create_value_label(self, width: int) -> QLabel:
+        """Create a left-aligned value label with fixed width."""
+        label = QLabel("--")
+        label.setFixedWidth(width)
+        label.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+        return label
 
     def _setup_timer(self):
         """Setup timer for periodic backpressure updates."""
@@ -14105,8 +14140,7 @@ class BackpressureMonitorWidget(QWidget):
             self.label_jobs.setText(f"{stats.pending_jobs}/{stats.max_pending_jobs} jobs")
             self.label_bytes.setText(f"{stats.pending_bytes_mb:.1f}/{stats.max_pending_mb:.1f} MB")
 
-            # Sticky throttle indicator: show [THROTTLED] and keep visible for
-            # THROTTLE_STICKY_CYCLES after throttling releases
+            # Sticky throttle indicator: stays visible for THROTTLE_STICKY_CYCLES after release
             if stats.is_throttled:
                 self._throttle_sticky_counter = self.THROTTLE_STICKY_CYCLES
                 self.label_throttled.setText("[THROTTLED]")
@@ -14116,10 +14150,12 @@ class BackpressureMonitorWidget(QWidget):
                     self.label_throttled.setText("")
 
         except (BrokenPipeError, EOFError) as e:
-            # Multiprocessing communication ended - acquisition likely finished
+            # Multiprocessing communication ended - acquisition finished
             self._log.debug(f"Backpressure controller communication ended: {e}")
+            self.stop_monitoring()
         except Exception as e:
             self._log.warning(f"Backpressure monitor update failed: {e}")
+            self.stop_monitoring()
 
     def closeEvent(self, event):
         """Ensure monitoring resources are cleaned up when the widget closes."""
@@ -14127,4 +14163,5 @@ class BackpressureMonitorWidget(QWidget):
             self.stop_monitoring()
         except Exception as e:
             self._log.debug(f"Error stopping monitoring on close: {e}")
+
         super().closeEvent(event)
