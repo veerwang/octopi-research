@@ -28,10 +28,7 @@ from control._def import *
 
 # app specific libraries
 from control.NL5Widget import NL5Widget
-from control.core.channel_configuration_mananger import ChannelConfigurationManager
-from control.core.configuration_mananger import ConfigurationManager
 from control.core.contrast_manager import ContrastManager
-from control.core.laser_af_settings_manager import LaserAFSettingManager
 from control.core.live_controller import LiveController
 from control.core.multi_point_controller import MultiPointController
 from control.core.multi_point_utils import (
@@ -195,7 +192,6 @@ class QtMultiPointController(MultiPointController, QObject):
         live_controller: LiveController,
         autofocus_controller: AutoFocusController,
         objective_store: ObjectiveStore,
-        channel_configuration_mananger: ChannelConfigurationManager,
         scan_coordinates: Optional[ScanCoordinates] = None,
         laser_autofocus_controller: Optional[LaserAutofocusController] = None,
         fluidics: Optional[Any] = None,
@@ -206,7 +202,6 @@ class QtMultiPointController(MultiPointController, QObject):
             live_controller=live_controller,
             autofocus_controller=autofocus_controller,
             objective_store=objective_store,
-            channel_configuration_mananger=channel_configuration_mananger,
             callbacks=MultiPointControllerFunctions(
                 signal_acquisition_start=self._signal_acquisition_start_fn,
                 signal_acquisition_finished=self._signal_acquisition_finished_fn,
@@ -242,9 +237,9 @@ class QtMultiPointController(MultiPointController, QObject):
     def _signal_new_image_fn(self, frame: squid.abc.CameraFrame, info: CaptureInfo):
         self.image_to_display.emit(frame.frame)
         if not USE_NAPARI_FOR_MULTIPOINT:
-            # TODO: This will fail - AcquisitionChannel doesn't have illumination_source attribute.
-            # Need to call info.configuration.get_illumination_source_code(illumination_config) instead.
-            self.image_to_display_multi.emit(frame.frame, info.configuration.illumination_source)
+            ill_config = self.microscope.config_repo.get_illumination_config()
+            source_code = info.configuration.get_illumination_source_code(ill_config) if ill_config else 0
+            self.image_to_display_multi.emit(frame.frame, source_code)
         # Z for plot in μm: piezo-only uses piezo position, mixed mode combines stepper + piezo
         stepper_z_um = info.position.z_mm * 1000
         if IS_PIEZO_ONLY:
@@ -325,9 +320,6 @@ class HighContentScreeningGui(QMainWindow):
         self.fluidics: Optional[Fluidics] = microscope.addons.fluidics
         self.piezo: Optional[PiezoStage] = microscope.addons.piezo_stage
 
-        self.channelConfigurationManager: ChannelConfigurationManager = microscope.channel_configuration_mananger
-        self.laserAFSettingManager: LaserAFSettingManager = microscope.laser_af_settings_manager
-        self.configurationManager: ConfigurationManager = microscope.configuration_mananger
         self.contrastManager: ContrastManager = microscope.contrast_manager
         self.liveController: LiveController = microscope.live_controller
         self.objectiveStore: ObjectiveStore = microscope.objective_store
@@ -354,7 +346,6 @@ class HighContentScreeningGui(QMainWindow):
                 self.stage,
                 self.piezo,
                 self.objectiveStore,
-                self.laserAFSettingManager,
             )
 
         self.live_only_mode = live_only_mode or LIVE_ONLY_MODE
@@ -497,7 +488,6 @@ class HighContentScreeningGui(QMainWindow):
                 self.microcontroller,
                 self.stage,
                 self.objectiveStore,
-                self.channelConfigurationManager,
                 self.liveController,
                 self.autofocusController,
                 self.imageDisplayWindow,
@@ -528,7 +518,6 @@ class HighContentScreeningGui(QMainWindow):
             self.liveController,
             self.autofocusController,
             self.objectiveStore,
-            self.channelConfigurationManager,
             scan_coordinates=self.scanCoordinates,
             laser_autofocus_controller=self.laserAutofocusController,
             fluidics=self.fluidics,
@@ -629,12 +618,11 @@ class HighContentScreeningGui(QMainWindow):
 
         self._restore_cached_camera_settings()
 
-        self.profileWidget = widgets.ProfileWidget(self.configurationManager)
+        self.profileWidget = widgets.ProfileWidget(self.microscope.config_repo)
         self.liveControlWidget = widgets.LiveControlWidget(
             self.streamHandler,
             self.liveController,
             self.objectiveStore,
-            self.channelConfigurationManager,
             show_display_options=False,
             show_autolevel=True,
             autolevel=True,
@@ -723,7 +711,6 @@ class HighContentScreeningGui(QMainWindow):
             self.navigationViewer,
             self.multipointController,
             self.objectiveStore,
-            self.channelConfigurationManager,
             self.scanCoordinates,
             self.focusMapWidget,
             self.napariMosaicDisplayWidget,
@@ -734,7 +721,6 @@ class HighContentScreeningGui(QMainWindow):
             self.multipointController,
             self.liveController,
             self.objectiveStore,
-            self.channelConfigurationManager,
             self.scanCoordinates,
             self.focusMapWidget,
             self.napariMosaicDisplayWidget,
@@ -747,7 +733,6 @@ class HighContentScreeningGui(QMainWindow):
                 self.navigationViewer,
                 self.multipointController,
                 self.objectiveStore,
-                self.channelConfigurationManager,
                 self.scanCoordinates,
                 self.focusMapWidget,
             )
@@ -756,9 +741,7 @@ class HighContentScreeningGui(QMainWindow):
             self.navigationViewer,
             self.multipointController,
             self.objectiveStore,
-            self.channelConfigurationManager,
             self.scanCoordinates,
-            self.focusMapWidget,
             self.napariMosaicDisplayWidget,
         )
         self.sampleSettingsWidget = widgets.SampleSettingsWidget(self.objectivesWidget, self.wellplateFormatWidget)
@@ -767,7 +750,6 @@ class HighContentScreeningGui(QMainWindow):
             self.trackingControlWidget = widgets.TrackingControllerWidget(
                 self.trackingController,
                 self.objectiveStore,
-                self.channelConfigurationManager,
                 show_configurations=TRACKING_SHOW_MICROSCOPE_CONFIGURATIONS,
             )
 
@@ -849,7 +831,6 @@ class HighContentScreeningGui(QMainWindow):
                 self.liveController,
                 self.stage,
                 self.objectiveStore,
-                self.channelConfigurationManager,
                 self.contrastManager,
                 self.wellSelectionWidget,
             )
@@ -1261,7 +1242,7 @@ class HighContentScreeningGui(QMainWindow):
 
         if ENABLE_SPINNING_DISK_CONFOCAL:
             self.spinningDiskConfocalWidget.signal_toggle_confocal_widefield.connect(
-                self.channelConfigurationManager.toggle_confocal_widefield
+                self.liveController.toggle_confocal_widefield
             )
             self.spinningDiskConfocalWidget.signal_toggle_confocal_widefield.connect(
                 lambda: self.liveControlWidget.select_new_microscope_mode_by_name(
@@ -1270,7 +1251,7 @@ class HighContentScreeningGui(QMainWindow):
             )
             # INITIALIZATION ORDER: Confocal state sync happens in Microscope.__init__ BEFORE
             # this GUI code runs. The microscope queries hardware state and calls
-            # channel_configuration_mananger.sync_confocal_mode_from_hardware() during init.
+            # live_controller.sync_confocal_mode_from_hardware() during init.
             # The signal connection above handles subsequent user-initiated toggles only.
             # See Microscope._sync_confocal_mode_from_hardware() for the initial sync logic.
 
@@ -1572,7 +1553,7 @@ class HighContentScreeningGui(QMainWindow):
 
     def openAdvancedChannelMapping(self):
         """Open the advanced channel hardware mapping dialog"""
-        dialog = widgets.AdvancedChannelMappingDialog(self.channelConfigurationManager, self)
+        dialog = widgets.AdvancedChannelMappingDialog(self.microscope.config_repo, self)
         dialog.signal_mappings_updated.connect(self._refresh_channel_lists)
         dialog.exec_()
 

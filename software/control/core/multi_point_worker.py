@@ -14,7 +14,6 @@ from control._def import DOWNSAMPLED_VIEW_JOB_TIMEOUT_S, DOWNSAMPLED_VIEW_IDLE_T
 import control._def
 from control import utils
 from control.core.auto_focus_controller import AutoFocusController
-from control.core.channel_configuration_mananger import ChannelConfigurationManager
 from control.core.laser_auto_focus_controller import LaserAutofocusController
 from control.core.live_controller import LiveController
 from control.core.multi_point_utils import (
@@ -70,7 +69,6 @@ class MultiPointWorker:
         auto_focus_controller: Optional[AutoFocusController],
         laser_auto_focus_controller: Optional[LaserAutofocusController],
         objective_store: ObjectiveStore,
-        channel_configuration_mananger: ChannelConfigurationManager,
         acquisition_parameters: AcquisitionParameters,
         callbacks: MultiPointControllerFunctions,
         abort_requested_fn: Callable[[], bool],
@@ -89,7 +87,6 @@ class MultiPointWorker:
         self.autofocusController: Optional[AutoFocusController] = auto_focus_controller
         self.laser_auto_focus_controller: Optional[LaserAutofocusController] = laser_auto_focus_controller
         self.objectiveStore: ObjectiveStore = objective_store
-        self.channelConfigurationManager: ChannelConfigurationManager = channel_configuration_mananger
         self.fluidics = scope.addons.fluidics
         self.use_fluidics = acquisition_parameters.use_fluidics
 
@@ -1101,7 +1098,7 @@ class MultiPointWorker:
                 and (self.af_fov_count % Acquisition.NUMBER_OF_FOVS_PER_AF == 0)
             ):
                 configuration_name_AF = MULTIPOINT_AUTOFOCUS_CHANNEL
-                config_AF = self.channelConfigurationManager.get_channel_configuration_by_name(
+                config_AF = self.liveController.get_channel_by_name(
                     self.objectiveStore.current_objective, configuration_name_AF
                 )
                 self._select_config(config_AF)
@@ -1302,9 +1299,7 @@ class MultiPointWorker:
         rgb_channels = ["BF LED matrix full_R", "BF LED matrix full_G", "BF LED matrix full_B"]
         images = {}
 
-        for config_ in self.channelConfigurationManager.get_channel_configurations_for_objective(
-            self.objectiveStore.current_objective
-        ):
+        for config_ in self.liveController.get_channels(self.objectiveStore.current_objective):
             if config_.name in rgb_channels:
                 self._select_config(config_)
 

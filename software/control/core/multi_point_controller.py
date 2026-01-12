@@ -17,7 +17,6 @@ import pandas as pd
 from control import utils, utils_acquisition
 import control._def
 from control.core.auto_focus_controller import AutoFocusController
-from control.core.channel_configuration_mananger import ChannelConfigurationManager
 from control.core.multi_point_utils import MultiPointControllerFunctions, ScanPositionInformation, AcquisitionParameters
 from control.core.scan_coordinates import ScanCoordinates
 from control.core.laser_auto_focus_controller import LaserAutofocusController
@@ -191,7 +190,6 @@ class MultiPointController:
         live_controller: LiveController,
         autofocus_controller: AutoFocusController,
         objective_store: ObjectiveStore,
-        channel_configuration_mananger: ChannelConfigurationManager,
         callbacks: MultiPointControllerFunctions,
         scan_coordinates: Optional[ScanCoordinates] = None,
         laser_autofocus_controller: Optional[LaserAutofocusController] = None,
@@ -207,7 +205,6 @@ class MultiPointController:
         self.autofocusController: AutoFocusController = autofocus_controller
         self.laserAutoFocusController: LaserAutofocusController = laser_autofocus_controller
         self.objectiveStore: ObjectiveStore = objective_store
-        self.channelConfigurationManager: ChannelConfigurationManager = channel_configuration_mananger
         self.callbacks: MultiPointControllerFunctions = callbacks
         self.multiPointWorker: Optional[MultiPointWorker] = None
         self.fluidics: Optional[Any] = microscope.addons.fluidics
@@ -370,11 +367,14 @@ class MultiPointController:
         self.experiment_ID = experiment_ID.replace(" ", "_") + "_" + datetime.now().strftime("%Y-%m-%d_%H-%M-%S.%f")
         self.recording_start_time = time.time()
         # create a new folder
-        utils.ensure_directory_exists(os.path.join(self.base_path, self.experiment_ID))
-        self.channelConfigurationManager.write_configuration_selected(
-            self.objectiveStore.current_objective,
-            self.selected_configurations,
-            os.path.join(self.base_path, self.experiment_ID) + "/configurations.xml",
+        experiment_dir = os.path.join(self.base_path, self.experiment_ID)
+        utils.ensure_directory_exists(experiment_dir)
+        # Save acquisition configuration via ConfigRepository
+        self.liveController.microscope.config_repo.save_acquisition_output(
+            output_dir=experiment_dir,
+            objective=self.objectiveStore.current_objective,
+            channels=self.selected_configurations,
+            confocal_mode=self.liveController.is_confocal_mode(),
         )  # save the configuration for the experiment
         # Prepare acquisition parameters
         acquisition_parameters = {
@@ -409,7 +409,7 @@ class MultiPointController:
         # TODO: USE OBJECTIVE STORE DATA
         acquisition_parameters["sensor_pixel_size_um"] = self.camera.get_pixel_size_binned_um()
         acquisition_parameters["tube_lens_mm"] = control._def.TUBE_LENS_MM
-        acquisition_parameters["confocal_mode"] = self.channelConfigurationManager.is_confocal_mode()
+        acquisition_parameters["confocal_mode"] = self.liveController.is_confocal_mode()
         f = open(os.path.join(self.base_path, self.experiment_ID) + "/acquisition parameters.json", "w")
         f.write(json.dumps(acquisition_parameters))
         f.close()
@@ -417,9 +417,7 @@ class MultiPointController:
     def set_selected_configurations(self, selected_configurations_name):
         self.selected_configurations = []
         for configuration_name in selected_configurations_name:
-            config = self.channelConfigurationManager.get_channel_configuration_by_name(
-                self.objectiveStore.current_objective, configuration_name
-            )
+            config = self.liveController.get_channel_by_name(self.objectiveStore.current_objective, configuration_name)
             if config:
                 self.selected_configurations.append(config)
 
@@ -462,7 +460,12 @@ class MultiPointController:
         if not was_streaming:
             self.camera.start_streaming()
         try:
-            config = self.channelConfigurationManager.get_configurations(self.objectiveStore.current_objective)[0]
+            channels = self.liveController.get_channels(self.objectiveStore.current_objective)
+            if not channels:
+                self._log.warning("No channels available in _temporary_get_an_image_hack")
+                return (None, False)
+            # Note: config is currently unused but kept for potential future use
+            config = channels[0]
             if (
                 self.liveController.trigger_mode == control._def.TriggerMode.SOFTWARE
                 or self.liveController.trigger_mode == control._def.TriggerMode.HARDWARE
@@ -482,9 +485,9 @@ class MultiPointController:
         when starting this acquisition, it is likely it will fail with an "out of disk space" error.
         """
         # TODO(imo): This needs updating for AbstractCamera
-        if not len(self.channelConfigurationManager.get_configurations(self.objectiveStore.current_objective)):
+        if not len(self.liveController.get_channels(self.objectiveStore.current_objective)):
             raise ValueError("Cannot calculate disk space requirements without any valid configurations.")
-        first_config = self.channelConfigurationManager.get_configurations(self.objectiveStore.current_objective)[0]
+        first_config = self.liveController.get_channels(self.objectiveStore.current_objective)[0]
 
         # Our best bet is to grab an image, and use that for our size estimate.
         test_image = None
@@ -800,7 +803,6 @@ class MultiPointController:
                 auto_focus_controller=self.autofocusController,
                 laser_auto_focus_controller=self.laserAutoFocusController,
                 objective_store=self.objectiveStore,
-                channel_configuration_mananger=self.channelConfigurationManager,
                 acquisition_parameters=acquisition_params,
                 callbacks=updated_callbacks,
                 abort_requested_fn=lambda: self.abort_acqusition_requested,
