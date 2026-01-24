@@ -1,5 +1,7 @@
 # set QT_API environment variable
 import os
+import subprocess
+import sys
 from configparser import ConfigParser
 
 from control.core.auto_focus_controller import AutoFocusController
@@ -363,11 +365,18 @@ class HighContentScreeningGui(QMainWindow):
     signal_performance_mode_changed = Signal(bool)
 
     def __init__(
-        self, microscope: control.microscope.Microscope, is_simulation=False, live_only_mode=False, *args, **kwargs
+        self,
+        microscope: control.microscope.Microscope,
+        is_simulation=False,
+        live_only_mode=False,
+        skip_init=False,
+        *args,
+        **kwargs,
     ):
         super().__init__(*args, **kwargs)
 
         self.log = squid.logging.get_logger(self.__class__.__name__)
+        self._skip_init = skip_init
 
         self.microscope: control.microscope.Microscope = microscope
         self.stage: AbstractStage = microscope.stage
@@ -436,7 +445,7 @@ class HighContentScreeningGui(QMainWindow):
         load_slack_settings_from_cache()
 
         self.load_objects(is_simulation=is_simulation)
-        self.setup_hardware()
+        self.setup_hardware(skip_init=self._skip_init)
 
         self.setup_movement_updater()
 
@@ -496,8 +505,11 @@ class HighContentScreeningGui(QMainWindow):
         # Initialize Slack notifier
         self._setup_slack_notifier()
 
-        # TODO(imo): Why is moving to the cached position after boot hidden behind homing?
-        if HOMING_ENABLED_X and HOMING_ENABLED_Y and HOMING_ENABLED_Z:
+        # Skip cached position restoration on restart (hardware position hasn't changed)
+        if self._skip_init:
+            self.log.info("Skipping cached position restoration (--skip-init flag set)")
+        elif HOMING_ENABLED_X and HOMING_ENABLED_Y and HOMING_ENABLED_Z:
+            # TODO(imo): Why is moving to the cached position after boot hidden behind homing?
             if cached_pos := squid.stage.utils.get_cached_position():
                 self.log.info(
                     f"Cache position exists.  Moving to: ({cached_pos.x_mm},{cached_pos.y_mm},{cached_pos.z_mm}) [mm]"
@@ -606,7 +618,7 @@ class HighContentScreeningGui(QMainWindow):
             fluidics=self.fluidics,
         )
 
-    def setup_hardware(self):
+    def setup_hardware(self, skip_init: bool = False):
         # Setup hardware components
         if not self.microcontroller:
             raise ValueError("Microcontroller must be none-None for hardware setup.")
@@ -615,23 +627,27 @@ class HighContentScreeningGui(QMainWindow):
             x_config = self.stage.get_config().X_AXIS
             y_config = self.stage.get_config().Y_AXIS
             z_config = self.stage.get_config().Z_AXIS
-            self.log.info(
-                f"Setting stage limits to:"
-                f" x=[{x_config.MIN_POSITION},{x_config.MAX_POSITION}],"
-                f" y=[{y_config.MIN_POSITION},{y_config.MAX_POSITION}],"
-                f" z=[{z_config.MIN_POSITION},{z_config.MAX_POSITION}]"
-            )
 
-            self.stage.set_limits(
-                x_pos_mm=x_config.MAX_POSITION,
-                x_neg_mm=x_config.MIN_POSITION,
-                y_pos_mm=y_config.MAX_POSITION,
-                y_neg_mm=y_config.MIN_POSITION,
-                z_pos_mm=z_config.MAX_POSITION,
-                z_neg_mm=z_config.MIN_POSITION,
-            )
+            if skip_init:
+                self.log.info("Skipping hardware initialization (--skip-init flag set)")
+            else:
+                self.log.info(
+                    f"Setting stage limits to:"
+                    f" x=[{x_config.MIN_POSITION},{x_config.MAX_POSITION}],"
+                    f" y=[{y_config.MIN_POSITION},{y_config.MAX_POSITION}],"
+                    f" z=[{z_config.MIN_POSITION},{z_config.MAX_POSITION}]"
+                )
 
-            self.microscope.home_xyz()
+                self.stage.set_limits(
+                    x_pos_mm=x_config.MAX_POSITION,
+                    x_neg_mm=x_config.MIN_POSITION,
+                    y_pos_mm=y_config.MAX_POSITION,
+                    y_neg_mm=y_config.MIN_POSITION,
+                    z_pos_mm=z_config.MAX_POSITION,
+                    z_neg_mm=z_config.MIN_POSITION,
+                )
+
+                self.microscope.home_xyz()
 
         except TimeoutError as e:
             # If we can't recover from a timeout, at least do our best to make sure the system is left in a safe
@@ -1694,7 +1710,12 @@ class HighContentScreeningGui(QMainWindow):
         if CACHED_CONFIG_FILE_PATH and os.path.exists(CACHED_CONFIG_FILE_PATH):
             config = ConfigParser()
             config.read(CACHED_CONFIG_FILE_PATH)
-            dialog = widgets.PreferencesDialog(config, CACHED_CONFIG_FILE_PATH, self)
+            dialog = widgets.PreferencesDialog(
+                config,
+                CACHED_CONFIG_FILE_PATH,
+                parent=self,
+                on_restart=self.restart_application,
+            )
             dialog.signal_config_changed.connect(self._update_ram_monitor_visibility)
             dialog.exec_()
         else:
@@ -2163,6 +2184,214 @@ class HighContentScreeningGui(QMainWindow):
         else:
             self.log.warning("NDViewer tab exists but not found in tab widget")
 
+    def restart_application(self):
+        """Restart the application with --skip-init flag.
+
+        Performs hardware cleanup, spawns a new process with --skip-init flag,
+        then quits the current application. Hardware initialization is skipped in the new
+        process since hardware is already in a known state.
+        """
+        self.log.info("Restarting application with --skip-init...")
+
+        # Build new args list, preserving original arguments but adding --skip-init
+        args = [sys.executable] + sys.argv
+        if "--skip-init" not in args:
+            args.append("--skip-init")
+
+        # Clean up hardware BEFORE spawning new process to release resources
+        self._cleanup_for_restart()
+
+        # Spawn new process AFTER cleanup so it can acquire hardware
+        try:
+            subprocess.Popen(args)
+        except OSError as e:
+            self.log.exception("Failed to spawn new process for restart")
+            QMessageBox.critical(
+                self,
+                "Restart Failed",
+                f"Failed to restart the application.\n\nError: {e}\n\n"
+                "The application will now close. Please restart manually.",
+            )
+            # Still quit since hardware is already cleaned up
+            QApplication.instance().quit()
+            return
+
+        # Quit the application
+        QApplication.instance().quit()
+
+    def _cleanup_common(self, for_restart: bool = False):
+        """Common cleanup logic shared between closeEvent and restart.
+
+        Args:
+            for_restart: If True, skip Z retraction and objective reset (preserving position),
+                        and wrap operations in try-except to ensure cleanup completes.
+        """
+        context = "restart" if for_restart else "shutdown"
+
+        # Cache position and settings
+        try:
+            squid.stage.utils.cache_position(pos=self.stage.get_pos(), stage_config=self.stage.get_config())
+        except ValueError as e:
+            # ValueError is expected when position is out of bounds
+            self.log.error(f"Couldn't cache position while closing for {context}. Error: {e}")
+        except Exception:
+            if for_restart:
+                self.log.exception(f"Unexpected error caching position during {context}")
+            else:
+                raise
+
+        try:
+            squid.camera.settings_cache.save_camera_settings(self.camera)
+        except Exception:
+            if for_restart:
+                self.log.exception(f"Error saving camera settings during {context}")
+            else:
+                raise
+
+        try:
+            self._disconnect_warning_handler()
+        except Exception:
+            if for_restart:
+                self.log.exception(f"Error disconnecting warning handler during {context}")
+            else:
+                raise
+
+        # Clean up multipoint controller
+        if self.multipointController is not None:
+            try:
+                self.multipointController.close()
+            except Exception:
+                self.log.exception(f"Error closing multipoint controller during {context}")
+
+        # Clean up NDViewer
+        if self.ndviewerTab is not None:
+            try:
+                self.ndviewerTab.close()
+            except Exception:
+                self.log.exception(f"Error closing NDViewer tab during {context}")
+
+        # Close napari viewers (they run background threads that prevent clean exit)
+        for widget_name in [
+            "napariLiveWidget",
+            "napariMultiChannelWidget",
+            "napariMosaicDisplayWidget",
+            "napariPlateViewWidget",
+        ]:
+            widget = getattr(self, widget_name, None)
+            if widget is not None and hasattr(widget, "viewer"):
+                try:
+                    widget.viewer.close()
+                except Exception:
+                    self.log.exception(f"Error closing {widget_name} viewer during {context}")
+                    if not for_restart:
+                        raise
+
+        try:
+            self.movement_update_timer.stop()
+        except Exception:
+            if for_restart:
+                self.log.exception(f"Error stopping movement update timer during {context}")
+            else:
+                raise
+
+        # Close filter wheel
+        if self.emission_filter_wheel:
+            try:
+                if not for_restart:
+                    self.emission_filter_wheel.set_filter_wheel_position({1: 1})
+                self.emission_filter_wheel.close()
+            except Exception:
+                if for_restart:
+                    self.log.exception(f"Error closing filter wheel during {context}")
+                else:
+                    raise
+
+        # Stop laser autofocus
+        if SUPPORT_LASER_AUTOFOCUS:
+            try:
+                self.liveController_focus_camera.stop_live()
+                self.imageDisplayWindow_focus.close()
+            except Exception:
+                if for_restart:
+                    self.log.exception(f"Error closing laser AF during {context}")
+                else:
+                    raise
+
+        # Stop live view and close camera
+        try:
+            self.liveController.stop_live()
+            self.camera.stop_streaming()
+            self.camera.close()
+        except Exception:
+            if for_restart:
+                self.log.exception(f"Error closing camera during {context}")
+            else:
+                raise
+
+        # Retract Z, reset objective changer, and turn off PIDs only on full shutdown
+        # (for restart, preserve hardware state since new process will use --skip-init)
+        if not for_restart:
+            try:
+                self.stage.move_z_to(OBJECTIVE_RETRACTED_POS_MM)
+                if USE_XERYON:
+                    self.objective_changer.moveToZero()
+            except Exception:
+                self.log.exception(f"Error retracting Z / resetting objective changer during {context}")
+
+            try:
+                self.microcontroller.turn_off_all_pid()
+            except Exception:
+                self.log.exception(f"Error turning off PID during {context}")
+
+        # Turn off CellX lasers
+        if ENABLE_CELLX:
+            try:
+                for channel in [1, 2, 3, 4]:
+                    self.cellx.turn_off(channel)
+                self.cellx.close()
+            except Exception:
+                if for_restart:
+                    self.log.exception(f"Error closing CellX during {context}")
+                else:
+                    raise
+
+        # Close fluidics
+        if RUN_FLUIDICS:
+            try:
+                self.fluidics.close()
+            except Exception:
+                if for_restart:
+                    self.log.exception(f"Error closing fluidics during {context}")
+                else:
+                    raise
+
+        # Close image display resources
+        try:
+            self.imageSaver.close()
+            self.imageDisplay.close()
+            if not SINGLE_WINDOW:
+                self.imageDisplayWindow.close()
+                self.imageArrayDisplayWindow.close()
+                self.tabbedImageDisplayWindow.close()
+        except Exception:
+            if for_restart:
+                self.log.exception(f"Error closing display windows during {context}")
+            else:
+                raise
+
+        # Close microcontroller last (releases serial port)
+        try:
+            self.microcontroller.close()
+        except Exception:
+            if for_restart:
+                self.log.exception(f"Error closing microcontroller during {context}")
+            else:
+                raise
+
+    def _cleanup_for_restart(self):
+        """Clean up hardware and resources for restart (preserves Z position)."""
+        self._cleanup_common(for_restart=True)
+
     def closeEvent(self, event):
         # Show confirmation dialog
         reply = QMessageBox.question(
@@ -2177,69 +2406,8 @@ class HighContentScreeningGui(QMainWindow):
             event.ignore()
             return
 
-        try:
-            squid.stage.utils.cache_position(pos=self.stage.get_pos(), stage_config=self.stage.get_config())
-        except ValueError as e:
-            self.log.error(f"Couldn't cache position while closing.  Ignoring and continuing. Error is: {e}")
+        self._cleanup_common(for_restart=False)
 
-        # Save camera settings (binning, pixel format)
-        squid.camera.settings_cache.save_camera_settings(self.camera)
-
-        # Disconnect warning/error logging handler
-        self._disconnect_warning_handler()
-
-        # Clean up multipoint controller resources (queues, timers, process pools)
-        if self.multipointController is not None:
-            try:
-                self.multipointController.close()
-            except Exception:
-                self.log.exception("Error closing multipoint controller during shutdown")
-
-        # Clean up NDViewer resources (file handles, timers)
-        if self.ndviewerTab is not None:
-            try:
-                self.ndviewerTab.close()
-            except Exception:
-                self.log.exception("Error closing NDViewer tab during shutdown")
-
-        self.movement_update_timer.stop()
-
-        if self.emission_filter_wheel:
-            self.emission_filter_wheel.set_filter_wheel_position({1: 1})
-            self.emission_filter_wheel.close()
-        if SUPPORT_LASER_AUTOFOCUS:
-            self.liveController_focus_camera.stop_live()
-            self.imageDisplayWindow_focus.close()
-
-        self.liveController.stop_live()
-        self.camera.stop_streaming()
-        self.camera.close()
-
-        # retract z
-        self.stage.move_z_to(OBJECTIVE_RETRACTED_POS_MM)
-
-        # reset objective changer
-        if USE_XERYON:
-            self.objective_changer.moveToZero()
-
-        self.microcontroller.turn_off_all_pid()
-
-        if ENABLE_CELLX:
-            for channel in [1, 2, 3, 4]:
-                self.cellx.turn_off(channel)
-            self.cellx.close()
-
-        if RUN_FLUIDICS:
-            self.fluidics.close()
-
-        self.imageSaver.close()
-        self.imageDisplay.close()
-        if not SINGLE_WINDOW:
-            self.imageDisplayWindow.close()
-            self.imageArrayDisplayWindow.close()
-            self.tabbedImageDisplayWindow.close()
-
-        self.microcontroller.close()
         try:
             self.cswWindow.closeForReal(event)
         except AttributeError:

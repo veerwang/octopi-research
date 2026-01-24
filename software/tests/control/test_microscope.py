@@ -1,3 +1,5 @@
+from unittest.mock import patch, MagicMock
+
 import control.microscope
 import control._def
 import squid.stage.cephla
@@ -31,6 +33,54 @@ class TestShouldSimulate:
 def test_create_simulated_microscope():
     sim_scope = control.microscope.Microscope.build_from_global_config(True)
     sim_scope.close()
+
+
+def test_create_simulated_microscope_with_skip_init():
+    """Test that skip_init flag is accepted and doesn't cause errors."""
+    sim_scope = control.microscope.Microscope.build_from_global_config(True, skip_init=True)
+    sim_scope.close()
+
+
+def test_skip_init_skips_addon_homing():
+    """Test that skip_init=True actually skips homing operations in addons."""
+    with patch.object(control.microscope.MicroscopeAddons, "prepare_for_use") as mock_prepare:
+        sim_scope = control.microscope.Microscope.build_from_global_config(True, skip_init=True)
+
+        # Verify prepare_for_use was called with skip_init=True
+        mock_prepare.assert_called_once()
+        call_kwargs = mock_prepare.call_args.kwargs
+        assert call_kwargs.get("skip_init") is True, "prepare_for_use should be called with skip_init=True"
+
+        sim_scope.close()
+
+
+@patch("squid.config.get_filter_wheel_config")
+def test_prepare_for_use_skips_homing_when_flag_set(mock_get_fw_config):
+    """Test that MicroscopeAddons.prepare_for_use skips home() calls when skip_init=True."""
+    # Mock filter wheel config
+    mock_fw_config = MagicMock()
+    mock_fw_config.indices = [1]
+    mock_get_fw_config.return_value = mock_fw_config
+
+    mock_filter_wheel = MagicMock()
+    mock_piezo_stage = MagicMock()
+
+    addons = control.microscope.MicroscopeAddons(
+        emission_filter_wheel=mock_filter_wheel,
+        piezo_stage=mock_piezo_stage,
+    )
+
+    # With skip_init=True, home() should NOT be called
+    addons.prepare_for_use(skip_init=True)
+    mock_filter_wheel.home.assert_not_called()
+    mock_piezo_stage.home.assert_not_called()
+
+    # With skip_init=False (default), home() SHOULD be called
+    mock_filter_wheel.reset_mock()
+    mock_piezo_stage.reset_mock()
+    addons.prepare_for_use(skip_init=False)
+    mock_filter_wheel.home.assert_called_once()
+    mock_piezo_stage.home.assert_called_once()
 
 
 def test_simulated_scope_basic_ops():

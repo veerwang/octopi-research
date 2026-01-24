@@ -838,11 +838,12 @@ class PreferencesDialog(QDialog):
 
     signal_config_changed = Signal()
 
-    def __init__(self, config, config_filepath, parent=None):
+    def __init__(self, config, config_filepath, parent=None, on_restart=None):
         super().__init__(parent)
         self._log = squid.logging.get_logger(self.__class__.__name__)
         self.config = config
         self.config_filepath = config_filepath
+        self._on_restart = on_restart  # Optional callback for application restart
         self.setWindowTitle("Preferences")
         self.setMinimumWidth(500)
         self.setMinimumHeight(600)
@@ -2127,6 +2128,40 @@ class PreferencesDialog(QDialog):
 
         return changes
 
+    def _offer_restart_dialog(self):
+        """Show a dialog offering to restart the application now."""
+        msg = QMessageBox(self)
+        msg.setWindowTitle("Restart Required")
+        msg.setText("Settings have been saved. This change requires a restart to take effect.")
+        msg.setInformativeText("Would you like to restart now?")
+        msg.setIcon(QMessageBox.Information)
+        restart_btn = msg.addButton("Restart Now", QMessageBox.AcceptRole)
+        msg.addButton("Later", QMessageBox.RejectRole)
+        msg.exec_()
+        if msg.clickedButton() == restart_btn:
+            self._trigger_restart()
+
+    def _trigger_restart(self):
+        """Trigger application restart via callback."""
+        if self._on_restart:
+            try:
+                self._on_restart()
+            except Exception as e:
+                self._log.exception("Failed to restart application")
+                QMessageBox.warning(
+                    self,
+                    "Restart Failed",
+                    f"An error occurred while trying to restart the application.\n\n"
+                    f"Error: {e}\n\nPlease restart the application manually.",
+                )
+        else:
+            self._log.error("No restart callback configured")
+            QMessageBox.warning(
+                self,
+                "Restart Failed",
+                "Could not trigger automatic restart.\nPlease restart the application manually.",
+            )
+
     def _save_and_close(self):
         changes = self._get_changes()
 
@@ -2141,9 +2176,7 @@ class PreferencesDialog(QDialog):
         if len(changes) == 1:
             self._apply_settings()
             if requires_restart:
-                QMessageBox.information(
-                    self, "Settings Saved", "Settings have been saved. This change requires a restart to take effect."
-                )
+                self._offer_restart_dialog()
             self.accept()
             return
 
@@ -2181,6 +2214,21 @@ class PreferencesDialog(QDialog):
         # Buttons
         button_layout = QHBoxLayout()
         button_layout.addStretch()
+
+        # Track which button was clicked
+        dialog.restart_requested = False
+
+        if requires_restart:
+            save_restart_btn = QPushButton("Save and Restart")
+            save_restart_btn.setToolTip("Save settings and restart the application now")
+
+            def on_save_restart():
+                dialog.restart_requested = True
+                dialog.accept()
+
+            save_restart_btn.clicked.connect(on_save_restart)
+            button_layout.addWidget(save_restart_btn)
+
         save_btn = QPushButton("Save")
         cancel_btn = QPushButton("Cancel")
         save_btn.clicked.connect(dialog.accept)
@@ -2191,6 +2239,8 @@ class PreferencesDialog(QDialog):
 
         if dialog.exec_() == QDialog.Accepted:
             self._apply_settings()
+            if dialog.restart_requested:
+                self._trigger_restart()
             self.accept()
 
 
