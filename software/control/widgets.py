@@ -314,6 +314,29 @@ class NDViewerTab(QWidget):
     # Push-based API for live acquisition (no polling)
     # -------------------------------------------------------------------------
 
+    def _ensure_viewer_ready(self, context: str = "acquisition") -> bool:
+        """Ensure ndviewer_light is imported and viewer widget is created.
+
+        Args:
+            context: Description for logging (e.g., "acquisition", "zarr acquisition")
+
+        Returns:
+            True if viewer is ready, False if import or creation failed.
+        """
+        try:
+            from control import ndviewer_light
+        except ImportError as e:
+            self._log.error(f"Failed to import ndviewer_light: {e}")
+            self._show_placeholder(f"NDViewer: failed to import ndviewer_light:\n{e}")
+            return False
+
+        if self._viewer is None:
+            self._log.debug(f"Creating new LightweightViewer for {context}")
+            self._viewer = ndviewer_light.LightweightViewer()
+            self._layout.addWidget(self._viewer, 1)
+
+        return True
+
     def start_acquisition(
         self,
         channels: List[str],
@@ -334,20 +357,10 @@ class NDViewerTab(QWidget):
         Returns:
             True if successful, False otherwise.
         """
-        try:
-            # Lazy import
-            from control import ndviewer_light
-        except ImportError as e:
-            self._log.error(f"Failed to import ndviewer_light: {e}")
-            self._show_placeholder(f"NDViewer: failed to import ndviewer_light:\n{e}")
+        if not self._ensure_viewer_ready("TIFF acquisition"):
             return False
 
         try:
-            if self._viewer is None:
-                self._log.debug("Creating new LightweightViewer for acquisition")
-                self._viewer = ndviewer_light.LightweightViewer()
-                self._layout.addWidget(self._viewer, 1)
-
             self._viewer.start_acquisition(channels, num_z, height, width, fov_labels)
             self._viewer.setVisible(True)
             self._placeholder.setVisible(False)
@@ -417,6 +430,163 @@ class NDViewerTab(QWidget):
             self._log.debug("NDViewer acquisition ended")
         except Exception:
             self._log.exception("Failed to end NDViewer acquisition")
+
+    # -------------------------------------------------------------------------
+    # Zarr Push-based API for live acquisition (requires ndviewer_light zarr support)
+    # -------------------------------------------------------------------------
+
+    def start_zarr_acquisition(
+        self,
+        fov_paths: List[str],
+        channels: List[str],
+        num_z: int,
+        fov_labels: List[str],
+        height: int,
+        width: int,
+    ) -> bool:
+        """Configure viewer for zarr-based live acquisition (5D per-FOV mode).
+
+        Args:
+            fov_paths: List of zarr paths per FOV
+            channels: List of channel names
+            num_z: Number of z-levels
+            fov_labels: List of FOV labels (e.g., ["A1:0", "A1:1"])
+            height: Image height in pixels
+            width: Image width in pixels
+
+        Returns:
+            True if successful, False otherwise.
+        """
+        if not self._ensure_viewer_ready("Zarr 5D acquisition"):
+            return False
+
+        try:
+            # Check if ndviewer_light has zarr support
+            if not hasattr(self._viewer, "start_zarr_acquisition"):
+                self._log.warning(
+                    "ndviewer_light doesn't support zarr push API. "
+                    "Live viewing not available for Zarr format. "
+                    "Update ndviewer_light submodule to enable this feature."
+                )
+                self._show_placeholder(
+                    "NDViewer: zarr live view requires ndviewer_light with zarr support.\n"
+                    "Update the ndviewer_light submodule."
+                )
+                return False
+
+            self._viewer.start_zarr_acquisition(fov_paths, channels, num_z, fov_labels, height, width)
+            self._viewer.setVisible(True)
+            self._placeholder.setVisible(False)
+            self._log.info(
+                f"NDViewer configured for zarr acquisition: {len(channels)} channels, "
+                f"{num_z} z-levels, {len(fov_labels)} FOVs"
+            )
+            return True
+        except Exception as e:
+            self._log.exception("Failed to start zarr acquisition in NDViewer")
+            error_msg = str(e) if str(e) else type(e).__name__
+            self._show_placeholder(f"NDViewer: failed to start zarr acquisition:\n{error_msg}")
+            return False
+
+    def start_zarr_acquisition_6d(
+        self,
+        region_paths: List[str],
+        channels: List[str],
+        num_z: int,
+        fovs_per_region: List[int],
+        height: int,
+        width: int,
+        region_labels: List[str],
+    ) -> bool:
+        """Configure viewer for 6D multi-region zarr acquisition.
+
+        Args:
+            region_paths: List of zarr paths (one per region)
+            channels: List of channel names
+            num_z: Number of z-levels
+            fovs_per_region: List of FOV counts per region
+            height: Image height in pixels
+            width: Image width in pixels
+            region_labels: List of region labels (e.g., ["region_1", "region_2"])
+
+        Returns:
+            True if successful, False otherwise.
+        """
+        if not self._ensure_viewer_ready("Zarr 6D acquisition"):
+            return False
+
+        try:
+            # Check if ndviewer_light has 6D regions support
+            if not hasattr(self._viewer, "start_zarr_acquisition_6d"):
+                self._log.warning(
+                    "ndviewer_light doesn't support 6D multi-region mode. "
+                    "Update ndviewer_light submodule to enable this feature."
+                )
+                self._show_placeholder(
+                    "NDViewer: 6D multi-region mode requires updated ndviewer_light.\n"
+                    "Update the ndviewer_light submodule."
+                )
+                return False
+
+            self._viewer.start_zarr_acquisition_6d(
+                region_paths, channels, num_z, fovs_per_region, height, width, region_labels
+            )
+            self._viewer.setVisible(True)
+            self._placeholder.setVisible(False)
+
+            total_fovs = sum(fovs_per_region)
+            self._log.info(
+                f"NDViewer configured for 6D multi-region: {len(region_paths)} regions, "
+                f"{total_fovs} total FOVs, {len(channels)} channels, {num_z} z-levels"
+            )
+            return True
+        except Exception as e:
+            self._log.exception("Failed to start 6D multi-region zarr acquisition in NDViewer")
+            error_msg = str(e) if str(e) else type(e).__name__
+            self._show_placeholder(f"NDViewer: failed to start 6D regions acquisition:\n{error_msg}")
+            return False
+
+    def notify_zarr_frame(self, t: int, fov_idx: int, z: int, channel: str, region_idx: int = 0) -> None:
+        """Notify viewer that a zarr frame was written.
+
+        Called on main thread via Qt signal from worker thread.
+
+        Args:
+            t: Timepoint index
+            fov_idx: FOV index (local to region in 6D mode, flat index otherwise)
+            z: Z-level index
+            channel: Channel name
+            region_idx: Region index (only used in 6D multi-region mode)
+        """
+        self._log.debug(f"notify_zarr_frame called: t={t}, fov={fov_idx}, z={z}, ch={channel}")
+        if self._viewer is None:
+            self._log.warning("notify_zarr_frame: viewer is None")
+            return
+        try:
+            if hasattr(self._viewer, "notify_zarr_frame"):
+                self._viewer.notify_zarr_frame(t, fov_idx, z, channel, region_idx)
+            else:
+                self._log.warning("viewer doesn't have notify_zarr_frame method")
+        except Exception:
+            self._log.exception(
+                f"Failed to notify zarr frame: t={t}, fov={fov_idx}, z={z}, "
+                f"channel={channel}, region_idx={region_idx}"
+            )
+
+    def end_zarr_acquisition(self) -> None:
+        """Mark zarr acquisition as ended.
+
+        Call this when zarr acquisition completes. The viewer remains usable
+        for navigating the acquired data.
+        """
+        if self._viewer is None:
+            return
+        try:
+            if hasattr(self._viewer, "end_zarr_acquisition"):
+                self._viewer.end_zarr_acquisition()
+                self._log.debug("NDViewer zarr acquisition ended")
+        except Exception:
+            self._log.exception("Failed to end zarr acquisition in NDViewer")
 
     def close(self) -> None:
         """Clean up viewer resources."""
@@ -883,10 +1053,28 @@ class PreferencesDialog(QDialog):
 
         # File Saving Format
         self.file_saving_combo = QComboBox()
-        self.file_saving_combo.addItems(["OME_TIFF", "MULTI_PAGE_TIFF", "INDIVIDUAL_IMAGES"])
+        self.file_saving_combo.addItems([e.name for e in FileSavingOption])
         current_value = self._get_config_value("GENERAL", "file_saving_option", "OME_TIFF")
         self.file_saving_combo.setCurrentText(current_value)
         layout.addRow("File Saving Format:", self.file_saving_combo)
+
+        # Zarr Compression (only visible when ZARR_V3 is selected)
+        self.zarr_compression_combo = QComboBox()
+        self.zarr_compression_combo.addItems(["none", "fast", "balanced", "best"])
+        self.zarr_compression_combo.setToolTip(
+            "none: No compression, maximum speed (~2x faster than TIFF)\n"
+            "fast: blosc-lz4, ~1000 MB/s, ~2x compression (default)\n"
+            "balanced: blosc-zstd level 3, ~500 MB/s, ~3-4x compression\n"
+            "best: blosc-zstd level 9, slower but best compression"
+        )
+        zarr_compression_value = self._get_config_value("GENERAL", "zarr_compression", "fast")
+        self.zarr_compression_combo.setCurrentText(zarr_compression_value)
+        self.zarr_compression_label = QLabel("Zarr Compression:")
+        layout.addRow(self.zarr_compression_label, self.zarr_compression_combo)
+
+        # Show/hide zarr options based on file saving format selection
+        self._update_zarr_options_visibility()
+        self.file_saving_combo.currentTextChanged.connect(self._update_zarr_options_visibility)
 
         # Default Saving Path
         path_widget = QWidget()
@@ -1058,6 +1246,35 @@ class PreferencesDialog(QDialog):
 
         stage_group.content.addLayout(stage_layout)
         layout.addWidget(stage_group)
+
+        # Zarr v3 Options section
+        zarr_group = CollapsibleGroupBox("Zarr v3 Options", collapsed=True)
+        zarr_layout = QFormLayout()
+
+        self.zarr_chunk_mode_combo = QComboBox()
+        self.zarr_chunk_mode_combo.addItems(["full_frame", "tiled_512", "tiled_256"])
+        self.zarr_chunk_mode_combo.setToolTip(
+            "full_frame: Each chunk is a full image plane (simplest, default)\n"
+            "tiled_512: 512x512 pixel chunks for tiled visualization\n"
+            "tiled_256: 256x256 pixel chunks for fine-grained streaming"
+        )
+        zarr_chunk_mode_value = self._get_config_value("GENERAL", "zarr_chunk_mode", "full_frame")
+        self.zarr_chunk_mode_combo.setCurrentText(zarr_chunk_mode_value)
+        zarr_layout.addRow("Chunk Mode:", self.zarr_chunk_mode_combo)
+
+        self.zarr_6d_fov_checkbox = QCheckBox()
+        self.zarr_6d_fov_checkbox.setToolTip(
+            "When enabled, non-HCS acquisitions use a single 6D zarr per region\n"
+            "with shape (FOV, T, C, Z, Y, X). This is non-standard but groups\n"
+            "all FOVs together. When disabled (default), creates separate 5D\n"
+            "OME-NGFF compliant zarr files per FOV."
+        )
+        zarr_6d_fov_value = self._get_config_bool("GENERAL", "zarr_use_6d_fov_dimension", False)
+        self.zarr_6d_fov_checkbox.setChecked(zarr_6d_fov_value)
+        zarr_layout.addRow("Use 6D FOV Dimension:", self.zarr_6d_fov_checkbox)
+
+        zarr_group.content.addLayout(zarr_layout)
+        layout.addWidget(zarr_group)
 
         # Contrast Autofocus section
         af_group = CollapsibleGroupBox("Contrast Autofocus", collapsed=True)
@@ -1541,6 +1758,12 @@ class PreferencesDialog(QDialog):
             else:
                 QMessageBox.warning(self, "Invalid Path", f"The selected directory is not writable:\n{path}")
 
+    def _update_zarr_options_visibility(self):
+        """Show/hide zarr options based on file saving format."""
+        is_zarr = self.file_saving_combo.currentText() == "ZARR_V3"
+        self.zarr_compression_label.setVisible(is_zarr)
+        self.zarr_compression_combo.setVisible(is_zarr)
+
     def _ensure_section(self, section):
         """Ensure a config section exists, creating it if necessary."""
         if not self.config.has_section(section):
@@ -1553,6 +1776,11 @@ class PreferencesDialog(QDialog):
 
         # General settings
         self.config.set("GENERAL", "file_saving_option", self.file_saving_combo.currentText())
+        self.config.set("GENERAL", "zarr_compression", self.zarr_compression_combo.currentText())
+        self.config.set("GENERAL", "zarr_chunk_mode", self.zarr_chunk_mode_combo.currentText())
+        self.config.set(
+            "GENERAL", "zarr_use_6d_fov_dimension", "true" if self.zarr_6d_fov_checkbox.isChecked() else "false"
+        )
         self.config.set("GENERAL", "default_saving_path", self.saving_path_edit.text())
         self.config.set("GENERAL", "show_dev_tab", "true" if self.show_dev_tab_checkbox.isChecked() else "false")
 
@@ -1723,6 +1951,19 @@ class PreferencesDialog(QDialog):
             self.file_saving_combo.currentText()
         )
 
+        # Zarr compression (only applicable when using ZARR_V3)
+        control._def.ZARR_COMPRESSION = control._def.ZarrCompression.convert_to_enum(
+            self.zarr_compression_combo.currentText()
+        )
+
+        # Zarr chunk mode
+        control._def.ZARR_CHUNK_MODE = control._def.ZarrChunkMode.convert_to_enum(
+            self.zarr_chunk_mode_combo.currentText()
+        )
+
+        # Zarr 6D FOV dimension
+        control._def.ZARR_USE_6D_FOV_DIMENSION = self.zarr_6d_fov_checkbox.isChecked()
+
         # Default saving path
         control._def.DEFAULT_SAVING_PATH = self.saving_path_edit.text()
 
@@ -1804,6 +2045,11 @@ class PreferencesDialog(QDialog):
         new_val = self.file_saving_combo.currentText()
         if old_val != new_val:
             changes.append(("File Saving Format", old_val, new_val, False))
+
+        old_val = self._get_config_bool("GENERAL", "zarr_use_6d_fov_dimension", False)
+        new_val = self.zarr_6d_fov_checkbox.isChecked()
+        if old_val != new_val:
+            changes.append(("Use 6D FOV Dimension", str(old_val), str(new_val), False))
 
         old_val = self._get_config_value("GENERAL", "default_saving_path", str(Path.home() / "Downloads"))
         new_val = self.saving_path_edit.text()
