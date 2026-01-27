@@ -25,19 +25,28 @@ typedef struct pid_arguments {
 /***************************************************************************************************/
 // Teensy4.1 board v1 def
 
-// illumination
-static const int LASER_405nm = 5;   // to rename
-static const int LASER_488nm = 4;   // to rename
-static const int LASER_561nm = 22;   // to rename
-static const int LASER_638nm = 3;  // to rename
-static const int LASER_730nm = 23;  // to rename
-static const int LASER_INTERLOCK = 2;
+// Illumination Control TTL Ports - GPIO pin assignments
+// Pin numbers are based on PCB layout, not sequential
+static const int PIN_ILLUMINATION_D1 = 5;
+static const int PIN_ILLUMINATION_D2 = 4;
+static const int PIN_ILLUMINATION_D3 = 22;
+static const int PIN_ILLUMINATION_D4 = 3;
+static const int PIN_ILLUMINATION_D5 = 23;
+static const int PIN_ILLUMINATION_INTERLOCK = 2;
+
+// Legacy aliases (deprecated, kept for compatibility)
+static const int LASER_405nm = PIN_ILLUMINATION_D1;
+static const int LASER_488nm = PIN_ILLUMINATION_D2;
+static const int LASER_561nm = PIN_ILLUMINATION_D3;
+static const int LASER_638nm = PIN_ILLUMINATION_D4;
+static const int LASER_730nm = PIN_ILLUMINATION_D5;
+static const int LASER_INTERLOCK = PIN_ILLUMINATION_INTERLOCK;
 
 // Laser safety interlock check
 #ifdef DISABLE_LASER_INTERLOCK
 static inline bool INTERLOCK_OK() { return true; }
 #else
-static inline bool INTERLOCK_OK() { return digitalRead(LASER_INTERLOCK) == LOW; }
+static inline bool INTERLOCK_OK() { return digitalRead(PIN_ILLUMINATION_INTERLOCK) == LOW; }
 #endif
 
 // PWM6 2

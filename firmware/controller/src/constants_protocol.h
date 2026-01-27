@@ -111,6 +111,7 @@ static const int DISABLED = 2;
 /***************************************************************************************************/
 /***************************************** Illumination ********************************************/
 /***************************************************************************************************/
+// LED matrix patterns
 static const int ILLUMINATION_SOURCE_LED_ARRAY_FULL = 0;
 static const int ILLUMINATION_SOURCE_LED_ARRAY_LEFT_HALF = 1;
 static const int ILLUMINATION_SOURCE_LED_ARRAY_RIGHT_HALF = 2;
@@ -121,10 +122,22 @@ static const int ILLUMINATION_SOURCE_LED_ARRAY_RIGHT_DOT = 6;
 static const int ILLUMINATION_SOURCE_LED_ARRAY_TOP_HALF = 7;
 static const int ILLUMINATION_SOURCE_LED_ARRAY_BOTTOM_HALF = 8;
 static const int ILLUMINATION_SOURCE_LED_EXTERNAL_FET = 20;
+
+// Illumination Control TTL Ports - port-based names (preferred)
+// These correspond to controller_port D1-D5 in software configuration
+// Note: D3/D4 source codes are non-sequential (14, 13) for historical API compatibility
+static const int ILLUMINATION_D1 = 11;
+static const int ILLUMINATION_D2 = 12;
+static const int ILLUMINATION_D3 = 14;
+static const int ILLUMINATION_D4 = 13;
+static const int ILLUMINATION_D5 = 15;
+
+// Illumination Control TTL Ports - legacy wavelength-based names (deprecated, kept for compatibility)
+// Use ILLUMINATION_D1-D5 for new code; wavelength is configured in software YAML
 static const int ILLUMINATION_SOURCE_405NM = 11;
 static const int ILLUMINATION_SOURCE_488NM = 12;
-static const int ILLUMINATION_SOURCE_638NM = 13;
 static const int ILLUMINATION_SOURCE_561NM = 14;
+static const int ILLUMINATION_SOURCE_638NM = 13;
 static const int ILLUMINATION_SOURCE_730NM = 15;
 
 #endif // CONSTANTS_PROTOCOL_H

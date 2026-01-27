@@ -246,6 +246,19 @@ class LIMIT_SWITCH_POLARITY:
 
 
 class ILLUMINATION_CODE:
+    """Illumination source codes for MCU communication.
+
+    LED Matrix Patterns (USB ports):
+        USB1-USB8 map to pattern codes 0-8+.
+
+    Illumination Control TTL Ports (D1-D5):
+        Port-based names (ILLUMINATION_D1-D5) are preferred for new code.
+        Wavelength-based names (ILLUMINATION_SOURCE_405NM, etc.) are kept as
+        aliases for backward compatibility. The actual wavelength is configured
+        in the illumination_channel_config.yaml file, not hardcoded here.
+    """
+
+    # LED matrix patterns (USB ports)
     ILLUMINATION_SOURCE_LED_ARRAY_FULL = 0
     ILLUMINATION_SOURCE_LED_ARRAY_LEFT_HALF = 1
     ILLUMINATION_SOURCE_LED_ARRAY_RIGHT_HALF = 2
@@ -256,11 +269,23 @@ class ILLUMINATION_CODE:
     ILLUMINATION_SOURCE_LED_ARRAY_TOP_HALF = 7
     ILLUMINATION_SOURCE_LED_ARRAY_BOTTOM_HALF = 8
     ILLUMINATION_SOURCE_LED_EXTERNAL_FET = 20
-    ILLUMINATION_SOURCE_405NM = 11
-    ILLUMINATION_SOURCE_488NM = 12
-    ILLUMINATION_SOURCE_638NM = 13
-    ILLUMINATION_SOURCE_561NM = 14
-    ILLUMINATION_SOURCE_730NM = 15
+
+    # Illumination Control TTL Ports - port-based names (preferred)
+    # These correspond to controller_port D1-D5 in illumination_channel_config.yaml
+    # Note: D3/D4 source codes are non-sequential (14, 13) for historical API compatibility
+    ILLUMINATION_D1 = 11
+    ILLUMINATION_D2 = 12
+    ILLUMINATION_D3 = 14
+    ILLUMINATION_D4 = 13
+    ILLUMINATION_D5 = 15
+
+    # Illumination Control TTL Ports - legacy wavelength-based names (deprecated, kept for compatibility)
+    # Use ILLUMINATION_D1-D5 for new code; wavelength is configured in YAML
+    ILLUMINATION_SOURCE_405NM = ILLUMINATION_D1
+    ILLUMINATION_SOURCE_488NM = ILLUMINATION_D2
+    ILLUMINATION_SOURCE_561NM = ILLUMINATION_D3
+    ILLUMINATION_SOURCE_638NM = ILLUMINATION_D4
+    ILLUMINATION_SOURCE_730NM = ILLUMINATION_D5
 
 
 class VOLUMETRIC_IMAGING:

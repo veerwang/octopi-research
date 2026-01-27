@@ -16,24 +16,24 @@ void init_serial_communication()
 void init_lasers_and_led_driver() {
 #ifndef DISABLE_LASER_INTERLOCK
   // laser safety interlock
-  pinMode(LASER_INTERLOCK, INPUT_PULLUP);
+  pinMode(PIN_ILLUMINATION_INTERLOCK, INPUT_PULLUP);
 #endif
 
-  // enable pins
-  pinMode(LASER_405nm, OUTPUT);
-  digitalWrite(LASER_405nm, LOW);
+  // Illumination Control TTL Ports
+  pinMode(PIN_ILLUMINATION_D1, OUTPUT);
+  digitalWrite(PIN_ILLUMINATION_D1, LOW);
 
-  pinMode(LASER_488nm, OUTPUT);
-  digitalWrite(LASER_488nm, LOW);
+  pinMode(PIN_ILLUMINATION_D2, OUTPUT);
+  digitalWrite(PIN_ILLUMINATION_D2, LOW);
 
-  pinMode(LASER_638nm, OUTPUT);
-  digitalWrite(LASER_638nm, LOW);
+  pinMode(PIN_ILLUMINATION_D3, OUTPUT);
+  digitalWrite(PIN_ILLUMINATION_D3, LOW);
 
-  pinMode(LASER_561nm, OUTPUT);
-  digitalWrite(LASER_561nm, LOW);
+  pinMode(PIN_ILLUMINATION_D4, OUTPUT);
+  digitalWrite(PIN_ILLUMINATION_D4, LOW);
 
-  pinMode(LASER_730nm, OUTPUT);
-  digitalWrite(LASER_730nm, LOW);
+  pinMode(PIN_ILLUMINATION_D5, OUTPUT);
+  digitalWrite(PIN_ILLUMINATION_D5, LOW);
 
   // LED drivers
   pinMode(pin_LT3932_SYNC, OUTPUT);
