@@ -9,6 +9,8 @@
 
 // default axes, such as X,Y,Z
 #define STAGE_AXES 3
+// total axes including filter wheels (X, Y, Z, W, W2)
+#define TOTAL_AXES 5
 #define DEBUG_MODE false
 
 // PID arguments
@@ -50,10 +52,14 @@ static const int num_digital_pins = 4;
 static const int digitial_output_pins[num_digital_pins] = {6, 9, 10, 15}; // PWM 9, 12-14
 
 // camera trigger
-static const int camera_trigger_pins[] = {29, 30, 31, 32, 16, 28}; // trigger 1-6
+static const int camera_trigger_pins[] = {29, 30, 31, 32}; // trigger 1-4 (pin 16 used for W2 CS, pin 28 used for W2 CLK)
+
+// W2 clock pin
+const uint8_t pin_TMC4361_CLK_W2 = 28;
 
 // motors
-const uint8_t pin_TMC4361_CS[4] = {41, 36, 35, 34};
+// Chip select pins: [0]=X, [1]=Y, [2]=Z, [3]=W (filter wheel 1), [4]=W2 (filter wheel 2)
+const uint8_t pin_TMC4361_CS[TOTAL_AXES] = {41, 36, 35, 34, 16};
 const uint8_t pin_TMC4361_CLK = 37;
 
 // DAC
@@ -108,11 +114,39 @@ static const float BLUE_ADJUSTMENT_FACTOR = 1;
 /******************************************* steppers **********************************************/
 /***************************************************************************************************/
 const uint32_t clk_Hz_TMC4361 = 16000000;
-const uint8_t lft_sw_pol[4] = {0, 0, 0, 0};
-const uint8_t rht_sw_pol[4] = {0, 0, 0, 0};
-const uint8_t TMC4361_homing_sw[4] = {LEFT_SW, LEFT_SW, RGHT_SW, LEFT_SW};
+const uint8_t lft_sw_pol[TOTAL_AXES] = {0, 0, 0, 0, 0};
+const uint8_t rht_sw_pol[TOTAL_AXES] = {0, 0, 0, 0, 0};
+const uint8_t TMC4361_homing_sw[TOTAL_AXES] = {LEFT_SW, LEFT_SW, RGHT_SW, LEFT_SW, LEFT_SW};
 const int32_t vslow = 0x04FFFC00;
 
 typedef void (*CommandCallback)();
+
+/***************************************************************************************************/
+/*************************************** axis mapping **********************************************/
+/***************************************************************************************************/
+// Maps protocol axis constants to internal array indices for safe array access.
+//
+// Why this is needed:
+// - Protocol constants (constants_protocol.h): AXIS_X=0, AXIS_Y=1, AXIS_Z=2, AXIS_W=5, AXIS_W2=6
+// - Internal indices (def/def_v1.h): x=1, y=0, z=2, w=3, w2=4
+//
+// The mismatch exists because:
+// - Protocol values are for software-firmware communication (historical API)
+// - Internal indices match hardware wiring (x/y swapped, filter wheels at indices 3-4)
+//
+// Always use this function when buffer_rx[2] (axis from command) is used for array access.
+// Returns 0xFF for invalid/unsupported axis values.
+inline uint8_t protocol_axis_to_internal(int protocol_axis)
+{
+    switch (protocol_axis)
+    {
+        case AXIS_X:  return x;
+        case AXIS_Y:  return y;
+        case AXIS_Z:  return z;
+        case AXIS_W:  return w;
+        case AXIS_W2: return w2;
+        default:      return 0xFF;  // Invalid axis
+    }
+}
 
 #endif // CONSTANTS_H

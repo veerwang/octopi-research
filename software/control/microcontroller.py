@@ -31,6 +31,7 @@ _CMD_NAMES = {
     CMD_SET.MOVE_Z: "MOVE_Z",
     CMD_SET.MOVE_THETA: "MOVE_THETA",
     CMD_SET.MOVE_W: "MOVE_W",
+    CMD_SET.MOVE_W2: "MOVE_W2",
     CMD_SET.HOME_OR_ZERO: "HOME_OR_ZERO",
     CMD_SET.MOVETO_X: "MOVETO_X",
     CMD_SET.MOVETO_Y: "MOVETO_Y",
@@ -60,6 +61,7 @@ _CMD_NAMES = {
     CMD_SET.SET_AXIS_DISABLE_ENABLE: "SET_AXIS_DISABLE_ENABLE",
     CMD_SET.SET_PIN_LEVEL: "SET_PIN_LEVEL",
     CMD_SET.INITFILTERWHEEL: "INITFILTERWHEEL",
+    CMD_SET.INITFILTERWHEEL_W2: "INITFILTERWHEEL_W2",
     CMD_SET.INITIALIZE: "INITIALIZE",
     CMD_SET.RESET: "RESET",
 }
@@ -82,6 +84,7 @@ _default_y_homing_direction = movement_sign_to_homing_direction(STAGE_MOVEMENT_S
 _default_z_homing_direction = movement_sign_to_homing_direction(STAGE_MOVEMENT_SIGN_Z)
 _default_theta_homing_direction = movement_sign_to_homing_direction(STAGE_MOVEMENT_SIGN_THETA)
 _default_w_homing_direction = movement_sign_to_homing_direction(STAGE_MOVEMENT_SIGN_W)
+_default_w2_homing_direction = movement_sign_to_homing_direction(STAGE_MOVEMENT_SIGN_W)  # W2 uses same sign as W
 
 
 # to do (7/28/2021) - add functions for configuring the stepper motors
@@ -203,6 +206,8 @@ class SimSerial(AbstractCephlaMicroSerial):
         self.y = 0
         self.z = 0
         self.theta = 0
+        self.w = 0
+        self.w2 = 0
         self.joystick_button = False
         self.switch = False
 
@@ -227,6 +232,10 @@ class SimSerial(AbstractCephlaMicroSerial):
             self.z += self.unpack_position(position_bytes)
         elif command_byte == CMD_SET.MOVE_THETA:
             self.theta += self.unpack_position(position_bytes)
+        elif command_byte == CMD_SET.MOVE_W:
+            self.w += self.unpack_position(position_bytes)
+        elif command_byte == CMD_SET.MOVE_W2:
+            self.w2 += self.unpack_position(position_bytes)
         elif command_byte == CMD_SET.MOVETO_X:
             self.x = self.unpack_position(position_bytes)
         elif command_byte == CMD_SET.MOVETO_Y:
@@ -250,6 +259,10 @@ class SimSerial(AbstractCephlaMicroSerial):
             elif axis == AXIS.XY:
                 self.x = 0
                 self.y = 0
+            elif axis == AXIS.W:
+                self.w = 0
+            elif axis == AXIS.W2:
+                self.w2 = 0
 
         self.response_buffer.extend(
             SimSerial.response_bytes_for(
@@ -609,12 +622,19 @@ class Microcontroller:
         self.send_command(cmd)
         self.log.debug("initialize the drivers")
 
-    def init_filter_wheel(self):
+    def init_filter_wheel(self, axis=AXIS.W):
+        """Initialize a filter wheel axis.
+
+        Args:
+            axis: The axis to initialize (AXIS.W or AXIS.W2). Defaults to AXIS.W.
+        """
+        cmd_map = {AXIS.W: CMD_SET.INITFILTERWHEEL, AXIS.W2: CMD_SET.INITFILTERWHEEL_W2}
+        if axis not in cmd_map:
+            raise ValueError(f"Unsupported filter wheel axis: {axis}. Expected AXIS.W or AXIS.W2.")
         self._cmd_id = 0
         cmd = bytearray(self.tx_buffer_length)
-        cmd[1] = CMD_SET.INITFILTERWHEEL
+        cmd[1] = cmd_map[axis]
         self.send_command(cmd)
-        print("initialize filter wheel")  # debug
 
     def turn_on_illumination(self):
         self.log.debug("[MCU] turn_on_illumination")
@@ -753,6 +773,9 @@ class Microcontroller:
     def move_w_usteps(self, usteps):
         self._move_axis_usteps(usteps, CMD_SET.MOVE_W)
 
+    def move_w2_usteps(self, usteps):
+        self._move_axis_usteps(usteps, CMD_SET.MOVE_W2)
+
     def set_off_set_velocity_x(self, off_set_velocity):
         # off_set_velocity is in mm/s
         cmd = bytearray(self.tx_buffer_length)
@@ -825,6 +848,13 @@ class Microcontroller:
         cmd[3] = homing_direction.value
         self.send_command(cmd)
 
+    def home_w2(self, homing_direction: HomingDirection = _default_w2_homing_direction):
+        cmd = bytearray(self.tx_buffer_length)
+        cmd[1] = CMD_SET.HOME_OR_ZERO
+        cmd[2] = AXIS.W2
+        cmd[3] = homing_direction.value
+        self.send_command(cmd)
+
     def zero_x(self):
         cmd = bytearray(self.tx_buffer_length)
         cmd[1] = CMD_SET.HOME_OR_ZERO
@@ -850,6 +880,13 @@ class Microcontroller:
         cmd = bytearray(self.tx_buffer_length)
         cmd[1] = CMD_SET.HOME_OR_ZERO
         cmd[2] = AXIS.W
+        cmd[3] = HOME_OR_ZERO.ZERO
+        self.send_command(cmd)
+
+    def zero_w2(self):
+        cmd = bytearray(self.tx_buffer_length)
+        cmd[1] = CMD_SET.HOME_OR_ZERO
+        cmd[2] = AXIS.W2
         cmd[3] = HOME_OR_ZERO.ZERO
         self.send_command(cmd)
 
@@ -1007,12 +1044,19 @@ class Microcontroller:
         self.set_home_safety_margin(AXIS.Z, int(Z_HOME_SAFETY_MARGIN_UM))
         self.wait_till_operation_is_completed()
 
-    def configure_squidfilter(self):
-        self.set_leadscrew_pitch(AXIS.W, SCREW_PITCH_W_MM)
+    def configure_squidfilter(self, axis=AXIS.W):
+        """Configure a filter wheel motor.
+
+        Args:
+            axis: The axis to configure (AXIS.W or AXIS.W2). Defaults to AXIS.W.
+        """
+        if axis not in (AXIS.W, AXIS.W2):
+            raise ValueError(f"Unsupported filter wheel axis: {axis}. Expected AXIS.W or AXIS.W2.")
+        self.set_leadscrew_pitch(axis, SCREW_PITCH_W_MM)
         self.wait_till_operation_is_completed()
-        self.configure_motor_driver(AXIS.W, MICROSTEPPING_DEFAULT_W, W_MOTOR_RMS_CURRENT_mA, W_MOTOR_I_HOLD)
+        self.configure_motor_driver(axis, MICROSTEPPING_DEFAULT_W, W_MOTOR_RMS_CURRENT_mA, W_MOTOR_I_HOLD)
         self.wait_till_operation_is_completed()
-        self.set_max_velocity_acceleration(AXIS.W, MAX_VELOCITY_W_mm, MAX_ACCELERATION_W_mm)
+        self.set_max_velocity_acceleration(axis, MAX_VELOCITY_W_mm, MAX_ACCELERATION_W_mm)
         self.wait_till_operation_is_completed()
 
     def ack_joystick_button_pressed(self):

@@ -6,7 +6,7 @@ import yaml
 import logging
 import sys
 from pathlib import Path
-from typing import List, Optional, TYPE_CHECKING
+from typing import Dict, List, Optional, TYPE_CHECKING
 
 import psutil
 
@@ -4763,111 +4763,199 @@ class AutoFocusWidget(QFrame):
 
 
 class FilterControllerWidget(QFrame):
+    """Widget for controlling filter wheel(s).
+
+    Supports both single and multiple filter wheels. When multiple wheels are
+    available, displays a tabbed interface with one tab per wheel.
+    """
+
     def __init__(
         self,
         filterController: AbstractFilterWheelController,
         liveController: LiveController,
         main=None,
+        config_repo=None,
         *args,
         **kwargs
     ):
         super().__init__(*args, **kwargs)
+        self._log = squid.logging.get_logger(self.__class__.__name__)
         self.filterController: AbstractFilterWheelController = filterController
         self.liveController = liveController
-        self.wheel_index = 1  # Control the first filter wheel
+        self.config_repo = config_repo
+
+        # Get available wheel indices
+        self._wheel_indices = list(filterController.available_filter_wheels) or [1]
+
+        # Track combo boxes and buttons per wheel (wheel_id -> widget)
+        self._combo_boxes: Dict[int, QComboBox] = {}
+        self._home_buttons: Dict[int, QPushButton] = {}
+        self._get_pos_buttons: Dict[int, QPushButton] = {}
+        self._next_buttons: Dict[int, QPushButton] = {}
+        self._prev_buttons: Dict[int, QPushButton] = {}
+
         self.add_components()
         self.setFrameStyle(QFrame.Panel | QFrame.Raised)
 
+    def _get_wheel_name(self, wheel_id: int) -> str:
+        """Get display name for a wheel from config or generate default."""
+        if self.config_repo:
+            try:
+                registry = self.config_repo.get_filter_wheel_registry()
+                if registry and registry.filter_wheels:
+                    for wheel in registry.filter_wheels:
+                        if wheel.id == wheel_id and wheel.name:
+                            return wheel.name
+            except Exception as e:
+                self._log.warning(f"Failed to get filter wheel name for wheel_id={wheel_id}: {e}")
+        # Default name
+        return f"Wheel {wheel_id}"
+
     def add_components(self):
+        main_layout = QVBoxLayout()
+
+        # If multiple wheels, use tabs; otherwise use simple layout
+        use_tabs = len(self._wheel_indices) > 1
+
+        if use_tabs:
+            self.tab_widget = QTabWidget()
+            for wheel_id in self._wheel_indices:
+                tab = self._create_wheel_tab(wheel_id)
+                wheel_name = self._get_wheel_name(wheel_id)
+                self.tab_widget.addTab(tab, wheel_name)
+            main_layout.addWidget(self.tab_widget)
+        else:
+            # Single wheel - use simple layout
+            wheel_id = self._wheel_indices[0]
+            wheel_widget = self._create_wheel_tab(wheel_id)
+            main_layout.addWidget(wheel_widget)
+
+        # Shared checkbox for all wheels
+        self.checkBox = QCheckBox("Disable filter wheel movement on changing Microscope Configuration", self)
+        self.checkBox.stateChanged.connect(self.disable_movement_by_switching_channels)
+        main_layout.addWidget(self.checkBox)
+
+        # Info label
+        info_label = QLabel("For acquisition, filter wheel positions need to be set in channel configurations.")
+        main_layout.addWidget(info_label)
+
+        self.setLayout(main_layout)
+
+    def _create_wheel_tab(self, wheel_id: int) -> QWidget:
+        """Create a widget for controlling a single wheel."""
+        widget = QWidget()
+        layout = QGridLayout()
+
         # Get filter wheel info to populate combo box
         try:
-            wheel_info = self.filterController.get_filter_wheel_info(self.wheel_index)
+            wheel_info = self.filterController.get_filter_wheel_info(wheel_id)
             num_positions = wheel_info.number_of_slots
-        except:
-            # Fallback to 7 positions if we can't get info
-            num_positions = 7
+        except Exception:
+            num_positions = 8  # Fallback
 
-        self.comboBox = QComboBox()
+        # Get position names from registry if available
+        position_names = {}
+        if self.config_repo:
+            try:
+                registry = self.config_repo.get_filter_wheel_registry()
+                if registry and registry.filter_wheels:
+                    for wheel in registry.filter_wheels:
+                        if wheel.id == wheel_id:
+                            position_names = wheel.positions
+                            break
+            except Exception as e:
+                self._log.warning(f"Failed to get filter position names for wheel {wheel_id}: {e}")
+
+        # Position combo box
+        combo_box = QComboBox()
         for i in range(1, num_positions + 1):
-            self.comboBox.addItem(f"Position {i}")
-
-        self.checkBox = QCheckBox("Disable filter wheel movement on changing Microscope Configuration", self)
+            # Try both int and string keys (YAML may load as strings)
+            filter_name = position_names.get(i) or position_names.get(str(i)) or f"Position {i}"
+            combo_box.addItem(f"{i}: {filter_name}")
+        self._combo_boxes[wheel_id] = combo_box
 
         # Create buttons
-        self.get_position_btn = QPushButton("Get Position")
-        self.home_btn = QPushButton("Home")
-        self.next_btn = QPushButton("Next")
-        self.previous_btn = QPushButton("Previous")
+        get_pos_btn = QPushButton("Get Position")
+        home_btn = QPushButton("Home")
+        next_btn = QPushButton("Next")
+        prev_btn = QPushButton("Previous")
 
-        layout = QGridLayout()
-        layout.addWidget(QLabel("Filter wheel position:"), 0, 0)
-        layout.addWidget(self.comboBox, 0, 1)
-        layout.addWidget(self.get_position_btn, 0, 2)
-        layout.addWidget(self.checkBox, 2, 0, 1, 3)  # Span across 3 columns
-        layout.addWidget(self.home_btn, 3, 0)
-        layout.addWidget(self.next_btn, 3, 1)
-        layout.addWidget(self.previous_btn, 3, 2)
-        layout.addWidget(
-            QLabel("For acquisition, filter wheel positions need to be set in channel configurations."), 4, 0, 1, 3
-        )
+        self._get_pos_buttons[wheel_id] = get_pos_btn
+        self._home_buttons[wheel_id] = home_btn
+        self._next_buttons[wheel_id] = next_btn
+        self._prev_buttons[wheel_id] = prev_btn
 
-        self.setLayout(layout)
+        # Layout
+        layout.addWidget(QLabel("Position:"), 0, 0)
+        layout.addWidget(combo_box, 0, 1)
+        layout.addWidget(get_pos_btn, 0, 2)
+        layout.addWidget(home_btn, 1, 0)
+        layout.addWidget(next_btn, 1, 1)
+        layout.addWidget(prev_btn, 1, 2)
 
-        # Connect signals
-        self.comboBox.currentIndexChanged.connect(self.on_selection_change)
-        self.checkBox.stateChanged.connect(self.disable_movement_by_switching_channels)
-        self.get_position_btn.clicked.connect(self.update_position_from_controller)
-        self.home_btn.clicked.connect(self.home)
-        self.next_btn.clicked.connect(self.go_to_next_position)
-        self.previous_btn.clicked.connect(self.go_to_previous_position)
+        widget.setLayout(layout)
 
-    def home(self):
-        """Home the filter wheel."""
-        self.filterController.home(self.wheel_index)
+        # Connect signals with wheel_id captured in closures
+        combo_box.currentIndexChanged.connect(lambda idx, wid=wheel_id: self._on_selection_change(wid, idx))
+        get_pos_btn.clicked.connect(lambda checked, wid=wheel_id: self._update_position_from_controller(wid))
+        home_btn.clicked.connect(lambda checked, wid=wheel_id: self._home(wid))
+        next_btn.clicked.connect(lambda checked, wid=wheel_id: self._go_to_next_position(wid))
+        prev_btn.clicked.connect(lambda checked, wid=wheel_id: self._go_to_previous_position(wid))
 
-    def update_position_from_controller(self):
+        return widget
+
+    def _home(self, wheel_id: int):
+        """Home a specific filter wheel."""
+        self.filterController.home(wheel_id)
+
+    def _update_position_from_controller(self, wheel_id: int):
         """Poll the current position from the controller and update the dropdown."""
         try:
-            current_pos = self.filterController.get_filter_wheel_position().get(self.wheel_index, 1)
-            # Block signals temporarily to avoid triggering position change
-            self.comboBox.blockSignals(True)
-            self.comboBox.setCurrentIndex(current_pos - 1)  # Convert 1-indexed to 0-indexed
-            self.comboBox.blockSignals(False)
-            print(f"Filter wheel position updated: {current_pos}")
+            current_pos = self.filterController.get_filter_wheel_position().get(wheel_id, 1)
+            combo_box = self._combo_boxes.get(wheel_id)
+            if combo_box:
+                combo_box.blockSignals(True)
+                combo_box.setCurrentIndex(current_pos - 1)
+                combo_box.blockSignals(False)
+            self._log.debug(f"Filter wheel {wheel_id} position updated: {current_pos}")
         except Exception as e:
-            print(f"Error getting filter wheel position: {e}")
+            self._log.error(f"Error getting filter wheel {wheel_id} position: {e}")
 
-    def on_selection_change(self, index):
+    def _on_selection_change(self, wheel_id: int, index: int):
         """Handle position selection from combo box."""
         if index >= 0:
-            position = index + 1  # Combo box is 0-indexed, positions are 1-indexed
-            self.filterController.set_filter_wheel_position({self.wheel_index: position})
+            position = index + 1
+            self.filterController.set_filter_wheel_position({wheel_id: position})
 
-    def go_to_next_position(self):
+    def _go_to_next_position(self, wheel_id: int):
         """Move to the next position."""
         try:
-            current_pos = self.filterController.get_filter_wheel_position().get(self.wheel_index, 1)
-            wheel_info = self.filterController.get_filter_wheel_info(self.wheel_index)
+            current_pos = self.filterController.get_filter_wheel_position().get(wheel_id, 1)
+            wheel_info = self.filterController.get_filter_wheel_info(wheel_id)
             max_pos = wheel_info.number_of_slots
 
             if current_pos < max_pos:
                 new_pos = current_pos + 1
-                self.filterController.set_filter_wheel_position({self.wheel_index: new_pos})
-                self.comboBox.setCurrentIndex(new_pos - 1)  # Update combo box
+                self.filterController.set_filter_wheel_position({wheel_id: new_pos})
+                combo_box = self._combo_boxes.get(wheel_id)
+                if combo_box:
+                    combo_box.setCurrentIndex(new_pos - 1)
         except Exception as e:
-            print(f"Error moving to next position: {e}")
+            self._log.error(f"Error moving wheel {wheel_id} to next position: {e}")
 
-    def go_to_previous_position(self):
+    def _go_to_previous_position(self, wheel_id: int):
         """Move to the previous position."""
         try:
-            current_pos = self.filterController.get_filter_wheel_position().get(self.wheel_index, 1)
+            current_pos = self.filterController.get_filter_wheel_position().get(wheel_id, 1)
 
             if current_pos > 1:
                 new_pos = current_pos - 1
-                self.filterController.set_filter_wheel_position({self.wheel_index: new_pos})
-                self.comboBox.setCurrentIndex(new_pos - 1)  # Update combo box
+                self.filterController.set_filter_wheel_position({wheel_id: new_pos})
+                combo_box = self._combo_boxes.get(wheel_id)
+                if combo_box:
+                    combo_box.setCurrentIndex(new_pos - 1)
         except Exception as e:
-            print(f"Error moving to previous position: {e}")
+            self._log.error(f"Error moving wheel {wheel_id} to previous position: {e}")
 
     def disable_movement_by_switching_channels(self, state):
         """Enable/disable automatic filter wheel movement when changing channels."""
@@ -4875,6 +4963,37 @@ class FilterControllerWidget(QFrame):
             self.liveController.enable_channel_auto_filter_switching = False
         else:
             self.liveController.enable_channel_auto_filter_switching = True
+
+    # Backward compatibility properties and methods
+    @property
+    def wheel_index(self):
+        """Get the first wheel index for backward compatibility."""
+        return self._wheel_indices[0] if self._wheel_indices else 1
+
+    @property
+    def comboBox(self):
+        """Get the first combo box for backward compatibility."""
+        return self._combo_boxes.get(self.wheel_index)
+
+    def home(self):
+        """Home the first filter wheel for backward compatibility."""
+        self._home(self.wheel_index)
+
+    def update_position_from_controller(self):
+        """Update position for first wheel for backward compatibility."""
+        self._update_position_from_controller(self.wheel_index)
+
+    def on_selection_change(self, index):
+        """Handle selection change for first wheel for backward compatibility."""
+        self._on_selection_change(self.wheel_index, index)
+
+    def go_to_next_position(self):
+        """Go to next position on first wheel for backward compatibility."""
+        self._go_to_next_position(self.wheel_index)
+
+    def go_to_previous_position(self):
+        """Go to previous position on first wheel for backward compatibility."""
+        self._go_to_previous_position(self.wheel_index)
 
 
 class StatsDisplayWidget(QFrame):
@@ -15476,7 +15595,7 @@ def _populate_filter_positions_for_combo(
     config_repo,
     current_position: Optional[int] = None,
 ) -> None:
-    """Populate filter position dropdown, auto-resolving single-wheel systems.
+    """Populate filter position dropdown, auto-resolving wheel selection.
 
     Args:
         combo: The QComboBox to populate
@@ -15495,21 +15614,21 @@ def _populate_filter_positions_for_combo(
         combo.setEnabled(False)
         return
 
-    # Resolve wheel: explicit name, or auto-select if single wheel
+    # Resolve wheel: explicit name, or auto-select first wheel
     wheel = None
     if channel_wheel and channel_wheel not in ("(None)", "auto"):
         # Explicit wheel name specified
         wheel = registry.get_wheel_by_name(channel_wheel) if registry else None
         if not wheel and registry:
             logger.warning(f"Filter wheel '{channel_wheel}' not found in registry")
-    elif has_registry and len(registry.filter_wheels) == 1:
-        # Single wheel system - auto-select
+    elif has_registry:
+        # Auto-select first wheel (works for both single and multi-wheel systems)
         wheel = registry.get_first_wheel()
 
     if not wheel:
         # No wheel resolved - check if we should show default positions or N/A
         if has_registry or _is_filter_wheel_enabled():
-            # Filter wheel exists but no selection - show default positions
+            # Filter wheel enabled but no registry - show default positions
             combo.setEnabled(True)
             for pos in range(1, 9):
                 combo.addItem(f"Position {pos}", pos)
@@ -16220,30 +16339,64 @@ class FilterWheelConfiguratorDialog(QDialog):
 
     def _load_config(self):
         """Load filter wheel registry from config."""
-        from control.models.filter_wheel_config import FilterWheelRegistryConfig, FilterWheelDefinition
+        from control.models.filter_wheel_config import FilterWheelRegistryConfig, FilterWheelDefinition, FilterWheelType
 
         self.registry = self.config_repo.get_filter_wheel_registry()
 
         # Check if filter wheel is enabled in .ini
         filter_wheel_enabled = getattr(control._def, "USE_EMISSION_FILTER_WHEEL", False)
+        configured_indices = getattr(control._def, "EMISSION_FILTER_WHEEL_INDICES", [1])
 
-        # If no registry exists but filter wheel is enabled, create one with an unnamed wheel
+        # If no registry exists but filter wheel is enabled, create one with wheels for all configured indices
         if self.registry is None:
             if filter_wheel_enabled:
-                # Create unnamed wheel with default positions
                 default_positions = {i: f"Position {i}" for i in range(1, 9)}
-                self.registry = FilterWheelRegistryConfig(
-                    filter_wheels=[FilterWheelDefinition(positions=default_positions)]
-                )
+                wheels = []
+                for wheel_id in configured_indices:
+                    if len(configured_indices) == 1:
+                        # Single wheel: no name/id needed
+                        wheels.append(
+                            FilterWheelDefinition(type=FilterWheelType.EMISSION, positions=default_positions.copy())
+                        )
+                    else:
+                        # Multi-wheel: use id and name to distinguish
+                        wheels.append(
+                            FilterWheelDefinition(
+                                id=wheel_id,
+                                name=f"Wheel {wheel_id}",
+                                type=FilterWheelType.EMISSION,
+                                positions=default_positions.copy(),
+                            )
+                        )
+                self.registry = FilterWheelRegistryConfig(filter_wheels=wheels)
             else:
                 self.registry = FilterWheelRegistryConfig(filter_wheels=[])
+
+        # Ensure registry has entries for all wheels configured in .ini
+        # This handles the case where user updated .ini but didn't update filter_wheels.yaml
+        if filter_wheel_enabled and len(configured_indices) > 1:
+            existing_ids = {w.id for w in self.registry.filter_wheels if w.id is not None}
+            default_positions = {i: f"Position {i}" for i in range(1, 9)}
+            for wheel_id in configured_indices:
+                if wheel_id not in existing_ids:
+                    self._log.info(
+                        f"Auto-creating filter wheel entry for wheel {wheel_id} (configured in .ini but missing in filter_wheels.yaml)"
+                    )
+                    self.registry.filter_wheels.append(
+                        FilterWheelDefinition(
+                            id=wheel_id,
+                            name=f"Wheel {wheel_id}",
+                            type=FilterWheelType.EMISSION,
+                            positions=default_positions.copy(),
+                        )
+                    )
 
         # For single wheel systems: remove name if present (migrate from old "Emission" name)
         is_single_wheel = len(self.registry.filter_wheels) == 1
         if is_single_wheel:
             wheel = self.registry.filter_wheels[0]
             if wheel.name is not None or wheel.id is not None:
-                self.registry.filter_wheels[0] = FilterWheelDefinition(positions=wheel.positions)
+                self.registry.filter_wheels[0] = FilterWheelDefinition(type=wheel.type, positions=wheel.positions)
 
         # Hide wheel selector for single-wheel systems
         self.wheel_label.setVisible(not is_single_wheel)
