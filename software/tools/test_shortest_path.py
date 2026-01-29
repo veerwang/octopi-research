@@ -6,6 +6,7 @@ This script verifies that the shortest path calculation is correct
 without needing hardware.
 """
 
+
 def test_shortest_path():
     """Test the shortest path calculation logic."""
     num_positions = 8
@@ -16,14 +17,14 @@ def test_shortest_path():
     print("-" * 50)
 
     test_cases = [
-        (1, 2),   # Simple forward
-        (1, 8),   # Should go backward (1 step vs 7)
-        (1, 5),   # Equal distance (4 vs 4), forward preferred
-        (8, 1),   # Should go forward (1 step vs 7)
-        (3, 7),   # Forward 4 vs backward 4, forward preferred
-        (7, 2),   # Forward 3 vs backward 5, forward
-        (2, 7),   # Forward 5 vs backward 3, backward
-        (4, 4),   # Same position, no move
+        (1, 2),  # Simple forward
+        (1, 8),  # Should go backward (1 step vs 7)
+        (1, 5),  # Equal distance (4 vs 4), forward preferred
+        (8, 1),  # Should go forward (1 step vs 7)
+        (3, 7),  # Forward 4 vs backward 4, forward preferred
+        (7, 2),  # Forward 3 vs backward 5, forward
+        (2, 7),  # Forward 5 vs backward 3, backward
+        (4, 4),  # Same position, no move
     ]
 
     for current_pos, target_pos in test_cases:
@@ -94,7 +95,9 @@ def simulate_full_cycle():
         current = target
 
     print("-" * 50)
-    print(f"{'Total':<12} {total_steps_linear:<10} {total_steps_shortest:<10} {total_steps_linear - total_steps_shortest:<10}")
+    print(
+        f"{'Total':<12} {total_steps_linear:<10} {total_steps_shortest:<10} {total_steps_linear - total_steps_shortest:<10}"
+    )
 
     improvement = (total_steps_linear - total_steps_shortest) / total_steps_linear * 100
     print(f"\nImprovement: {improvement:.1f}% fewer steps")

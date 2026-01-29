@@ -46,6 +46,7 @@ log = squid.logging.get_logger("w_axis_timing")
 @dataclass
 class MoveResult:
     """Result of a single move operation."""
+
     move_index: int
     from_position: int
     to_position: int
@@ -58,6 +59,7 @@ class MoveResult:
 @dataclass
 class TestSummary:
     """Summary statistics for all moves."""
+
     total_moves: int
     total_time_s: float
     avg_move_time_ms: float
@@ -288,9 +290,7 @@ class WAxisTimingTest:
             # Always go forward (linear)
             return forward_steps, "forward"
 
-    def run_shortest_path_comparison(
-        self, num_positions: int, num_cycles: int, access_pattern: str = "random"
-    ) -> dict:
+    def run_shortest_path_comparison(self, num_positions: int, num_cycles: int, access_pattern: str = "random") -> dict:
         """
         Compare linear vs shortest path movement strategies.
 
@@ -390,8 +390,12 @@ class WAxisTimingTest:
         log.info("-" * 60)
         log.info(f"{'Method':<20} {'Total Time':<15} {'Avg Time':<15} {'Total Steps':<15}")
         log.info("-" * 60)
-        log.info(f"{'Linear':<20} {linear_total_time:.1f} ms{'':<6} {linear_avg_time:.1f} ms{'':<6} {linear_total_steps}")
-        log.info(f"{'Shortest Path':<20} {shortest_total_time:.1f} ms{'':<6} {shortest_avg_time:.1f} ms{'':<6} {shortest_total_steps}")
+        log.info(
+            f"{'Linear':<20} {linear_total_time:.1f} ms{'':<6} {linear_avg_time:.1f} ms{'':<6} {linear_total_steps}"
+        )
+        log.info(
+            f"{'Shortest Path':<20} {shortest_total_time:.1f} ms{'':<6} {shortest_avg_time:.1f} ms{'':<6} {shortest_total_steps}"
+        )
         log.info("-" * 60)
         log.info(f"{'Saved':<20} {time_saved:.1f} ms{'':<6} {'':<15} {steps_saved}")
         log.info(f"{'Improvement':<20} {time_improvement:.1f}%{'':<9} {'':<15} {steps_improvement:.1f}%")
@@ -485,28 +489,14 @@ def main(args):
 
 
 if __name__ == "__main__":
-    ap = argparse.ArgumentParser(
-        description="W Axis (Filter Wheel) performance timing test"
-    )
+    ap = argparse.ArgumentParser(description="W Axis (Filter Wheel) performance timing test")
 
     ap.add_argument("--verbose", "-v", action="store_true", help="Enable debug logging")
     ap.add_argument("--simulated", action="store_true", help="Use simulated microcontroller")
     ap.add_argument("--no_home", action="store_true", help="Skip homing before test")
-    ap.add_argument(
-        "--positions", type=int, default=8,
-        help="Number of filter wheel positions (default: 8)"
-    )
-    ap.add_argument(
-        "--count", type=int, default=5,
-        help="Number of complete cycles to run (default: 5)"
-    )
-    ap.add_argument(
-        "--distance_test", action="store_true",
-        help="Also run variable distance test"
-    )
-    ap.add_argument(
-        "--shortest_path_test", action="store_true",
-        help="Run shortest path vs linear comparison test"
-    )
+    ap.add_argument("--positions", type=int, default=8, help="Number of filter wheel positions (default: 8)")
+    ap.add_argument("--count", type=int, default=5, help="Number of complete cycles to run (default: 5)")
+    ap.add_argument("--distance_test", action="store_true", help="Also run variable distance test")
+    ap.add_argument("--shortest_path_test", action="store_true", help="Run shortest path vs linear comparison test")
 
     sys.exit(main(ap.parse_args()) or 0)

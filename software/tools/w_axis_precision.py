@@ -263,20 +263,12 @@ def main(args):
 
 
 if __name__ == "__main__":
-    ap = argparse.ArgumentParser(
-        description="W Axis (Filter Wheel) precision test"
-    )
+    ap = argparse.ArgumentParser(description="W Axis (Filter Wheel) precision test")
 
     ap.add_argument("--verbose", "-v", action="store_true", help="Enable debug logging")
     ap.add_argument("--simulated", action="store_true", help="Use simulated microcontroller")
     ap.add_argument("--no_home", action="store_true", help="Skip homing before test")
-    ap.add_argument(
-        "--positions", type=int, default=8,
-        help="Number of filter wheel positions (default: 8)"
-    )
-    ap.add_argument(
-        "--cycles", type=int, default=50,
-        help="Number of test cycles (default: 50)"
-    )
+    ap.add_argument("--positions", type=int, default=8, help="Number of filter wheel positions (default: 8)")
+    ap.add_argument("--cycles", type=int, default=50, help="Number of test cycles (default: 50)")
 
     sys.exit(main(ap.parse_args()) or 0)
