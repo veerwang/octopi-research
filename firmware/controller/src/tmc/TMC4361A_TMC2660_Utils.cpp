@@ -1002,7 +1002,6 @@ void tmc4361A_sRampInit(TMC4361ATypeDef *tmc4361A) {
   -----------------------------------------------------------------------------
   DESCRIPTION: tmc4361A_trapRampInit() initializes trapezoidal ramp (no S-curve).
                Faster than S-shaped ramp but with more abrupt acceleration changes.
-               Reserved for future use - currently W axis uses S-shaped ramp.
   -----------------------------------------------------------------------------
 */
 void tmc4361A_trapRampInit(TMC4361ATypeDef *tmc4361A) {

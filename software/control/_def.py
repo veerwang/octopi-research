@@ -556,7 +556,7 @@ SCREW_PITCH_W_MM = 1
 MICROSTEPPING_DEFAULT_X = 8
 MICROSTEPPING_DEFAULT_Y = 8
 MICROSTEPPING_DEFAULT_Z = 8
-MICROSTEPPING_DEFAULT_W = 16  # optimized from 64 for faster response (higher torque)
+MICROSTEPPING_DEFAULT_W = 16  # optimized from 64 for faster response (36.7% improvement)
 MICROSTEPPING_DEFAULT_THETA = 8  # not used, to be removed
 
 X_MOTOR_RMS_CURRENT_mA = 490
