@@ -26,17 +26,11 @@ void loop() {
     digitalWrite(PIN_ILLUMINATION_D5, LOW);
   }
 
-  // Illumination timeout check - auto-shutoff ports that have been on too long
-  // Note: unsigned arithmetic handles millis() overflow correctly (wraps every ~49 days)
-  for (int i = 0; i < NUM_TIMEOUT_PORTS; i++)
+  // Serial watchdog - auto-shutoff illumination if software stops communicating
+  if (watchdog_enabled && (millis() - last_serial_message_time >= watchdog_timeout_ms))
   {
-    if (illumination_timer_active[i])
-    {
-      if (millis() - illumination_timer_start[i] >= illumination_timeout_ms)
-      {
-        turn_off_port(i);  // This also sets illumination_timer_active[i] = false
-      }
-    }
+    turn_off_all_ports();
+    watchdog_enabled = false;  // One-shot: don't keep firing every loop iteration
   }
 
   joystick_packetSerial.update();

@@ -146,7 +146,7 @@ bool illumination_is_on = false;
 bool illumination_port_is_on[NUM_ILLUMINATION_PORTS] = {false};
 uint16_t illumination_port_intensity[NUM_ILLUMINATION_PORTS] = {0};
 
-// Illumination timeout (auto-shutoff safety) - default 3 seconds
-uint32_t illumination_timeout_ms = DEFAULT_ILLUMINATION_TIMEOUT_MS;
-uint32_t illumination_timer_start[NUM_TIMEOUT_PORTS] = {0};
-bool illumination_timer_active[NUM_TIMEOUT_PORTS] = {false};
+// Serial watchdog (illumination auto-shutoff safety) - disabled until software enables
+uint32_t last_serial_message_time = 0;
+uint32_t watchdog_timeout_ms = DEFAULT_WATCHDOG_TIMEOUT_MS;
+bool watchdog_enabled = false;

@@ -249,7 +249,7 @@ class TestFirmwareVersionCheck:
     def test_firmware_version_detected_at_init(self, mcu):
         """Firmware version should be detected during Microcontroller init."""
         # Version is read from response byte 22 (nibble-encoded)
-        # SimSerial reports version 1.1 by default (with timeout support)
+        # SimSerial reports version 1.1 (multi-port + watchdog)
         # Early detection sends TURN_OFF_ALL_PORTS during __init__
         assert hasattr(mcu, "firmware_version")
         assert mcu.firmware_version is not None

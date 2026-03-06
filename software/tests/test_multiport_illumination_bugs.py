@@ -374,7 +374,7 @@ class TestResponseVersionParsing:
         mcu = Microcontroller(sim, reset_and_initialize=False)
 
         # Before any command, version might be (0, 0)
-        # After command, SimSerial returns 1.1 (with timeout support)
+        # After command, SimSerial returns 1.1
 
         mcu.turn_off_all_ports()
         mcu.wait_till_operation_is_completed()

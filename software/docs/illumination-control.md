@@ -119,69 +119,42 @@ controller.turn_off_all_ports()
 | Custom light mixing experiments | Multi-port | Independent control of each port |
 | Backward compatibility required | Legacy | Works with older firmware |
 
-## Illumination Timeout (Auto-Shutoff Safety)
+## Serial Watchdog (Illumination Auto-Shutoff Safety)
 
 **Requires firmware v1.1 or later.**
 
-The firmware includes automatic timeout protection for illumination ports D1-D5. If illumination is left on (e.g., due to software crash), it will automatically turn off after the timeout period.
+The firmware includes a serial watchdog that monitors communication with the control software. If no serial messages are received within the timeout period (e.g., due to software crash or USB disconnect), the firmware automatically turns off all illumination.
 
-### Default Behavior
+### How It Works
 
-- **Default timeout:** 3 seconds
-- **Maximum timeout:** 3600 seconds (1 hour)
-- **Protected ports:** D1-D5 only (port indices 0-4)
+1. Software enables the watchdog at startup via `SET_WATCHDOG_TIMEOUT` command
+2. Software sends periodic `HEARTBEAT` commands (every timeout/2 seconds)
+3. Any valid serial message resets the watchdog timer (not just heartbeats)
+4. If the timer expires, firmware calls `turn_off_all_ports()` and disables the watchdog (one-shot)
 
-### Configuring Timeout
+### Configuration
 
-The timeout is automatically configured at software startup via `Microscope.prepare_for_use()`. To customize:
+The timeout is configured in `control/_def.py`:
 
 ```python
-# In configuration or startup code
-from control._def import ILLUMINATION_TIMEOUT_S
-
-# Default is 3 seconds, defined in _def.py
-# The microscope will configure this at startup
+WATCHDOG_TIMEOUT_S = 5.0  # seconds (default)
 ```
 
-To change the timeout programmatically (before creating Microscope):
+To change at runtime (before creating Microscope):
 
 ```python
-# Set timeout via microcontroller directly
-microcontroller.set_illumination_timeout(5.0)  # 5 seconds
+microcontroller.set_watchdog_timeout(10.0)  # 10 seconds
 microcontroller.wait_till_operation_is_completed()
+microcontroller.start_heartbeat()
 ```
 
 ### Timeout Values
 
 | Value | Behavior |
 |-------|----------|
-| 0 | Use firmware default (3 seconds) |
+| 0 | Use firmware default (5 seconds) |
 | 0.001 - 3600 | Set timeout in seconds |
 | > 3600 | Clamped to 3600 seconds |
-
-### How It Works
-
-1. When a port turns ON (was off → now on), the timeout timer starts
-2. While the port remains on, the timer counts up
-3. If timer exceeds timeout, firmware automatically turns off the port
-4. Firmware reports auto-shutoff events via status byte in responses
-5. Software logs a warning when auto-shutoff is detected
-
-### Monitoring Auto-Shutoff Events
-
-The software automatically monitors for auto-shutoff events and logs warnings:
-
-```
-WARNING - [MCU] Illumination port D1 turned off by firmware (possible timeout auto-shutoff)
-```
-
-### MCU Protocol
-
-| Command | Code | Description |
-|---------|------|-------------|
-| SET_ILLUMINATION_TIMEOUT | 40 | Set timeout value (0 = default) |
-
-Response byte 19 contains port status bitmask (bits 0-4 = D1-D5 on/off state).
 
 ## Firmware Version Detection
 
@@ -231,7 +204,8 @@ For low-level debugging or firmware development:
 | SET_PORT_ILLUMINATION | 37 | Multi-port: combined intensity + on/off |
 | SET_MULTI_PORT_MASK | 38 | Multi-port: control multiple ports |
 | TURN_OFF_ALL_PORTS | 39 | Multi-port: turn off all ports |
-| SET_ILLUMINATION_TIMEOUT | 40 | Set auto-shutoff timeout (v1.1+) |
+| SET_WATCHDOG_TIMEOUT | 40 | Set serial watchdog timeout and enable (v1.1+) |
+| HEARTBEAT | 42 | No-op keepalive for serial watchdog (v1.1+) |
 
 ## Troubleshooting
 

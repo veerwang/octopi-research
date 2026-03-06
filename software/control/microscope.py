@@ -409,18 +409,19 @@ class Microscope:
         self.low_level_drivers.prepare_for_use(skip_init=skip_init)
         self.addons.prepare_for_use(skip_init=skip_init)
 
-        # Configure illumination safety timeout (requires firmware v1.1+)
+        # Configure serial watchdog for illumination safety (requires firmware v1.1+)
         if self.low_level_drivers.microcontroller:
             mcu = self.low_level_drivers.microcontroller
             if mcu.firmware_version >= (1, 1):
-                timeout_s = getattr(control._def, "ILLUMINATION_TIMEOUT_S", 3.0)
-                mcu.set_illumination_timeout(timeout_s)
-                mcu.wait_till_operation_is_completed()  # Ensure command is processed
-                self._log.info(f"Illumination timeout set to {timeout_s}s (max 3600s; 0 = use default 3s)")
+                timeout_s = control._def.WATCHDOG_TIMEOUT_S
+                mcu.set_watchdog_timeout(timeout_s)
+                mcu.wait_till_operation_is_completed()
+                mcu.start_heartbeat(interval_s=timeout_s / 2)
+                self._log.info(f"Illumination watchdog enabled: timeout={timeout_s}s, heartbeat={timeout_s / 2}s")
             else:
                 self._log.warning(
-                    f"Illumination timeout not available: firmware v{mcu.firmware_version[0]}.{mcu.firmware_version[1]} "
-                    "does not support this feature (requires v1.1+)"
+                    f"Illumination watchdog not available: firmware v{mcu.firmware_version[0]}.{mcu.firmware_version[1]} "
+                    "requires v1.1+"
                 )
 
         self.camera.set_pixel_format(
