@@ -3057,10 +3057,13 @@ class LaserAutofocusSettingWidget(QWidget):
 class SpinningDiskConfocalWidget(QWidget):
 
     signal_toggle_confocal_widefield = Signal(bool)
+    signal_illumination_iris_changed = Signal(float)
+    signal_emission_iris_changed = Signal(float)
 
     def __init__(self, xlight):
         super(SpinningDiskConfocalWidget, self).__init__()
 
+        self._log = squid.logging.get_logger(self.__class__.__name__)
         self.xlight = xlight
 
         self.init_ui()
@@ -3243,29 +3246,68 @@ class SpinningDiskConfocalWidget(QWidget):
         self.xlight.set_dichroic(selected_pos)
         self.enable_all_buttons(True)
 
-    def update_illumination_iris(self, from_slider: bool):
-        self.block_iris_control_signals(True)  # avoid signals triggered by enable/disable buttons
+    def _set_iris_ui(self, slider, spinbox, value):
+        """Set an iris slider+spinbox pair to the given value."""
+        slider.setValue(value)
+        spinbox.setValue(value)
+
+    def update_iris_from_config(self, configuration):
+        """Update iris UI controls from a channel's confocal_hardware_settings."""
+        hw_settings = getattr(configuration, "confocal_hardware_settings", None)
+        self.block_iris_control_signals(True)
+        try:
+            for has_iris, iris_val, slider, spinbox in (
+                (
+                    self.xlight.has_illumination_iris_diaphragm,
+                    getattr(hw_settings, "illumination_iris", None) if hw_settings else None,
+                    self.slider_illumination_iris,
+                    self.spinbox_illumination_iris,
+                ),
+                (
+                    self.xlight.has_emission_iris_diaphragm,
+                    getattr(hw_settings, "emission_iris", None) if hw_settings else None,
+                    self.slider_emission_iris,
+                    self.spinbox_emission_iris,
+                ),
+            ):
+                if not has_iris:
+                    continue
+                value = int(iris_val) if iris_val is not None else slider.minimum()
+                self._set_iris_ui(slider, spinbox, value)
+        finally:
+            self.block_iris_control_signals(False)
+
+    def _update_iris_hardware(self, from_slider, slider, spinbox, hw_setter, signal):
+        """Shared logic for updating an iris value from UI interaction."""
+        self.block_iris_control_signals(True)
         self.enable_all_buttons(False)
         if from_slider:
-            value = self.slider_illumination_iris.value()
+            value = slider.value()
         else:
-            value = self.spinbox_illumination_iris.value()
-            self.slider_illumination_iris.setValue(value)
-        self.xlight.set_illumination_iris(value)
+            value = spinbox.value()
+            slider.setValue(value)
+        hw_setter(value)
+        signal.emit(float(value))
         self.enable_all_buttons(True)
         self.block_iris_control_signals(False)
 
+    def update_illumination_iris(self, from_slider: bool):
+        self._update_iris_hardware(
+            from_slider,
+            self.slider_illumination_iris,
+            self.spinbox_illumination_iris,
+            self.xlight.set_illumination_iris,
+            self.signal_illumination_iris_changed,
+        )
+
     def update_emission_iris(self, from_slider: bool):
-        self.block_iris_control_signals(True)  # avoid signals triggered by enable/disable buttons
-        self.enable_all_buttons(False)
-        if from_slider:
-            value = self.slider_emission_iris.value()
-        else:
-            value = self.spinbox_emission_iris.value()
-            self.slider_emission_iris.setValue(value)
-        self.xlight.set_emission_iris(value)
-        self.enable_all_buttons(True)
-        self.block_iris_control_signals(False)
+        self._update_iris_hardware(
+            from_slider,
+            self.slider_emission_iris,
+            self.spinbox_emission_iris,
+            self.xlight.set_emission_iris,
+            self.signal_emission_iris_changed,
+        )
 
     def set_filter_slider(self, index):
         self.enable_all_buttons(False)
@@ -4198,7 +4240,11 @@ class LiveControlWidget(QFrame):
         if self.is_switching_mode == False:
             self.currentConfiguration.exposure_time = new_value
             self.liveController.microscope.config_repo.update_channel_setting(
-                self.objectiveStore.current_objective, self.currentConfiguration.name, "ExposureTime", new_value
+                self.objectiveStore.current_objective,
+                self.currentConfiguration.name,
+                "ExposureTime",
+                new_value,
+                confocal_mode=self.liveController.is_confocal_mode(),
             )
             self.signal_newExposureTime.emit(new_value)
 
@@ -4206,7 +4252,11 @@ class LiveControlWidget(QFrame):
         if self.is_switching_mode == False:
             self.currentConfiguration.analog_gain = new_value
             self.liveController.microscope.config_repo.update_channel_setting(
-                self.objectiveStore.current_objective, self.currentConfiguration.name, "AnalogGain", new_value
+                self.objectiveStore.current_objective,
+                self.currentConfiguration.name,
+                "AnalogGain",
+                new_value,
+                confocal_mode=self.liveController.is_confocal_mode(),
             )
             self.signal_newAnalogGain.emit(new_value)
 
@@ -4218,8 +4268,26 @@ class LiveControlWidget(QFrame):
                 self.currentConfiguration.name,
                 "IlluminationIntensity",
                 new_value,
+                confocal_mode=self.liveController.is_confocal_mode(),
             )
             self.liveController.update_illumination()
+
+    def _persist_iris_config(self, setting_name, new_value):
+        if self.currentConfiguration:
+            ok = self.liveController.microscope.config_repo.update_channel_setting(
+                self.objectiveStore.current_objective,
+                self.currentConfiguration.name,
+                setting_name,
+                new_value,
+            )
+            if not ok:
+                logger.warning("Failed to persist %s value %.1f", setting_name, new_value)
+
+    def update_config_illumination_iris(self, new_value):
+        self._persist_iris_config("IlluminationIris", new_value)
+
+    def update_config_emission_iris(self, new_value):
+        self._persist_iris_config("EmissionIris", new_value)
 
     def set_trigger_mode(self, trigger_mode):
         self.dropdown_triggerManu.setCurrentText(trigger_mode)
@@ -11143,7 +11211,11 @@ class NapariLiveWidget(QWidget):
             return
         self.live_configuration.exposure_time = new_value
         self.liveController.microscope.config_repo.update_channel_setting(
-            self.objectiveStore.current_objective, self.live_configuration.name, "ExposureTime", new_value
+            self.objectiveStore.current_objective,
+            self.live_configuration.name,
+            "ExposureTime",
+            new_value,
+            confocal_mode=self.liveController.is_confocal_mode(),
         )
         self.signal_newExposureTime.emit(new_value)
 
@@ -11152,7 +11224,11 @@ class NapariLiveWidget(QWidget):
             return
         self.live_configuration.analog_gain = new_value
         self.liveController.microscope.config_repo.update_channel_setting(
-            self.objectiveStore.current_objective, self.live_configuration.name, "AnalogGain", new_value
+            self.objectiveStore.current_objective,
+            self.live_configuration.name,
+            "AnalogGain",
+            new_value,
+            confocal_mode=self.liveController.is_confocal_mode(),
         )
         self.signal_newAnalogGain.emit(new_value)
 
@@ -11161,7 +11237,11 @@ class NapariLiveWidget(QWidget):
             return
         self.live_configuration.illumination_intensity = new_value
         self.liveController.microscope.config_repo.update_channel_setting(
-            self.objectiveStore.current_objective, self.live_configuration.name, "IlluminationIntensity", new_value
+            self.objectiveStore.current_objective,
+            self.live_configuration.name,
+            "IlluminationIntensity",
+            new_value,
+            confocal_mode=self.liveController.is_confocal_mode(),
         )
         self.liveController.update_illumination()
 
