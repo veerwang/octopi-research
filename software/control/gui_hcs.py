@@ -680,9 +680,17 @@ class HighContentScreeningGui(QMainWindow):
         # Initialize Slack notifier
         self._setup_slack_notifier()
 
-        # Skip cached position restoration on restart (hardware position hasn't changed)
+        # Skip cached position restoration on restart (hardware position hasn't changed),
+        # except Z when using Xeryon (Z was retracted during cleanup).
         if self._skip_init:
-            self.log.info("Skipping cached position restoration (--skip-init flag set)")
+            if USE_XERYON and self.objective_changer:
+                if cached_pos := squid.stage.utils.get_cached_position():
+                    safety_z_mm = int(Z_HOME_SAFETY_POINT) / 1000.0
+                    target_z_mm = max(cached_pos.z_mm, safety_z_mm)
+                    self.log.info(f"Restoring cached Z position after Xeryon restart: {target_z_mm} mm")
+                    self.stage.move_z_to(target_z_mm)
+            else:
+                self.log.info("Skipping cached position restoration (--skip-init flag set)")
         elif HOMING_ENABLED_X and HOMING_ENABLED_Y and HOMING_ENABLED_Z:
             # TODO(imo): Why is moving to the cached position after boot hidden behind homing?
             if cached_pos := squid.stage.utils.get_cached_position():
@@ -2637,8 +2645,9 @@ class HighContentScreeningGui(QMainWindow):
         """Common cleanup logic shared between closeEvent and restart.
 
         Args:
-            for_restart: If True, skip Z retraction and objective reset (preserving position),
-                        and wrap operations in try-except to ensure cleanup completes.
+            for_restart: If True, wrap operations in try-except to ensure cleanup completes.
+                        Z retraction and objective reset still run when using Xeryon
+                        (Xeryon must be zeroed before re-init), but are skipped otherwise.
         """
         context = "restart" if for_restart else "shutdown"
 
@@ -2742,20 +2751,31 @@ class HighContentScreeningGui(QMainWindow):
             else:
                 raise
 
-        # Retract Z, reset objective changer, and turn off PIDs only on full shutdown
-        # (for restart, preserve hardware state since new process will use --skip-init)
-        if not for_restart:
+        # Retract Z and reset objective changer on full shutdown.
+        # On restart, only retract Z and reset if Xeryon objective changer is present
+        # (Xeryon must be zeroed before re-init; Z must retract first for safety).
+        if not for_restart or USE_XERYON:
+            z_retracted = False
             try:
                 self.stage.move_z_to(OBJECTIVE_RETRACTED_POS_MM)
-                if USE_XERYON:
-                    self.objective_changer.moveToZero()
+                z_retracted = True
             except Exception:
-                self.log.exception(f"Error retracting Z / resetting objective changer during {context}")
+                if for_restart:
+                    self.log.exception(f"Error retracting Z during {context}")
+                else:
+                    raise
 
-            try:
-                self.microcontroller.turn_off_all_pid()
-            except Exception:
-                self.log.exception(f"Error turning off PID during {context}")
+            if USE_XERYON and self.objective_changer and z_retracted:
+                try:
+                    self.objective_changer.moveToZero()
+                except Exception:
+                    if for_restart:
+                        self.log.exception(f"Error resetting objective changer during {context}")
+                    else:
+                        raise
+
+        if not for_restart:
+            self.microcontroller.turn_off_all_pid()
 
         # Turn off CellX lasers
         if ENABLE_CELLX:
@@ -2799,7 +2819,7 @@ class HighContentScreeningGui(QMainWindow):
                 raise
 
     def _cleanup_for_restart(self):
-        """Clean up hardware and resources for restart (preserves Z position)."""
+        """Clean up hardware and resources for restart. Retracts Z and resets Xeryon if present."""
         self._cleanup_common(for_restart=True)
 
     def closeEvent(self, event):
