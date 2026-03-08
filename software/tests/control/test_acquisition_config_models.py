@@ -574,6 +574,28 @@ class TestAcquisitionConfig:
         effective = channel.get_effective_settings(confocal_mode=True)
         assert effective.camera_settings.exposure_time_ms == 50.0
 
+    def test_effective_settings_preserves_illumination_channel(self):
+        """Confocal override must not wipe illumination_channel from the base."""
+        channel = AcquisitionChannel(
+            name="488 nm",
+            display_color="#00FF00",
+            illumination_settings=IlluminationSettings(
+                illumination_channel="Fluorescence 488nm",
+                intensity=20.0,
+            ),
+            camera_settings=CameraSettings(exposure_time_ms=25.0, gain_mode=10.0),
+            confocal_override=AcquisitionChannelOverride(
+                illumination_settings=IlluminationSettings(intensity=80.0),
+            ),
+        )
+
+        effective = channel.get_effective_settings(confocal_mode=True)
+
+        # illumination_channel must be preserved from base
+        assert effective.illumination_settings.illumination_channel == "Fluorescence 488nm"
+        # intensity must come from override
+        assert effective.illumination_settings.intensity == 80.0
+
     def test_effective_settings_does_not_share_override_references(self):
         """Mutating the effective channel must not corrupt the stored confocal_override."""
         channel = AcquisitionChannel(
@@ -604,6 +626,23 @@ class TestAcquisitionConfig:
         effective2 = channel.get_effective_settings(confocal_mode=True)
         assert effective2.camera_settings.exposure_time_ms == 50.0
         assert effective2.illumination_settings.intensity == 80.0
+        # illumination_channel must be preserved even with combined overrides
+        assert effective2.illumination_settings.illumination_channel == "Fluorescence 488nm"
+
+    def test_effective_settings_confocal_without_override(self):
+        """confocal_mode=True with no confocal_override returns self unchanged."""
+        channel = AcquisitionChannel(
+            name="488 nm",
+            display_color="#00FF00",
+            illumination_settings=IlluminationSettings(
+                illumination_channel="Fluorescence 488nm",
+                intensity=20.0,
+            ),
+            camera_settings=CameraSettings(exposure_time_ms=25.0, gain_mode=10.0),
+        )
+
+        effective = channel.get_effective_settings(confocal_mode=True)
+        assert effective is channel
 
     def test_general_channel_config(self):
         """Test GeneralChannelConfig creation and methods (schema v1.0)."""
