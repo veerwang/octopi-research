@@ -15808,6 +15808,10 @@ class BackpressureMonitorWidget(QWidget):
             # Multiprocessing communication ended - acquisition finished
             self._log.debug(f"Backpressure controller communication ended: {e}")
             self.stop_monitoring()
+        except AttributeError as e:
+            # Benign race: multiprocessing objects cleaned up while timer fires
+            self._log.debug(f"Backpressure monitor update failed: {e}")
+            self.stop_monitoring()
         except Exception as e:
             self._log.warning(f"Backpressure monitor update failed: {e}")
             self.stop_monitoring()
