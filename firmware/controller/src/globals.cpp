@@ -33,6 +33,7 @@ uint16_t home_safety_margin[TOTAL_AXES] = {4, 4, 4, 4, 4};
 volatile int buffer_rx_ptr = 0;
 byte cmd_id = 0;
 bool mcu_cmd_execution_in_progress = false;
+byte mcu_cmd_execution_status = COMPLETED_WITHOUT_ERRORS;
 bool checksum_error = false;
 
 // limit switch
