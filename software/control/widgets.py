@@ -3537,12 +3537,21 @@ class ObjectivesWidget(QWidget):
         self.setLayout(layout)
 
     def on_objective_changed(self, objective_name):
+        if self.objective_changer is not None:
+            try:
+                self.objective_changer.move_to_objective(objective_name)
+            except KeyError as e:
+                QMessageBox.warning(
+                    self,
+                    "Objective Not Available",
+                    f"Objective '{objective_name}' is not configured for the objective changer:\n{e}",
+                )
+                # Revert the dropdown so it matches the store / actual changer state.
+                self.dropdown.blockSignals(True)
+                self.dropdown.setCurrentText(self.objectiveStore.current_objective)
+                self.dropdown.blockSignals(False)
+                return
         self.objectiveStore.set_current_objective(objective_name)
-        if USE_XERYON:
-            if objective_name in XERYON_OBJECTIVE_SWITCHER_POS_1 and self.objective_changer.currentPosition() != 1:
-                self.objective_changer.moveToPosition1()
-            elif objective_name in XERYON_OBJECTIVE_SWITCHER_POS_2 and self.objective_changer.currentPosition() != 2:
-                self.objective_changer.moveToPosition2()
         self.signal_objective_changed.emit()
 
 
