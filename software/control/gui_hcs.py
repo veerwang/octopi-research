@@ -956,7 +956,11 @@ class HighContentScreeningGui(QMainWindow):
         if USE_SQUID_LASER_ENGINE and self.microscope.addons.squid_laser_engine is not None:
             self.laserEngineWidget = LaserEngineWidget(self.microscope.addons.squid_laser_engine)
 
-        self.recordingControlWidget = widgets.RecordingWidget(self.streamHandler, self.imageSaver)
+        self.recordingControlWidget = widgets.RecordingWidget(
+            self.streamHandler,
+            self.imageSaver,
+            channel_provider=lambda: self.liveController.currentConfiguration,
+        )
         self.wellplateFormatWidget = widgets.WellplateFormatWidget(
             self.stage, self.navigationViewer, self.streamHandler, self.liveController
         )

@@ -4400,11 +4400,11 @@ class PiezoWidget(QFrame):
 
 
 class RecordingWidget(QFrame):
-    def __init__(self, streamHandler, imageSaver, main=None, *args, **kwargs):
+    def __init__(self, streamHandler, imageSaver, main=None, channel_provider=None, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.imageSaver = imageSaver  # for saving path control
+        self.imageSaver = imageSaver
         self.streamHandler = streamHandler
-        self.base_path_is_set = False
+        self._channel_provider = channel_provider
         self.add_components()
         self.setFrameStyle(QFrame.Panel | QFrame.Raised)
 
@@ -4415,8 +4415,6 @@ class RecordingWidget(QFrame):
 
         self.lineEdit_savingDir = QLineEdit()
         self.lineEdit_savingDir.setReadOnly(True)
-        self.lineEdit_savingDir.setText("Choose a base saving directory")
-
         self.lineEdit_savingDir.setText(DEFAULT_SAVING_PATH)
         self.imageSaver.set_base_path(DEFAULT_SAVING_PATH)
 
@@ -4475,26 +4473,32 @@ class RecordingWidget(QFrame):
         self.imageSaver.stop_recording.connect(self.stop_recording)
 
     def set_saving_dir(self):
-        dialog = QFileDialog()
-        save_dir_base = dialog.getExistingDirectory(None, "Select Folder")
+        save_dir_base = QFileDialog.getExistingDirectory(None, "Select Folder")
+        if not save_dir_base:
+            return
         self.imageSaver.set_base_path(save_dir_base)
         self.lineEdit_savingDir.setText(save_dir_base)
-        self.base_path_is_set = True
 
     def toggle_recording(self, pressed):
-        if self.base_path_is_set == False:
-            self.btn_record.setChecked(False)
-            msg = QMessageBox()
-            msg.setText("Please choose base saving directory first")
-            msg.exec_()
-            return
         if pressed:
             self.lineEdit_experimentID.setEnabled(False)
             self.btn_setSavingDir.setEnabled(False)
-            self.imageSaver.start_new_experiment(self.lineEdit_experimentID.text())
+            if self._channel_provider is not None:
+                self.imageSaver.set_channel_provider(self._channel_provider)
+            try:
+                self.imageSaver.start_new_experiment(self.lineEdit_experimentID.text())
+            except Exception:
+                # start_new_experiment logged the cause; restore UI so the user can retry.
+                self.imageSaver.set_channel_provider(None)
+                self.lineEdit_experimentID.setEnabled(True)
+                self.btn_setSavingDir.setEnabled(True)
+                self.btn_record.setChecked(False)
+                return
             self.streamHandler.start_recording()
         else:
             self.streamHandler.stop_recording()
+            self.imageSaver.stop_experiment()
+            self.imageSaver.set_channel_provider(None)
             self.lineEdit_experimentID.setEnabled(True)
             self.btn_setSavingDir.setEnabled(True)
 
@@ -4503,6 +4507,8 @@ class RecordingWidget(QFrame):
         self.lineEdit_experimentID.setEnabled(True)
         self.btn_record.setChecked(False)
         self.streamHandler.stop_recording()
+        self.imageSaver.stop_experiment()
+        self.imageSaver.set_channel_provider(None)
         self.btn_setSavingDir.setEnabled(True)
 
 
