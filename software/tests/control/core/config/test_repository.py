@@ -1381,3 +1381,87 @@ class TestUpdateChannelSettingConfocal:
         assert obj is not None
         assert obj.channels[0].confocal_hardware_settings is not None
         assert obj.channels[0].confocal_hardware_settings.illumination_iris == 55.0
+
+
+class TestUpdateChannelSettingPreservesZOffset:
+    """Regression tests for M1: create-from-general must preserve z_offset_um."""
+
+    @pytest.fixture
+    def repo_general_only(self, tmp_path):
+        """Profile with general.yaml only (no objective override) where channels have non-zero z_offset_um."""
+        machine = tmp_path / "machine_configs"
+        machine.mkdir()
+        (machine / "illumination_channel_config.yaml").write_text(
+            "version: 1\n"
+            "channels:\n"
+            '  - name: "488nm"\n'
+            "    type: epi_illumination\n"
+            "    controller_port: D2\n"
+            "    wavelength_nm: 488\n"
+            '  - name: "561nm"\n'
+            "    type: epi_illumination\n"
+            "    controller_port: D3\n"
+            "    wavelength_nm: 561\n"
+        )
+        profile = tmp_path / "user_profiles" / "default"
+        (profile / "channel_configs").mkdir(parents=True)
+        (profile / "laser_af_configs").mkdir()
+        (profile / "channel_configs" / "general.yaml").write_text(
+            "version: 1.0\n"
+            "channels:\n"
+            '  - name: "488nm"\n'
+            '    display_color: "#1FFF00"\n'
+            "    camera_settings: {exposure_time_ms: 20.0, gain_mode: 10.0}\n"
+            '    illumination_settings: {illumination_channel: "488nm", intensity: 20.0}\n'
+            "    z_offset_um: 1.5\n"
+            '  - name: "561nm"\n'
+            '    display_color: "#FF8000"\n'
+            "    camera_settings: {exposure_time_ms: 30.0, gain_mode: 5.0}\n"
+            '    illumination_settings: {illumination_channel: "561nm", intensity: 25.0}\n'
+            "    z_offset_um: -0.7\n"
+        )
+        repo = ConfigRepository(base_path=tmp_path)
+        repo.set_profile("default")
+        return repo
+
+    def test_first_objective_update_preserves_other_channels_z_offset(self, repo_general_only):
+        """Setting ExposureTime on one channel must not zero z_offset_um on others."""
+        result = repo_general_only.update_channel_setting("20x", "488nm", "ExposureTime", 99.0)
+        assert result is True
+
+        obj = repo_general_only.get_objective_config("20x")
+        ch488 = next(c for c in obj.channels if c.name == "488nm")
+        ch561 = next(c for c in obj.channels if c.name == "561nm")
+
+        # The channel we touched: ExposureTime updated, original z_offset_um preserved
+        assert ch488.camera_settings.exposure_time_ms == 99.0
+        assert ch488.z_offset_um == 1.5
+
+        # The other channel: z_offset_um carried over from general.yaml
+        assert ch561.z_offset_um == -0.7
+
+    def test_zoffset_setting_updates_and_persists(self, repo_general_only):
+        """update_channel_setting('ZOffset', value) writes z_offset_um and persists to YAML."""
+        result = repo_general_only.update_channel_setting("20x", "488nm", "ZOffset", 3.25)
+        assert result is True
+
+        # In-memory update
+        obj = repo_general_only.get_objective_config("20x")
+        ch488 = next(c for c in obj.channels if c.name == "488nm")
+        assert ch488.z_offset_um == 3.25
+
+        # Persisted to YAML — clear cache and reload
+        repo_general_only.clear_profile_cache()
+        obj_reloaded = repo_general_only.get_objective_config("20x")
+        ch488_reloaded = next(c for c in obj_reloaded.channels if c.name == "488nm")
+        assert ch488_reloaded.z_offset_um == 3.25
+
+    def test_zoffset_zero_value_persists(self, repo_general_only):
+        """Writing 0.0 must persist explicitly (not be omitted)."""
+        # First set non-zero, then back to zero
+        repo_general_only.update_channel_setting("20x", "488nm", "ZOffset", 2.0)
+        assert repo_general_only.update_channel_setting("20x", "488nm", "ZOffset", 0.0) is True
+        repo_general_only.clear_profile_cache()
+        obj = repo_general_only.get_objective_config("20x")
+        ch488 = next(c for c in obj.channels if c.name == "488nm")
+        assert ch488.z_offset_um == 0.0

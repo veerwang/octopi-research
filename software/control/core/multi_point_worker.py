@@ -1,3 +1,4 @@
+import math
 import os
 import queue
 import threading
@@ -93,6 +94,7 @@ class MultiPointWorker:
         self._acquisition_error_count = 0
         self._laser_af_successes = 0
         self._laser_af_failures = 0
+        self._current_z_offset_um: float = 0.0
         self.microscope: Microscope = scope
         self.camera: AbstractCamera = scope.camera
         self.microcontroller: Microcontroller = scope.low_level_drivers.microcontroller
@@ -117,6 +119,7 @@ class MultiPointWorker:
         self.do_autofocus = acquisition_parameters.do_autofocus
         self.do_reflection_af = acquisition_parameters.do_reflection_autofocus
         self.use_piezo = acquisition_parameters.use_piezo
+        self.apply_channel_offset = acquisition_parameters.apply_channel_offset
         self.display_resolution_scaling = acquisition_parameters.display_resolution_scaling
 
         self.experiment_ID = acquisition_parameters.experiment_ID
@@ -445,6 +448,9 @@ class MultiPointWorker:
             # Cache laser-engine refs for the gate (None when flag is off).
             self._laser_engine = getattr(self.microscope.addons, "squid_laser_engine", None)
             self._laser_channels_needed = self._compute_laser_channels_needed()
+
+            # Warn once if non-zero channel offsets won't be applied this run.
+            self._log_ignored_offsets()
 
             while self.time_point < self.Nt:
                 # check if abort acquisition has been requested
@@ -1036,7 +1042,8 @@ class MultiPointWorker:
                     return
 
     def acquire_at_position(self, region_id, current_path, fov):
-        if not self.perform_autofocus(region_id, fov):
+        af_succeeded = self.perform_autofocus(region_id, fov)
+        if not af_succeeded:
             self._log.error(
                 f"Autofocus failed in acquire_at_position.  Continuing to acquire anyway using the current z position (z={self.stage.get_pos().z_mm} [mm])"
             )
@@ -1065,33 +1072,38 @@ class MultiPointWorker:
 
             current_round_images = {}
             # iterate through selected modes
-            for config_idx, config in enumerate(self.selected_configurations):
-                if self.NZ == 1:  # TODO: handle z offset for z stack
-                    self.handle_z_offset(config, True)
+            try:
+                for config_idx, config in enumerate(self.selected_configurations):
+                    self._apply_channel_z_offset(config, af_succeeded)
 
-                # acquire image
-                with self._timing.get_timer("acquire_camera_image"):
-                    # TODO(imo): This really should not look for a string in a user configurable name.  We
-                    # need some proper flag on the config to signal this instead...
-                    if "RGB" in config.name:
-                        self.acquire_rgb_image(config, file_ID, current_path, z_level, region_id, fov)
-                    else:
-                        self.acquire_camera_image(
-                            config, file_ID, current_path, z_level, region_id=region_id, fov=fov, config_idx=config_idx
-                        )
+                    # acquire image
+                    with self._timing.get_timer("acquire_camera_image"):
+                        # TODO(imo): This really should not look for a string in a user configurable name.  We
+                        # need some proper flag on the config to signal this instead...
+                        if "RGB" in config.name:
+                            self.acquire_rgb_image(config, file_ID, current_path, z_level, region_id, fov)
+                        else:
+                            self.acquire_camera_image(
+                                config,
+                                file_ID,
+                                current_path,
+                                z_level,
+                                region_id=region_id,
+                                fov=fov,
+                                config_idx=config_idx,
+                            )
 
-                if self.NZ == 1:  # TODO: handle z offset for z stack
-                    self.handle_z_offset(config, False)
-
-                current_image = (
-                    fov * self.NZ * len(self.selected_configurations)
-                    + z_level * len(self.selected_configurations)
-                    + config_idx
-                    + 1
-                )
-                self.callbacks.signal_region_progress(
-                    RegionProgressUpdate(current_fov=current_image, region_fovs=self.total_scans)
-                )
+                    current_image = (
+                        fov * self.NZ * len(self.selected_configurations)
+                        + z_level * len(self.selected_configurations)
+                        + config_idx
+                        + 1
+                    )
+                    self.callbacks.signal_region_progress(
+                        RegionProgressUpdate(current_fov=current_image, region_fovs=self.total_scans)
+                    )
+            finally:
+                self._reset_channel_z_offset()
 
             # updates coordinates df
             self.update_coordinates_dataframe(region_id, z_level, acquire_pos, fov)
@@ -1138,9 +1150,12 @@ class MultiPointWorker:
                     self.autofocusController.wait_till_autofocus_has_completed()
         else:
             self._log.info("laser reflection af")
+            # move_to_target reports soft failures (no reference, NaN displacement,
+            # displacement out of range, cross-correlation mismatch) via its return
+            # value, NOT by raising — both paths must mark the FOV's AF as failed or
+            # the per-channel z-offset gate would apply offsets from an unanchored z.
             try:
-                self.laser_auto_focus_controller.move_to_target(0)
-                self._laser_af_successes += 1
+                af_succeeded = self.laser_auto_focus_controller.move_to_target(0)
             except Exception as e:
                 file_ID = f"{region_id}_focus_camera.bmp"
                 saving_path = os.path.join(self.base_path, self.experiment_ID, str(self.time_point), file_ID)
@@ -1149,8 +1164,11 @@ class MultiPointWorker:
                     "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! laser AF failed !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!",
                     exc_info=e,
                 )
+                af_succeeded = False
+            if not af_succeeded:
                 self._laser_af_failures += 1
                 return False
+            self._laser_af_successes += 1
         return True
 
     def prepare_z_stack(self):
@@ -1160,14 +1178,131 @@ class MultiPointWorker:
             self._sleep(SCAN_STABILIZATION_TIME_MS_Z / 1000)
         self._sleep(SCAN_STABILIZATION_TIME_MS_Z / 1000)
 
-    def handle_z_offset(self, config, not_offset):
-        if config.z_offset is not None:  # perform z offset for config, assume z_offset is in um
-            if config.z_offset != 0.0:
-                direction = 1 if not_offset else -1
-                self._log.info("Moving Z offset" + str(config.z_offset * direction))
-                self.stage.move_z(config.z_offset / 1000 * direction)
-                self.wait_till_operation_is_completed()
-                self._sleep(SCAN_STABILIZATION_TIME_MS_Z / 1000)
+    def _move_z_for_offset(self, delta_um: float) -> float:
+        """Dispatch a relative z move via piezo when use_piezo, otherwise via stage.
+
+        Piezo moves are clamped to [0, piezo.range_um] with a warning log if the offset
+        would otherwise drive the piezo out of range. Stage moves inherit backlash
+        compensation from CephlaStage.move_z().
+
+        Returns:
+            The delta actually moved (may differ from requested when the piezo is clamped
+            to its range).
+        """
+        if self.use_piezo:
+            requested_piezo_um = self.z_piezo_um + delta_um
+            clamped = max(0.0, min(self.piezo.range_um, requested_piezo_um))
+            if clamped != requested_piezo_um:
+                self._log.warning(
+                    f"channel z-offset {delta_um:+.2f} µm would drive piezo out of range "
+                    f"({requested_piezo_um:.2f} µm vs [0, {self.piezo.range_um}]); clamping to "
+                    f"{clamped:.2f} µm"
+                )
+            actual_delta_um = clamped - self.z_piezo_um
+            # Command the move first; only update the software cache after it succeeds,
+            # otherwise an exception in move_to leaves z_piezo_um pointing at a position
+            # the hardware never reached, biasing every subsequent z_stack step.
+            self.piezo.move_to(clamped)
+            self.z_piezo_um = clamped
+            if self.liveController.trigger_mode == TriggerMode.SOFTWARE:
+                self._sleep(MULTIPOINT_PIEZO_DELAY_MS / 1000)
+            return actual_delta_um
+        else:
+            self.stage.move_z(delta_um / 1000)
+            self.wait_till_operation_is_completed()
+            self._sleep(SCAN_STABILIZATION_TIME_MS_Z / 1000)
+            return delta_um
+
+    # Sub-µm tolerance for offset deltas; well below stage µ-step and piezo step resolution.
+    # Prevents accumulated float-subtraction error from triggering spurious sub-nm moves.
+    _Z_OFFSET_EPS_UM = 1e-4
+
+    def _apply_channel_z_offset(self, config, af_succeeded: bool) -> None:
+        """Move z by the delta needed to reach this channel's per-channel z-offset.
+
+        No-op when laser AF is not the active AF method, when the 'Apply channel offset'
+        flag is off, when reflection AF failed for this FOV (af_succeeded is False, so no
+        anchor), when the channel's z_offset_um is non-finite, or when the resulting delta
+        is below the move-resolution tolerance.
+        """
+        if not (self.apply_channel_offset and self.do_reflection_af):
+            return
+        if not af_succeeded:
+            # Reflection AF failed for this FOV; the FOV is at an unanchored z. Applying
+            # the channel offset would shift the FOV by an unintended amount relative to
+            # the absent reference, so skip.
+            self._log.warning(
+                f"Skipping per-channel z-offset for '{config.name}' because reflection AF " f"failed for this FOV"
+            )
+            return
+        raw_target = config.z_offset_um
+        if raw_target is None:
+            target_um = 0.0
+        elif not math.isfinite(raw_target):
+            self._log.warning(
+                f"Channel '{config.name}' has non-finite z_offset_um={raw_target!r}; "
+                f"treating as 0 (will reset to the un-offset baseline if a prior channel "
+                f"already applied an offset)"
+            )
+            target_um = 0.0
+        else:
+            target_um = raw_target
+        delta_um = target_um - self._current_z_offset_um
+        if abs(delta_um) < self._Z_OFFSET_EPS_UM:
+            return
+        actual_delta_um = self._move_z_for_offset(delta_um)
+        self._current_z_offset_um = self._current_z_offset_um + actual_delta_um
+
+    def _reset_channel_z_offset(self) -> None:
+        """Undo any remaining offset so z returns to the un-offset baseline."""
+        if abs(self._current_z_offset_um) < self._Z_OFFSET_EPS_UM:
+            # Snap residual FP drift to exact zero so the tracker doesn't grow over runs.
+            self._current_z_offset_um = 0.0
+            return
+        saved = self._current_z_offset_um
+        try:
+            self._move_z_for_offset(-saved)
+            # Only zero the tracker after the move actually succeeds; if it raised below,
+            # the tracker stays at `saved` so the next reset attempt knows the outstanding
+            # amount and a follow-on apply computes deltas from the right baseline.
+            self._current_z_offset_um = 0.0
+        except Exception:
+            self._log.exception(
+                f"Failed to reset channel z-offset of {saved:+.2f} µm; stage may be at "
+                f"non-baseline z (tracker retained at {saved:+.2f} µm for the next reset)"
+            )
+
+    def _log_ignored_offsets(self) -> None:
+        """Log the per-channel z-offset plan at acquisition start.
+
+        Cases:
+        - Non-finite offsets exist → warn separately; _apply_channel_z_offset treats
+          them as 0, so they must not appear in a "will be applied" summary.
+        - Gate is ON AND finite non-zero offsets exist → log they'll be applied (helps
+          diagnose 'offsets not applied' reports by confirming the worker saw them).
+        - Gate is OFF AND finite non-zero offsets exist → log they're being ignored,
+          with the reason.
+        """
+        non_finite = []
+        finite_non_zero = []
+        for c in self.selected_configurations:
+            offset = c.z_offset_um or 0.0
+            if not math.isfinite(offset):
+                non_finite.append(c.name)
+            elif offset != 0.0:
+                finite_non_zero.append((c.name, offset))
+        if non_finite:
+            self._log.warning(
+                f"[multi-point] Channels with non-finite z_offset_um (treated as 0): [{', '.join(non_finite)}]"
+            )
+        if not finite_non_zero:
+            return
+        summary = ", ".join(f"{name}: {off:+.2f}µm" for name, off in finite_non_zero)
+        if self.apply_channel_offset and self.do_reflection_af:
+            self._log.info(f"[multi-point] Per-channel z-offsets will be applied: [{summary}]")
+            return
+        reason = "laser AF off" if not self.do_reflection_af else "'Apply channel offset' unchecked"
+        self._log.info(f"[multi-point] {reason} — ignoring non-zero z-offsets on channels: [{summary}]")
 
     def _image_callback(self, camera_frame: CameraFrame):
         try:
@@ -1495,6 +1630,8 @@ class MultiPointWorker:
         iio.imwrite(os.path.join(capture_info.save_directory, file_name), rgb_image)
 
     def handle_acquisition_abort(self, current_path):
+        # Undo any stranded per-channel offset before saving abort state
+        self._reset_channel_z_offset()
         # Save coordinates.csv
         self.coordinates_pd.to_csv(os.path.join(current_path, "coordinates.csv"), index=False, header=True)
         self.microcontroller.enable_joystick(True)

@@ -24,6 +24,7 @@ class LaserAutofocusController(QObject):
     signal_displacement_um = Signal(float)
     signal_cross_correlation = Signal(float)
     signal_piezo_position_update = Signal()  # Signal to emit piezo position updates
+    signal_reference_changed = Signal(bool)  # emitted with new has_reference state
 
     def __init__(
         self,
@@ -100,6 +101,11 @@ class LaserAutofocusController(QObject):
             self._config_repo.save_laser_af_config(
                 self._current_profile, self.objectiveStore.current_objective, updated_config
             )
+
+        # Re-emit has_reference so listeners stay in sync after config reloads
+        # (load_cached_configuration / on_settings_changed). Duplicate emits are fine —
+        # the signal is idempotent.
+        self.signal_reference_changed.emit(self.laser_af_properties.has_reference)
 
     def load_cached_configuration(self):
         """Load configuration from the cache if available."""
@@ -179,6 +185,7 @@ class LaserAutofocusController(QObject):
         )
         self.reference_crop = None
         config.set_reference_image(None)
+        self.signal_reference_changed.emit(False)
         self._log.info(f"Laser spot location on the full sensor is ({int(x)}, {int(y)})")
 
         self.initialize_manual(config)
@@ -454,6 +461,7 @@ class LaserAutofocusController(QObject):
 
         self._log.info("Reference spot position set")
 
+        self.signal_reference_changed.emit(True)
         return True
 
     def on_settings_changed(self) -> None:

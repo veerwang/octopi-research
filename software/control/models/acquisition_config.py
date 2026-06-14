@@ -133,7 +133,14 @@ class AcquisitionChannel(BaseModel):
     filter_position: Optional[int] = Field(None, ge=1, description="Position in filter wheel")
 
     # Z offset applied when switching to this channel
-    z_offset_um: float = Field(0.0, description="Z offset in micrometers")
+    z_offset_um: float = Field(
+        0.0,
+        description=(
+            "Z offset (µm) from the laser AF reference plane. Applied during acquisition "
+            "and (opt-in) on live channel switch only when laser autofocus is the active AF method. "
+            "Sample-dependent — re-capture or reset when starting a new sample."
+        ),
+    )
 
     # Illumination
     illumination_settings: IlluminationSettings = Field(..., description="Illumination configuration")
@@ -359,8 +366,12 @@ def merge_channel_configs(
 
     The merge takes:
     - From general: name, display_color, camera (ID), illumination_channel, filter_wheel,
-                    filter_position, z_offset_um
-    - From objective: intensity, exposure_time_ms, gain_mode, pixel_format, confocal_hardware_settings, confocal_override
+                    filter_position
+    - From objective: intensity, exposure_time_ms, gain_mode, pixel_format, z_offset_um,
+                      confocal_hardware_settings, confocal_override
+
+    z_offset_um is per-objective: the laser-AF focal-plane offset depends on the lens, and
+    the capture UI persists it into the objective config via update_channel_setting('ZOffset').
 
     Args:
         general: General channel configuration (defines channel identity)
@@ -405,7 +416,11 @@ def merge_channel_configs(
             camera_settings=merged_camera,
             filter_wheel=gen_channel.filter_wheel,  # From general
             filter_position=gen_channel.filter_position,  # From general
-            z_offset_um=gen_channel.z_offset_um,  # From general
+            # z_offset_um is per-objective: focal-plane offset depends on the lens, and
+            # the 'Use Current' UI persists into the objective config via
+            # update_channel_setting('ZOffset', ...). Pulling from general here would
+            # ignore captured offsets and silently break the laser-AF anchor feature.
+            z_offset_um=obj_channel.z_offset_um,
             illumination_settings=merged_illumination,
             confocal_hardware_settings=obj_channel.confocal_hardware_settings,  # From objective
             confocal_override=obj_channel.confocal_override,  # From objective
