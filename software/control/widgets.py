@@ -23,6 +23,7 @@ from control.core.mosaic_utils import format_well_id
 from control.core.geometry_utils import get_effective_well_size, calculate_well_coverage
 from control.microcontroller import Microcontroller
 from control.piezo import PiezoStage
+from control.channel_sequence import enable_channel_sequence
 import control.utils as utils
 import control._def  # Import module for runtime access to MCP-modifiable settings
 from squid.abc import AbstractStage, AbstractCamera, AbstractFilterWheelController
@@ -5494,13 +5495,14 @@ class FlexibleMultiPointWidget(AcquisitionYAMLDropMixin, QFrame):
         self.entry_Nt.setFixedWidth(max_num_width)
 
         self.list_configurations = QListWidget()
-        for microscope_configuration in self.multipointController.liveController.get_channels(
-            self.objectiveStore.current_objective
-        ):
-            self.list_configurations.addItems([microscope_configuration.name])
-        self.list_configurations.setSelectionMode(
-            QAbstractItemView.MultiSelection
-        )  # ref: https://doc.qt.io/qt-5/qabstractitemview.html#SelectionMode-enum
+        self.channel_sequence = enable_channel_sequence(
+            self.list_configurations,
+            lambda: [
+                ch.name
+                for ch in self.multipointController.liveController.get_channels(self.objectiveStore.current_objective)
+            ],
+            cache_key="flexible",
+        )
 
         self.checkbox_withAutofocus = QCheckBox("Contrast AF")
         self.checkbox_withAutofocus.setChecked(MULTIPOINT_CONTRAST_AUTOFOCUS_ENABLE_BY_DEFAULT)
@@ -6045,26 +6047,11 @@ class FlexibleMultiPointWidget(AcquisitionYAMLDropMixin, QFrame):
             save_last_used_saving_path(save_dir_base)
 
     def emit_selected_channels(self):
-        selected_channels = [item.text() for item in self.list_configurations.selectedItems()]
-        self.signal_acquisition_channels.emit(selected_channels)
+        self.signal_acquisition_channels.emit(self.channel_sequence.ordered_selected_names())
 
     def refresh_channel_list(self):
         """Refresh the channel list after configuration changes."""
-        # Remember currently selected channels
-        selected_names = [item.text() for item in self.list_configurations.selectedItems()]
-
-        # Clear and repopulate
-        self.list_configurations.blockSignals(True)
-        self.list_configurations.clear()
-        for config in self.multipointController.liveController.get_channels(self.objectiveStore.current_objective):
-            self.list_configurations.addItem(config.name)
-
-        # Restore selection where possible
-        for i in range(self.list_configurations.count()):
-            item = self.list_configurations.item(i)
-            if item.text() in selected_names:
-                item.setSelected(True)
-        self.list_configurations.blockSignals(False)
+        self.channel_sequence.refresh()
 
     def toggle_acquisition(self, pressed):
         self._log.debug(f"FlexibleMultiPointWidget.toggle_acquisition, {pressed=}")
@@ -6116,9 +6103,7 @@ class FlexibleMultiPointWidget(AcquisitionYAMLDropMixin, QFrame):
             self.multipointController.set_use_fluidics(False)
             self.multipointController.set_skip_saving(self.checkbox_skipSaving.isChecked())
             self.multipointController.set_widget_type("flexible")
-            self.multipointController.set_selected_configurations(
-                (item.text() for item in self.list_configurations.selectedItems())
-            )
+            self.multipointController.set_selected_configurations(self.channel_sequence.ordered_selected_names())
             self.multipointController.start_new_experiment(self.lineEdit_experimentID.text())
 
             if self.checkbox_skipSaving.isChecked():
@@ -6543,9 +6528,7 @@ class FlexibleMultiPointWidget(AcquisitionYAMLDropMixin, QFrame):
             return
 
         # Set the selected channels for acquisition
-        self.multipointController.set_selected_configurations(
-            [item.text() for item in self.list_configurations.selectedItems()]
-        )
+        self.multipointController.set_selected_configurations(self.channel_sequence.ordered_selected_names())
         # Set the acquisition parameters
         self.multipointController.set_deltaZ(0)
         self.multipointController.set_NZ(1)
@@ -6694,13 +6677,9 @@ class FlexibleMultiPointWidget(AcquisitionYAMLDropMixin, QFrame):
             self.entry_Nt.setValue(yaml_data.nt)
             self.entry_dt.setValue(yaml_data.delta_t_s)
 
-            # Channels
+            # Channels (restore selection AND order from the dropped acquisition)
             if yaml_data.channel_names:
-                self.list_configurations.clearSelection()
-                for i in range(self.list_configurations.count()):
-                    item = self.list_configurations.item(i)
-                    if item.text() in yaml_data.channel_names:
-                        item.setSelected(True)
+                self.channel_sequence.set_included_order(yaml_data.channel_names)
 
             # Autofocus
             self.checkbox_withAutofocus.setChecked(yaml_data.contrast_af)
@@ -6981,9 +6960,11 @@ class WellplateMultiPointWidget(AcquisitionYAMLDropMixin, QFrame):
         self.combobox_z_stack.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
 
         self.list_configurations = QListWidget()
-        for microscope_configuration in self.liveController.get_channels(self.objectiveStore.current_objective):
-            self.list_configurations.addItems([microscope_configuration.name])
-        self.list_configurations.setSelectionMode(QAbstractItemView.MultiSelection)
+        self.channel_sequence = enable_channel_sequence(
+            self.list_configurations,
+            lambda: [ch.name for ch in self.liveController.get_channels(self.objectiveStore.current_objective)],
+            cache_key="wellplate",
+        )
 
         # Add a combo box for shape selection
         self.combobox_shape = QComboBox()
@@ -7361,7 +7342,8 @@ class WellplateMultiPointWidget(AcquisitionYAMLDropMixin, QFrame):
         self.entry_Nt.valueChanged.connect(self.save_multipoint_widget_config_to_cache)
         self.entry_deltaZ.valueChanged.connect(self.save_multipoint_widget_config_to_cache)
         self.entry_NZ.valueChanged.connect(self.save_multipoint_widget_config_to_cache)
-        self.list_configurations.itemSelectionChanged.connect(self.save_multipoint_widget_config_to_cache)
+        # Channel selection/order is persisted by self.channel_sequence (its own
+        # cache), so it is intentionally NOT wired to this settings cache.
         self.checkbox_withAutofocus.toggled.connect(self.save_multipoint_widget_config_to_cache)
         self.checkbox_withReflectionAutofocus.toggled.connect(self.save_multipoint_widget_config_to_cache)
 
@@ -7408,7 +7390,6 @@ class WellplateMultiPointWidget(AcquisitionYAMLDropMixin, QFrame):
                 "nt": self.entry_Nt.value(),
                 "dz": self.entry_deltaZ.value(),
                 "nz": self.entry_NZ.value(),
-                "selected_channels": [item.text() for item in self.list_configurations.selectedItems()],
                 "contrast_af": self.checkbox_withAutofocus.isChecked(),
                 "laser_af": self.checkbox_withReflectionAutofocus.isChecked(),
             }
@@ -7476,15 +7457,6 @@ class WellplateMultiPointWidget(AcquisitionYAMLDropMixin, QFrame):
             self.entry_Nt.setValue(settings.get("nt", 1))
             self.entry_deltaZ.setValue(settings.get("dz", 1.0))
             self.entry_NZ.setValue(settings.get("nz", 1))
-
-            # Restore selected channels
-            selected_channels = settings.get("selected_channels", [])
-            if selected_channels:
-                self.list_configurations.clearSelection()
-                for i in range(self.list_configurations.count()):
-                    item = self.list_configurations.item(i)
-                    if item.text() in selected_channels:
-                        item.setSelected(True)
 
             # Restore autofocus settings
             self.checkbox_withAutofocus.setChecked(settings.get("contrast_af", False))
@@ -8485,9 +8457,7 @@ class WellplateMultiPointWidget(AcquisitionYAMLDropMixin, QFrame):
             self.multipointController.set_scan_size(self.entry_scan_size.value())
             self.multipointController.set_overlap_percent(self.entry_overlap.value())
             self.multipointController.set_xy_mode(self.combobox_xy_mode.currentText())
-            self.multipointController.set_selected_configurations(
-                [item.text() for item in self.list_configurations.selectedItems()]
-            )
+            self.multipointController.set_selected_configurations(self.channel_sequence.ordered_selected_names())
             self.multipointController.start_new_experiment(self.lineEdit_experimentID.text())
 
             if self.checkbox_skipSaving.isChecked():
@@ -8628,9 +8598,7 @@ class WellplateMultiPointWidget(AcquisitionYAMLDropMixin, QFrame):
             return
 
         # Set the selected channels for acquisition
-        self.multipointController.set_selected_configurations(
-            [item.text() for item in self.list_configurations.selectedItems()]
-        )
+        self.multipointController.set_selected_configurations(self.channel_sequence.ordered_selected_names())
         # Set the acquisition parameters
         self.multipointController.set_deltaZ(0)
         self.multipointController.set_NZ(1)
@@ -8657,26 +8625,11 @@ class WellplateMultiPointWidget(AcquisitionYAMLDropMixin, QFrame):
         self.multipointController.set_deltaZ(deltaZ)
 
     def emit_selected_channels(self):
-        selected_channels = [item.text() for item in self.list_configurations.selectedItems()]
-        self.signal_acquisition_channels.emit(selected_channels)
+        self.signal_acquisition_channels.emit(self.channel_sequence.ordered_selected_names())
 
     def refresh_channel_list(self):
         """Refresh the channel list after configuration changes."""
-        # Remember currently selected channels
-        selected_names = [item.text() for item in self.list_configurations.selectedItems()]
-
-        # Clear and repopulate
-        self.list_configurations.blockSignals(True)
-        self.list_configurations.clear()
-        for config in self.liveController.get_channels(self.objectiveStore.current_objective):
-            self.list_configurations.addItem(config.name)
-
-        # Restore selection where possible
-        for i in range(self.list_configurations.count()):
-            item = self.list_configurations.item(i)
-            if item.text() in selected_names:
-                item.setSelected(True)
-        self.list_configurations.blockSignals(False)
+        self.channel_sequence.refresh()
 
     def toggle_coordinate_controls(self, has_coordinates: bool):
         """Toggle button text and control states based on whether coordinates are loaded"""
@@ -8910,13 +8863,9 @@ class WellplateMultiPointWidget(AcquisitionYAMLDropMixin, QFrame):
                 if index >= 0:
                     self.combobox_shape.setCurrentIndex(index)
 
-            # Channels
+            # Channels (restore selection AND order from the dropped acquisition)
             if yaml_data.channel_names:
-                self.list_configurations.clearSelection()
-                for i in range(self.list_configurations.count()):
-                    item = self.list_configurations.item(i)
-                    if item.text() in yaml_data.channel_names:
-                        item.setSelected(True)
+                self.channel_sequence.set_included_order(yaml_data.channel_names)
 
             # Autofocus
             self.checkbox_withAutofocus.setChecked(yaml_data.contrast_af)
@@ -9073,11 +9022,14 @@ class MultiPointWithFluidicsWidget(QFrame):
 
         # Channel configurations
         self.list_configurations = QListWidget()
-        for microscope_configuration in self.multipointController.liveController.get_channels(
-            self.objectiveStore.current_objective
-        ):
-            self.list_configurations.addItems([microscope_configuration.name])
-        self.list_configurations.setSelectionMode(QAbstractItemView.MultiSelection)
+        self.channel_sequence = enable_channel_sequence(
+            self.list_configurations,
+            lambda: [
+                ch.name
+                for ch in self.multipointController.liveController.get_channels(self.objectiveStore.current_objective)
+            ],
+            cache_key="fluidics",
+        )
 
         # Reflection AF checkbox
         self.checkbox_withReflectionAutofocus = QCheckBox("Reflection AF")
@@ -9262,9 +9214,7 @@ class MultiPointWithFluidicsWidget(QFrame):
             self.multipointController.set_reflection_af_flag(self.checkbox_withReflectionAutofocus.isChecked())
             self.multipointController.set_base_path(self.lineEdit_savingDir.text())
             self.multipointController.set_use_fluidics(True)  # may be set to False from other widgets
-            self.multipointController.set_selected_configurations(
-                [item.text() for item in self.list_configurations.selectedItems()]
-            )
+            self.multipointController.set_selected_configurations(self.channel_sequence.ordered_selected_names())
             self.multipointController.set_Nt(len(rounds))
             self.multipointController.fluidics.set_rounds(rounds)
             self.multipointController.start_new_experiment(self.lineEdit_experimentID.text())
@@ -9315,8 +9265,11 @@ class MultiPointWithFluidicsWidget(QFrame):
 
     def emit_selected_channels(self):
         """Emit signal with list of selected channel names"""
-        selected_channels = [item.text() for item in self.list_configurations.selectedItems()]
-        self.signal_acquisition_channels.emit(selected_channels)
+        self.signal_acquisition_channels.emit(self.channel_sequence.ordered_selected_names())
+
+    def refresh_channel_list(self):
+        """Refresh the channel list after configuration changes."""
+        self.channel_sequence.refresh()
 
     def acquisition_is_finished(self):
         """Handle acquisition completion"""
