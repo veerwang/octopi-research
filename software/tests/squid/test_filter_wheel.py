@@ -206,14 +206,14 @@ class TestSquidFilterWheelAbsoluteMove:
     def test_command_aborted_triggers_software_resend_not_rehome(
         self, motor_slot, move_to_attr, move_rel_attr, home_attr
     ):
-        """CMD_EXECUTION_ERROR → resend the same MOVETO; do NOT re-home."""
+        """Recoverable CMD_EXECUTION_ERROR → resend the same MOVETO; do NOT re-home."""
         from control.microcontroller import CommandAborted
 
         wheel_inst, mc, _ = self._build_wheel(motor_slot)
 
-        # First wait raises CommandAborted, second succeeds.
+        # First wait raises a recoverable abort (motor never moved), second succeeds.
         mc.wait_till_operation_is_completed.side_effect = [
-            CommandAborted(reason="firmware reported CMD_EXECUTION_ERROR", command_id=1),
+            CommandAborted(reason="firmware reported CMD_EXECUTION_ERROR", command_id=1, recoverable=True),
             None,
         ]
 
@@ -223,6 +223,30 @@ class TestSquidFilterWheelAbsoluteMove:
         getattr(mc, home_attr).assert_not_called()
         # Absolute-MOVETO path must not fall back to relative MOVE.
         getattr(mc, move_rel_attr).assert_not_called()
+        assert wheel_inst._positions[1] == 4
+
+    @pytest.mark.parametrize("motor_slot,move_to_attr,move_rel_attr,home_attr", AXIS_PARAMS)
+    def test_non_recoverable_abort_skips_resend_and_rehomes(self, motor_slot, move_to_attr, move_rel_attr, home_attr):
+        """A non-recoverable CommandAborted (ack timeout / checksum after retries)
+        leaves motor state uncertain → do NOT resend; go straight to re-home,
+        exactly like a TimeoutError."""
+        from control.microcontroller import CommandAborted
+
+        wheel_inst, mc, _ = self._build_wheel(motor_slot)
+
+        # First move aborts non-recoverably; home succeeds; retry succeeds.
+        mc.wait_till_operation_is_completed.side_effect = [
+            CommandAborted(reason="ack timeout after retries", command_id=1, recoverable=False),
+            None,  # home wait
+            None,  # home offset move wait
+            None,  # retry MOVETO wait
+        ]
+
+        wheel_inst._move_to_position(1, 4)
+
+        getattr(mc, home_attr).assert_called_once()
+        # No cheap resend: initial attempt + home-offset move + post-home retry = 3.
+        assert getattr(mc, move_to_attr).call_count == 3
         assert wheel_inst._positions[1] == 4
 
     @pytest.mark.parametrize("motor_slot,move_to_attr,move_rel_attr,home_attr", AXIS_PARAMS)
@@ -259,6 +283,76 @@ class TestSquidFilterWheelAbsoluteMove:
         mc.move_w_to_usteps.assert_called_once_with(expected_offset_usteps)
         mc.move_w_usteps.assert_not_called()
         assert wheel_inst._positions[1] == w_config.min_index
+
+    @pytest.mark.parametrize("motor_slot,move_to_attr,move_rel_attr,home_attr", AXIS_PARAMS)
+    def test_home_offset_move_command_aborted_triggers_resend(self, motor_slot, move_to_attr, move_rel_attr, home_attr):
+        """CMD_EXECUTION_ERROR on the post-home offset move → ack + resend the
+        same MOVETO (mirrors _move_to_position); homing then completes.
+
+        The firmware can reject this MOVETO before the motor moves; a plain
+        resend is safe, so a single transient abort must not abort homing.
+        """
+        from control.microcontroller import CommandAborted
+
+        wheel_inst, mc, config = self._build_wheel(motor_slot)
+        # Start away from min_index so a successful home is observable as a reset.
+        wheel_inst._positions[1] = 5
+
+        # home wait OK; offset move aborts (recoverable); resend OK.
+        mc.wait_till_operation_is_completed.side_effect = [
+            None,  # home wait
+            CommandAborted(reason="firmware reported CMD_EXECUTION_ERROR", command_id=1, recoverable=True),
+            None,  # resend wait
+        ]
+
+        wheel_inst._home_wheel(1)
+
+        getattr(mc, home_attr).assert_called_once()
+        # Offset MOVETO issued twice: initial attempt + resend.
+        assert getattr(mc, move_to_attr).call_count == 2
+        mc.acknowledge_aborted_command.assert_called_once()
+        # Absolute-MOVETO path must not fall back to relative MOVE.
+        getattr(mc, move_rel_attr).assert_not_called()
+        assert wheel_inst._positions[1] == config.min_index
+
+    @pytest.mark.parametrize("motor_slot,move_to_attr,move_rel_attr,home_attr", AXIS_PARAMS)
+    def test_home_offset_move_resend_failure_propagates(self, motor_slot, move_to_attr, move_rel_attr, home_attr):
+        """If the offset-move resend also fails, _home_wheel re-raises and leaves
+        the tracked position untouched (wheel is at the home reference, not slot 1)."""
+        from control.microcontroller import CommandAborted
+
+        wheel_inst, mc, config = self._build_wheel(motor_slot)
+        wheel_inst._positions[1] = 5
+
+        mc.wait_till_operation_is_completed.side_effect = [
+            None,  # home wait
+            CommandAborted(reason="firmware reported CMD_EXECUTION_ERROR", command_id=1, recoverable=True),
+            CommandAborted(reason="firmware reported CMD_EXECUTION_ERROR", command_id=2, recoverable=True),
+        ]
+
+        with pytest.raises(CommandAborted):
+            wheel_inst._home_wheel(1)
+
+        # Initial offset MOVETO + one resend, then give up.
+        assert getattr(mc, move_to_attr).call_count == 2
+        # Tracked position must NOT be updated to min_index on failure.
+        assert wheel_inst._positions[1] == 5
+
+    def test_home_offset_move_timeout_does_not_resend(self, wheel):
+        """A TimeoutError on the offset move is NOT resent (motor state uncertain)
+        and re-homing is not attempted from within _home_wheel; it propagates."""
+        wheel_inst, mc = wheel
+
+        mc.wait_till_operation_is_completed.side_effect = [
+            None,  # home wait
+            TimeoutError("offset move ack timeout"),
+        ]
+
+        with pytest.raises(TimeoutError):
+            wheel_inst._home_wheel(1)
+
+        # Only the initial offset MOVETO — no resend on a timeout.
+        assert mc.move_w_to_usteps.call_count == 1
 
     @pytest.mark.parametrize("motor_slot,move_to_attr,move_rel_attr,home_attr", AXIS_PARAMS)
     def test_rehome_retry_failure_propagates(self, motor_slot, move_to_attr, move_rel_attr, home_attr):
