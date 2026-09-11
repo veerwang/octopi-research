@@ -320,9 +320,9 @@ def test_home_zeroes_at_edge_and_clamps(monkeypatch):
     controller, fake = _make_real_controller(monkeypatch)
     _fast_homing(monkeypatch)
     fake.writes.clear()
-    # Snapshot sequence: already in the window (1) -> backoff sees released after one
-    # jog (1, 0) -> first fine jog lands on the trigger edge (1).
-    fake.di_script = [1, 1, 0, 1]
+    # Snapshot sequence: already in the window (1) -> the unconditional backoff jog
+    # carries it clear (0) -> first fine jog lands on the trigger edge (1).
+    fake.di_script = [1, 0, 1]
     controller.home()
     # SET_ZERO twice: once at start (travel bound) and once at the trigger edge.
     assert [v for (a, v) in fake.writes if a == REG_SET_ZERO] == [SET_ZERO_MAGIC, SET_ZERO_MAGIC]
@@ -336,8 +336,8 @@ def test_home_sweeps_in_velocity_mode_when_off_sensor(monkeypatch):
     controller, fake = _make_real_controller(monkeypatch)
     _fast_homing(monkeypatch)
     fake.writes.clear()
-    # Off the window (0) -> sweep polls miss then hit (0, 1) -> backoff already
-    # released (0) -> fine jog hits the edge (1).
+    # Off the window (0) -> sweep polls miss then hit (0, 1) -> the backoff jog
+    # carries it clear on the near side (0) -> fine jog hits the edge (1).
     fake.di_script = [0, 0, 1, 0, 1]
     controller.home()
     assert (REG_RUN_MODE, MODE_SPEED) in fake.writes
@@ -352,7 +352,7 @@ def test_home_lowers_accel_for_fine_search_and_restores(monkeypatch):
     controller, fake = _make_real_controller(monkeypatch)
     _fast_homing(monkeypatch)
     fake.writes.clear()
-    fake.di_script = [1, 1, 0, 1]
+    fake.di_script = [1, 0, 1]
     controller.home()
     accel_writes = [v for (a, v) in fake.writes if a == REG_ACCEL]
     assert accel_writes == [HOMING_FINE_ACCEL, 0]
@@ -565,13 +565,14 @@ def test_inverted_home_flips_sweep_and_fine_jog_direction_bits(monkeypatch):
     controller, fake = _make_real_controller(monkeypatch, direction_inverted=True)
     _fast_homing(monkeypatch)
     fake.writes.clear()
-    # Off the window (0) -> sweep polls miss then hit (0, 1) -> backoff already
-    # released (0) -> fine jog hits the edge (1).
+    # Off the window (0) -> sweep polls miss then hit (0, 1) -> the backoff jog
+    # carries it clear on the near side (0) -> fine jog hits the edge (1).
     fake.di_script = [0, 0, 1, 0, 1]
     controller.home()
     assert (REG_RUN_MODE, MODE_SPEED) in fake.writes
-    # Sweep is logical-negative -> physical bit 1; fine jog -2 -> physical bit 1.
-    assert [v for (a, v) in fake.writes if a == REG_DIRECTION] == [1, 1]
+    # Sweep is logical-negative -> physical bit 1; backoff +60 -> bit 0; fine jog
+    # -2 -> bit 1.
+    assert [v for (a, v) in fake.writes if a == REG_DIRECTION] == [1, 0, 1]
     controller.close()
 
 
@@ -579,8 +580,9 @@ def test_inverted_backoff_jog_flips_direction_keeps_magnitude(monkeypatch):
     controller, fake = _make_real_controller(monkeypatch, direction_inverted=True)
     _fast_homing(monkeypatch)
     fake.writes.clear()
-    # In the window (1) -> one backoff jog releases (1, 0) -> fine jog hits (1).
-    fake.di_script = [1, 1, 0, 1]
+    # In the window (1) -> the unconditional backoff jog releases it (0) -> fine jog
+    # hits (1).
+    fake.di_script = [1, 0, 1]
     controller.home()
     # Backoff +60 -> physical bit 0; fine -2 -> physical bit 1. The relative-move
     # register still only ever receives the positive magnitude.
@@ -649,13 +651,13 @@ def test_sim_accepts_direction_inverted_kwarg():
 
 
 def test_di_invert_home_from_inside_window_uses_inverted_levels(monkeypatch):
-    # Raw [0, 0, 1, 0] -> verdicts [1, 1, 0, 1]: inside -> backoff releases after
-    # one jog -> fine jog hits the edge. Same flow as the default-polarity case:
-    # no velocity sweep, SET_ZERO at start and at the trigger edge, clamped at home.
+    # Raw [0, 1, 0] -> verdicts [1, 0, 1]: inside -> the backoff jog releases it ->
+    # fine jog hits the edge. Same flow as the default-polarity case: no velocity
+    # sweep, SET_ZERO at start and at the trigger edge, clamped at home.
     controller, fake = _make_real_controller(monkeypatch, di_invert=True, direction_inverted=False)
     _fast_homing(monkeypatch)
     fake.writes.clear()
-    fake.di_script = [0, 0, 1, 0]
+    fake.di_script = [0, 1, 0]
     controller.home()
     assert (REG_RUN_MODE, MODE_SPEED) not in fake.writes
     assert [v for (a, v) in fake.writes if a == REG_SET_ZERO] == [SET_ZERO_MAGIC, SET_ZERO_MAGIC]
@@ -669,8 +671,8 @@ def test_di_invert_home_sweeps_when_released_level_high(monkeypatch):
     controller, fake = _make_real_controller(monkeypatch, di_invert=True, direction_inverted=False)
     _fast_homing(monkeypatch)
     fake.writes.clear()
-    # released -> sweep polls miss then trigger (0) -> backoff released (1) ->
-    # fine jog hits the edge (0).
+    # released -> sweep polls miss then trigger (0) -> the backoff jog releases it
+    # (1) -> fine jog hits the edge (0).
     fake.di_script = [1, 1, 0, 1, 0]
     controller.home()
     assert (REG_RUN_MODE, MODE_SPEED) in fake.writes
@@ -685,7 +687,7 @@ def test_di_invert_backoff_jog_direction_unchanged(monkeypatch):
     controller, fake = _make_real_controller(monkeypatch, di_invert=True, direction_inverted=False)
     _fast_homing(monkeypatch)
     fake.writes.clear()
-    fake.di_script = [0, 0, 1, 0]
+    fake.di_script = [0, 1, 0]
     controller.home()
     assert (otc.REG_TARGET_POSITION, otc.HOMING_BACKOFF_STEP) in fake.writes
     controller.close()

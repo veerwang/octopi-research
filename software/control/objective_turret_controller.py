@@ -115,7 +115,12 @@ DI1_FUNCTION_ORIGIN_SWITCH = 3
 # period pair below guarantees the window cannot be crossed between two polls
 # (52 ms crossing >= 2.6 poll periods). Worst-case overshoot past the trigger edge is
 # stop distance 29 + detection lag 20 = 49 pulses < HOMING_BACKOFF_STEP, so a single
-# backoff jog clears the window (the backoff loop is only a fallback).
+# backoff jog normally clears the window (the backoff loop is only a fallback). The
+# overshoot varies per machine and per sweep direction: a turret that coasts further
+# comes to rest past the window's FAR edge with the switch already reading released,
+# and the unconditional first jog in _backoff_off_sensor is what pulls it back.
+# _fine_search_to_edge approaches the same edge either way, so the home reference is
+# unaffected (the trigger edge is hit on the way in, never on the way out).
 HOMING_SWEEP_SPEED = 60  # Step/s, velocity-mode sweep toward the sensor (x16 = 960 pulses/s)
 HOMING_POLL_S = 0.02  # DI poll period during the sweep
 HOMING_STOP_SETTLE_S = 0.4  # settle after the sweep decel-stop
@@ -651,14 +656,29 @@ class ObjectiveTurret4PosController:
         time.sleep(abs(pulses) / jog_pps * 1.3 + HOMING_SETTLE_MARGIN_S)
 
     def _backoff_off_sensor(self, deadline: float) -> None:
-        """Back away (positive direction) until the switch releases."""
+        """Back away (positive direction) until the switch releases.
+
+        The first jog is unconditional and precedes the read, matching SingleMotor
+        HomeSearch, whose backoff phase always steps before re-reading the switch.
+        Normally the leg starts inside the window (the sweep only returns on a
+        trigger, and home() only skips the sweep when the switch already reads
+        triggered), so one HOMING_BACKOFF_STEP jog carries the turret out past the
+        near edge. When the decel-stop coast punched through the window's FAR edge
+        instead, that same jog steps back toward the window, so the loop re-enters
+        it and still exits past the near edge: _fine_search_to_edge approaches the
+        same edge and the home reference does not shift. The recovery is bounded by
+        one jog — a punch-through deeper than HOMING_BACKOFF_STEP leaves the first
+        read released with the turret still beyond the far edge, and the fine search
+        then walks away from the sensor until it overruns (SingleMotor has the same
+        bound).
+        """
         while True:
             self._check_deadline(deadline, "backoff")
+            self._jog(+HOMING_BACKOFF_STEP)
             di1, _, _, alarm = self._read_status_snapshot()
             self._check_alarm(alarm)
             if not di1:
                 return
-            self._jog(+HOMING_BACKOFF_STEP)
 
     def _fine_search_to_edge(self, deadline: float) -> None:
         """Approach the sensor again in HOMING_FINE_STEP jogs until it triggers; that
