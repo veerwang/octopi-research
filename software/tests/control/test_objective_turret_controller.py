@@ -40,6 +40,9 @@ from control.objective_turret_controller import (
     REG_TARGET_SPEED,
     SAVE_PARAMS_MAGIC,
     SET_ZERO_MAGIC,
+    STATUS_BIT_RUNNING,
+    CW_TRIGGER_ABSOLUTE,
+    CW_TRIGGER_RELATIVE,
 )
 
 
@@ -229,9 +232,17 @@ class _FakeModbus:
         self.writes = []  # (address, value) in order
         self._position = 0
         self.microstep_raw = MICROSTEP_REG_VALUE  # register value 4 -> 16 microsteps
-        # DI1 levels consumed one per status-snapshot read; the last value repeats.
+        # Scripted values consumed one per status-snapshot read; the last value repeats.
         self.di_script = []
         self._di = 0
+        self.status_script = []
+        self._status = None  # None until a status_script value has been consumed
+        # Unscripted status behaves like the drive: RUNNING for one read after a move trigger.
+        self._running_reads = 0
+        # Optional deterministic clock (any object with a `now` attribute) advanced by
+        # `snapshot_read_s` on every status-snapshot read.
+        self.clock = None
+        self.snapshot_read_s = 0.0
 
     def connect(self, port=None, baudrate=None):
         self.connected = True
@@ -249,22 +260,30 @@ class _FakeModbus:
     def read_register_32bit(self, slave_id, address, signed=False):
         return 0
 
-    def read_input_register(self, slave_id, address):
-        # Status word: neither RUNNING nor FAULT -> wait loops see "idle".
-        return 0
-
     def read_input_register_32bit(self, slave_id, address, signed=False):
-        # Report the commanded target as the live position so the move-complete
-        # tolerance check passes immediately.
         return self._position if address == REG_CURRENT_POSITION else 0
 
+    def _next_status_word(self):
+        if self.status_script:
+            self._status = self.status_script.pop(0)
+        if self._status is not None:
+            return self._status
+        if self._running_reads > 0:
+            self._running_reads -= 1
+            return STATUS_BIT_RUNNING
+        return 0  # idle, no fault
+
     def read_input_registers(self, slave_id, address, count):
-        # Status snapshot for software homing: everything idle/zero except the DI
-        # level (offset 1) driven by di_script, and the position (offsets 10..11).
+        # Status snapshot (homing loops and the move wait): DI level at offset 1, status
+        # word at offset 8, and the commanded target as the live position at offsets 10..11
+        # so the move-complete tolerance check passes as soon as RUNNING clears.
+        if self.clock is not None:
+            self.clock.now += self.snapshot_read_s
         if self.di_script:
             self._di = self.di_script.pop(0)
         vals = [0] * count
         vals[1] = self._di
+        vals[8] = self._next_status_word()
         pos = self._position & 0xFFFFFFFF
         vals[10] = (pos >> 16) & 0xFFFF
         vals[11] = pos & 0xFFFF
@@ -272,6 +291,8 @@ class _FakeModbus:
 
     def write_register(self, slave_id, address, value):
         self.writes.append((address, value))
+        if address == REG_CONTROL_WORD and value in (CW_TRIGGER_ABSOLUTE, CW_TRIGGER_RELATIVE):
+            self._running_reads = 1
 
     def write_register_32bit(self, slave_id, address, value, signed=False):
         self.writes.append((address, value))
@@ -285,9 +306,9 @@ class _FakeModbus:
         return [value for (address, value) in self.writes if address == REG_TARGET_POSITION]
 
 
-def _make_real_controller(monkeypatch, **controller_kwargs):
-    fake = _FakeModbus()
-    monkeypatch.setattr(otc, "_find_port", lambda serial_number: "FAKE_PORT")
+def _make_real_controller(monkeypatch, fake=None, **controller_kwargs):
+    fake = fake or _FakeModbus()
+    monkeypatch.setattr(otc, "find_port", lambda serial_number: "FAKE_PORT")
     monkeypatch.setattr(otc, "ModbusRTUClient", lambda **kwargs: fake)
     controller = ObjectiveTurret4PosController(serial_number="SIM", stage=None, **controller_kwargs)
     return controller, fake
@@ -370,6 +391,92 @@ def test_home_timeout_leaves_motor_deenergized(monkeypatch):
     controller.close()
 
 
+class _FakeTime:
+    """Deterministic stand-in for the controller module's `time`: sleep advances the clock."""
+
+    def __init__(self):
+        self.now = 0.0
+        self.sleeps = []
+
+    def monotonic(self):
+        return self.now
+
+    def sleep(self, seconds):
+        assert seconds >= 0, f"negative sleep {seconds}"
+        self.sleeps.append(seconds)
+        self.now += seconds
+
+
+def _deterministic_clock(monkeypatch):
+    """Install a fake clock on the controller module; call before constructing the controller."""
+    clock = _FakeTime()
+    monkeypatch.setattr(otc, "time", clock)
+    return clock
+
+
+def test_sweep_polls_on_a_fixed_period_with_the_read_inside_it(monkeypatch):
+    # A full HOMING_POLL_S gap *after* each read would double the detection lag (see HOMING_POLL_S).
+    clock = _deterministic_clock(monkeypatch)
+    controller, fake = _make_real_controller(monkeypatch)
+    monkeypatch.setattr(otc, "HOMING_SETTLE_MARGIN_S", 0.0)
+    fake.clock = clock
+    fake.snapshot_read_s = 0.015  # each snapshot read eats 15 ms of the 20 ms period
+    # off sensor -> three sweep misses -> hit -> backoff jog clears -> fine jog hits the edge
+    fake.di_script = [0, 0, 0, 0, 1, 0, 1]
+    controller.home()
+    remainder = otc.HOMING_POLL_S - fake.snapshot_read_s
+    assert len([s for s in clock.sleeps if abs(s - remainder) < 1e-9]) == 3  # one per missed poll
+    assert not [s for s in clock.sleeps if abs(s - otc.HOMING_POLL_S) < 1e-9]  # never a full-period gap
+    controller.close()
+
+
+def test_sweep_polls_back_to_back_when_the_read_outlasts_the_period(monkeypatch):
+    clock = _deterministic_clock(monkeypatch)
+    controller, fake = _make_real_controller(monkeypatch)
+    monkeypatch.setattr(otc, "HOMING_SETTLE_MARGIN_S", 0.0)
+    fake.clock = clock
+    fake.snapshot_read_s = 0.03  # slower than the period: poll again immediately
+    fake.di_script = [0, 0, 0, 0, 1, 0, 1]
+    controller.home()
+    assert clock.sleeps.count(0.0) == 3  # the three misses; _FakeTime rejects negative sleeps
+    assert not [s for s in clock.sleeps if abs(s - otc.HOMING_POLL_S) < 1e-9]
+    controller.close()
+
+
+def test_move_wait_holds_the_idle_verdict_until_running_seen_or_grace(monkeypatch):
+    # Idle-at-target before RUNNING was ever seen must not end the move early (see MOVE_START_GRACE_S).
+    clock = _deterministic_clock(monkeypatch)
+    controller, fake = _make_real_controller(monkeypatch)
+    fake.status_script = [0]  # never reports RUNNING; position tracks the target
+    controller.move_to_objective("10x")
+    assert clock.now >= otc.MOVE_START_GRACE_S
+    assert fake.control_word_writes()[-1] == CW_DISABLE
+    controller.close()
+
+
+def test_move_wait_returns_as_soon_as_running_clears(monkeypatch):
+    clock = _deterministic_clock(monkeypatch)
+    controller, fake = _make_real_controller(monkeypatch)
+    fake.status_script = [STATUS_BIT_RUNNING, 0]
+    controller.move_to_objective("10x")
+    assert clock.now < otc.MOVE_START_GRACE_S
+    controller.close()
+
+
+def test_move_wait_raises_when_the_motor_stops_short(monkeypatch):
+    class _StalledModbus(_FakeModbus):
+        def write_register_32bit(self, slave_id, address, value, signed=False):
+            self.writes.append((address, value))  # the position counter never follows the target
+
+    _deterministic_clock(monkeypatch)
+    controller, fake = _make_real_controller(monkeypatch, fake=_StalledModbus())
+    fake.status_script = [STATUS_BIT_RUNNING, 0]
+    with pytest.raises(RuntimeError, match="stopped at"):
+        controller.move_to_objective("10x")
+    assert fake.control_word_writes()[-1] == CW_DISABLE
+    controller.close()
+
+
 def test_init_calibrates_factory_params(monkeypatch):
     # Fake reads return 0 for every parameter, so init must write the full factory
     # set (SingleMotor 2026-07-24/25 acceptance values) and persist it.
@@ -392,7 +499,7 @@ def test_init_microstep_mismatch_raises_without_writing(monkeypatch):
     # the next start pass this check on the wrong active scale: raise, never write.
     fake = _FakeModbus()
     fake.microstep_raw = 7
-    monkeypatch.setattr(otc, "_find_port", lambda serial_number: "FAKE_PORT")
+    monkeypatch.setattr(otc, "find_port", lambda serial_number: "FAKE_PORT")
     monkeypatch.setattr(otc, "ModbusRTUClient", lambda **kwargs: fake)
     with pytest.raises(RuntimeError, match="[Pp]ower-cycle"):
         ObjectiveTurret4PosController(serial_number="SIM", stage=None)
@@ -444,7 +551,7 @@ def test_offset_falls_back_to_def_when_not_passed(monkeypatch):
 def test_non_int_offset_raises(monkeypatch, bad_offset):
     # .ini parsing can yield a float/str/bool; a non-int offset must fail fast at init
     # rather than deep in the signed Modbus write.
-    monkeypatch.setattr(otc, "_find_port", lambda serial_number: "FAKE_PORT")
+    monkeypatch.setattr(otc, "find_port", lambda serial_number: "FAKE_PORT")
     monkeypatch.setattr(otc, "ModbusRTUClient", lambda **kwargs: _FakeModbus())
     with pytest.raises(ValueError):
         ObjectiveTurret4PosController(serial_number="SIM", stage=None, offset_pulses=bad_offset)
@@ -454,7 +561,7 @@ def test_out_of_range_offset_raises(monkeypatch):
     # An offset beyond one slot (the 90-degree spacing) is a misconfiguration and must be
     # rejected. With the fake's microstep 4 -> 16 microsteps, pulses/position = 2200, so
     # 5000 is over one slot (but under a full rev) — it must still be rejected.
-    monkeypatch.setattr(otc, "_find_port", lambda serial_number: "FAKE_PORT")
+    monkeypatch.setattr(otc, "find_port", lambda serial_number: "FAKE_PORT")
     monkeypatch.setattr(otc, "ModbusRTUClient", lambda **kwargs: _FakeModbus())
     with pytest.raises(ValueError):
         ObjectiveTurret4PosController(serial_number="SIM", stage=None, offset_pulses=5_000)
@@ -506,7 +613,7 @@ def test_backlash_falls_back_to_def_when_not_passed(monkeypatch):
 
 @pytest.mark.parametrize("bad_deg", [-0.1, 1.5, True, "0.5"], ids=["negative", "too-large", "bool", "str"])
 def test_invalid_backlash_raises(monkeypatch, bad_deg):
-    monkeypatch.setattr(otc, "_find_port", lambda serial_number: "FAKE_PORT")
+    monkeypatch.setattr(otc, "find_port", lambda serial_number: "FAKE_PORT")
     monkeypatch.setattr(otc, "ModbusRTUClient", lambda **kwargs: _FakeModbus())
     with pytest.raises(ValueError):
         ObjectiveTurret4PosController(serial_number="SIM", stage=None, backlash_deg=bad_deg)
@@ -611,7 +718,7 @@ def test_direction_inverted_falls_back_to_def_when_not_passed(monkeypatch):
 @pytest.mark.parametrize("bad_inverted", [1, "true", 0.0], ids=["int", "str", "float"])
 def test_non_bool_direction_inverted_raises(monkeypatch, bad_inverted):
     # .ini parsing can yield an int/str; only a real boolean is accepted.
-    monkeypatch.setattr(otc, "_find_port", lambda serial_number: "FAKE_PORT")
+    monkeypatch.setattr(otc, "find_port", lambda serial_number: "FAKE_PORT")
     monkeypatch.setattr(otc, "ModbusRTUClient", lambda **kwargs: _FakeModbus())
     with pytest.raises(ValueError):
         ObjectiveTurret4PosController(serial_number="SIM", stage=None, direction_inverted=bad_inverted)
@@ -707,7 +814,7 @@ def test_di_invert_falls_back_to_def_when_not_passed(monkeypatch):
 @pytest.mark.parametrize("bad_invert", [1, "true", 0.0], ids=["int", "str", "float"])
 def test_non_bool_di_invert_raises(monkeypatch, bad_invert):
     # .ini parsing can yield an int/str; only a real boolean is accepted.
-    monkeypatch.setattr(otc, "_find_port", lambda serial_number: "FAKE_PORT")
+    monkeypatch.setattr(otc, "find_port", lambda serial_number: "FAKE_PORT")
     monkeypatch.setattr(otc, "ModbusRTUClient", lambda **kwargs: _FakeModbus())
     with pytest.raises(ValueError):
         ObjectiveTurret4PosController(serial_number="SIM", stage=None, direction_inverted=False, di_invert=bad_invert)

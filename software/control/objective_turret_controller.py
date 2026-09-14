@@ -7,7 +7,7 @@ the public API for CI and offline development.
 from __future__ import annotations
 
 import time
-from typing import Optional
+from typing import Optional, Tuple
 
 from serial.tools import list_ports
 from control.modbus_rtu import ModbusRTUClient
@@ -32,10 +32,10 @@ BACKLASH_MAX_DEG = 1.0
 # NiMotion Modbus register map
 REG_SAVE_PARAMS = 0x0008
 REG_CURRENT_DECEL = 0x0015  # unused: the SDM42 drive has no decel current (writes silently dropped, reads 0)
-REG_CURRENT_IDLE = 0x0016  # x10mA; writable only while disabled
-REG_CURRENT_ACCEL = 0x0017  # x10mA
-REG_CURRENT_RUN = 0x0018  # x10mA
-REG_CURRENT_OVERLOAD = 0x0019  # x100mA — unit differs from 0x15..0x18!
+REG_CURRENT_IDLE = 0x0016  # 0x16..0x18: % of the 3 A rating, see EXPECTED_CURRENT_*; writable only while disabled
+REG_CURRENT_ACCEL = 0x0017
+REG_CURRENT_RUN = 0x0018
+REG_CURRENT_OVERLOAD = 0x0019  # x100mA — unit differs from 0x16..0x18!
 REG_MICROSTEP = 0x001A
 REG_STATUS_WORD = 0x001F  # input-register side; holding side at this address is unrelated
 REG_CURRENT_POSITION = 0x0021
@@ -90,16 +90,20 @@ STATUS_BIT_RUNNING = 1 << 12
 EXPECTED_ACCEL = 1000  # Step/s^2 (hardware limit ~2000; >=3000 is rejected)
 EXPECTED_DECEL = 1000
 EXPECTED_MIN_SPEED = 16  # manual default start/stop speed
-# 200 -> 150 (2026-07-28): the 0.95 A driver current cap leaves no margin at speed
-# 200 and the loaded turret was observed losing steps; 150 x16 = 2400 pulses/s
-# ~= 98 deg/s at the turret.
+# 200 -> 150 (2026-07-28): the loaded turret lost steps at 200. With run current already
+# at the 3 A cap this is torque fall-off at speed, not a current shortfall (SingleMotor
+# 2026-07-31); 150 x16 = 2400 pulses/s ~= 98 deg/s at the turret.
 EXPECTED_MAX_SPEED = 150
-# Currents: with 2 objectives loaded the factory 0.51 A run current loses steps;
-# 0.85 A and up does not. Driver firmware caps 0x16..0x18 at 95 (=0.95 A).
+# Currents (SingleMotor acceptance values). 0x16..0x18 count in % of the drive's 3 A rating
+# (~31.6 mA/unit; SingleMotor's 2026-07-31 oscilloscope measurement superseded the earlier
+# x10mA reading). With 2 objectives loaded, run current 63 (~2 A) still loses steps; 95
+# (~3 A, the firmware cap) does not. That is over-current for the 1.2 A-rated motor
+# (~2.1 A RMS) and was kept on purpose — moves are short and the motor idles de-energized —
+# but watch motor temperature in stress tests.
 EXPECTED_CURRENT_OVERLOAD = 13  # x100mA = 1.3 A
-EXPECTED_CURRENT_IDLE = 21  # displayed 0.69 A (manager-specified conversion, 2026-07-27; not a literal x10mA)
-EXPECTED_CURRENT_ACCEL = 95  # x10mA = 0.95 A
-EXPECTED_CURRENT_RUN = 95  # x10mA = 0.95 A
+EXPECTED_CURRENT_IDLE = 21  # ~0.66 A: within the motor's rating, so the home clamp can hold indefinitely
+EXPECTED_CURRENT_ACCEL = 95  # ~3 A (see above)
+EXPECTED_CURRENT_RUN = 95  # ~3 A (see above)
 # Decel current (0x15) is deliberately NOT calibrated: the SDM42 drive has no such
 # parameter — the firmware silently drops writes and always reads back 0.
 # DI1 is permanently "origin switch" (3). The homing sensor must NEVER be configured
@@ -113,16 +117,19 @@ DI1_FUNCTION_ORIGIN_SWITCH = 3
 # the trigger edge and SET_ZERO there. The driver's built-in homing modes are no
 # longer used — the sensed window is only ~50 pulses wide and the sweep speed/poll
 # period pair below guarantees the window cannot be crossed between two polls
-# (52 ms crossing >= 2.6 poll periods). Worst-case overshoot past the trigger edge is
-# stop distance 29 + detection lag 20 = 49 pulses < HOMING_BACKOFF_STEP, so a single
-# backoff jog normally clears the window (the backoff loop is only a fallback). The
-# overshoot varies per machine and per sweep direction: a turret that coasts further
-# comes to rest past the window's FAR edge with the switch already reading released,
-# and the unconditional first jog in _backoff_off_sensor is what pulls it back.
-# _fine_search_to_edge approaches the same edge either way, so the home reference is
-# unaffected (the trigger edge is hit on the way in, never on the way out).
+# (52 ms crossing >= 2.6 poll periods). HOMING_POLL_S is a *period* with the Modbus
+# round trip inside it (SingleMotor polls from a 20 ms timer), not a gap after each
+# read: a gap would stretch the period to 20 ms + round trip and roughly double the
+# detection lag. Worst-case overshoot past the trigger edge is then stop distance 29 +
+# detection lag 20 = 49 pulses < HOMING_BACKOFF_STEP, so a single backoff jog normally
+# clears the window (the backoff loop is only a fallback). The overshoot varies per
+# machine and per sweep direction: a turret that coasts further comes to rest past the
+# window's FAR edge with the switch already reading released, and the unconditional
+# first jog in _backoff_off_sensor is what pulls it back. _fine_search_to_edge
+# approaches the same edge either way, so the home reference is unaffected (the
+# trigger edge is hit on the way in, never on the way out).
 HOMING_SWEEP_SPEED = 60  # Step/s, velocity-mode sweep toward the sensor (x16 = 960 pulses/s)
-HOMING_POLL_S = 0.02  # DI poll period during the sweep
+HOMING_POLL_S = 0.02  # DI poll period during the sweep (the read is inside it, see above)
 HOMING_STOP_SETTLE_S = 0.4  # settle after the sweep decel-stop
 HOMING_BACKOFF_STEP = 60  # pulses per backoff jog (release the switch)
 HOMING_FINE_STEP = 2  # pulses per fine-search jog; sets home repeatability (+/-2)
@@ -134,6 +141,12 @@ HOMING_SETTLE_MARGIN_S = 0.3  # fixed margin on top of the per-jog travel-time e
 
 # Polling
 POLL_INTERVAL_S = 0.05
+# After a move trigger, an "idle" status word is not accepted as move-complete until the
+# RUNNING bit has been seen or this much time has passed (SingleMotor's 800 ms start
+# blackout). Without it a move that starts inside POSITION_TOLERANCE_PULSES of its target
+# (the backlash final leg) could be declared done, and then de-energized, before the drive
+# raises RUNNING.
+MOVE_START_GRACE_S = 0.8
 # At accel=1000/max_speed=150, a worst-case 3-slot move stays well inside 30s.
 DEFAULT_MOVE_TIMEOUT_S = 30.0
 # Software homing worst case: sweep up to one revolution at 960 pulses/s plus tens of
@@ -143,10 +156,11 @@ DEFAULT_HOME_TIMEOUT_S = 120.0
 # Settle time after a control-word transition before the next write.
 CONTROL_WORD_SETTLE_S = 0.1
 
-# Init calibration table: (register, expected value, label, kwargs-for-_calibrate_one).
-# Order matters: min_speed must be written before max_speed (the firmware rejects a
-# max-speed write below the current min speed).
-_INIT_PARAMS = [
+# Factory parameter table: (register, expected value, label, kwargs-for-calibrate_register).
+# Applied at every controller start and by tools/turret_setup.py. Order matters: min_speed
+# must be written before max_speed (the firmware rejects a max-speed write below the
+# current min speed). The microstep register is deliberately absent: see POWER_CYCLE_PARAMS.
+INIT_PARAMS = [
     (REG_ACCEL, EXPECTED_ACCEL, "accel", {"is_32bit": True}),
     (REG_DECEL, EXPECTED_DECEL, "decel", {"is_32bit": True}),
     (REG_MIN_SPEED, EXPECTED_MIN_SPEED, "min_speed", {"is_32bit": True}),
@@ -157,6 +171,86 @@ _INIT_PARAMS = [
     (REG_CURRENT_RUN, EXPECTED_CURRENT_RUN, "run_current", {}),
     (REG_DI_FUNCTION, DI1_FUNCTION_ORIGIN_SWITCH, "DI1_function", {"is_32bit": True, "mask": 0xF}),
 ]
+# Registers that only take effect after a power cycle. The controller verifies them at start
+# and never writes them: 0x1A reads back the *pending* value (vendor-confirmed), so a
+# corrective write would let the next start pass the check while the drive still runs the
+# old scale. tools/turret_setup.py writes them, saves to EEPROM and asks for the power cycle.
+POWER_CYCLE_PARAMS = [(REG_MICROSTEP, MICROSTEP_REG_VALUE, "microstep", {})]
+
+
+def read_register_value(
+    modbus: ModbusRTUClient, slave_id: int, addr: int, *, is_32bit: bool = False, signed: bool = False
+) -> int:
+    if is_32bit:
+        return modbus.read_register_32bit(slave_id, addr, signed=signed)
+    return modbus.read_register(slave_id, addr)
+
+
+def write_register_value(
+    modbus: ModbusRTUClient, slave_id: int, addr: int, value: int, *, is_32bit: bool = False, signed: bool = False
+) -> None:
+    if is_32bit:
+        modbus.write_register_32bit(slave_id, addr, value, signed=signed)
+    else:
+        modbus.write_register(slave_id, addr, value)
+
+
+def format_register_value(value: int, mask: Optional[int]) -> str:
+    """Bit-packed (masked) registers print as hex, plain values as decimal."""
+    return "0x%08X" % value if mask is not None else str(value)
+
+
+def calibrate_register(
+    modbus: ModbusRTUClient,
+    slave_id: int,
+    addr: int,
+    expected: int,
+    label: str,
+    *,
+    is_32bit: bool = False,
+    signed: bool = False,
+    mask: Optional[int] = None,
+    write: bool = True,
+) -> Tuple[int, int, bool]:
+    """Read `addr`, derive the desired value and, when `write` is set and it differs, write it.
+
+    With `mask`, only the masked bits are compared/replaced and the rest of the current
+    value is preserved (used for the DI function register, which packs DI1..DI4).
+    Returns (current, desired, wrote)."""
+    current = read_register_value(modbus, slave_id, addr, is_32bit=is_32bit, signed=signed)
+    desired = (current & ~mask) | (expected & mask) if mask is not None else expected
+    current_str, desired_str = format_register_value(current, mask), format_register_value(desired, mask)
+    if current == desired:
+        logger.debug("%s @ 0x%04X: device=%s matches desired (no write)", label, addr, current_str)
+        return current, desired, False
+    if not write:
+        logger.info("%s @ 0x%04X: %s differs from desired %s (read-only)", label, addr, current_str, desired_str)
+        return current, desired, False
+    write_register_value(modbus, slave_id, addr, desired, is_32bit=is_32bit, signed=signed)
+    logger.info("%s @ 0x%04X: %s -> %s (wrote)", label, addr, current_str, desired_str)
+    return current, desired, True
+
+
+def clear_drive_alarm(modbus: ModbusRTUClient, slave_id: int) -> None:
+    modbus.write_register(slave_id, REG_CONTROL_WORD, CW_CLEAR_FAULT)
+    modbus.write_register(slave_id, REG_CLEAR_ERROR_STORAGE, CLEAR_ERROR_STORAGE_MAGIC)
+
+
+def prepare_for_parameter_writes(modbus: ModbusRTUClient, slave_id: int) -> None:
+    """Clear any latched fault and force SWITCH_ON_DISABLED.
+
+    Parameter registers (currents, DI function, homing config) reject writes while the
+    motor is OPERATION_ENABLED, a state that survives crashed sessions where close()
+    never ran."""
+    clear_drive_alarm(modbus, slave_id)
+    modbus.write_register(slave_id, REG_CONTROL_WORD, CW_DISABLE)
+    time.sleep(CONTROL_WORD_SETTLE_S)
+
+
+def save_to_eeprom(modbus: ModbusRTUClient, slave_id: int) -> None:
+    """Persist the drive's current RAM parameters (the save snapshots everything)."""
+    modbus.write_register(slave_id, REG_SAVE_PARAMS, SAVE_PARAMS_MAGIC)
+    logger.info("Saved parameters to EEPROM")
 
 
 def _validate_backlash_deg(backlash_deg) -> float:
@@ -184,7 +278,7 @@ def _is_alias_for_current(current: Optional[str], target_name: str, positions: d
     return _resolve_position(current, positions) == _resolve_position(target_name, positions)
 
 
-def _find_port(serial_number: str) -> str:
+def find_port(serial_number: str) -> str:
     matches = [p.device for p in list_ports.comports() if p.serial_number == serial_number]
     if not matches:
         raise ValueError(f"No serial device found with serial number: {serial_number}")
@@ -356,28 +450,22 @@ class ObjectiveTurret4PosController:
         self._current_objective: Optional[str] = None
         self._is_open = False
 
-        port = _find_port(serial_number)
+        port = find_port(serial_number)
         self._modbus = ModbusRTUClient(port=port, baudrate=baudrate, timeout=timeout)
         self._modbus.connect()
         try:
-            self.clear_alarm()
-            # Some parameter registers (notably homing config) reject writes while the
-            # motor is in OPERATION_ENABLED — which can persist across crashed sessions
-            # where close() never ran. Force the device into SWITCH_ON_DISABLED first.
-            self._write_control(CW_DISABLE)
-            time.sleep(CONTROL_WORD_SETTLE_S)
+            prepare_for_parameter_writes(self._modbus, self._slave_id)
 
             microstep_raw = self._modbus.read_register(self._slave_id, REG_MICROSTEP)
             if not 0 <= microstep_raw <= 7:
                 raise ValueError(f"Invalid microstep register value {microstep_raw} (expected 0..7)")
             if microstep_raw != MICROSTEP_REG_VALUE:
-                # The register reads back the pending value (vendor-confirmed), so a
-                # corrective write here would let the next start pass this check while
-                # the drive still runs the old scale until power-cycled: never write.
+                # Verify only, never write: see POWER_CYCLE_PARAMS.
                 raise RuntimeError(
                     f"Turret microstep register reads {microstep_raw} (2^{microstep_raw} microsteps) but "
-                    f"{MICROSTEP_REG_VALUE} (16 microsteps) is required. Set it with the SingleMotor setup "
-                    "tool, save to EEPROM, power-cycle the turret, then restart."
+                    f"{MICROSTEP_REG_VALUE} (16 microsteps) is required. Run `python3 tools/turret_setup.py` "
+                    "(writes it and saves to EEPROM), power-cycle the turret, run it again with --check, "
+                    "then restart."
                 )
             self._microstep = 2**microstep_raw
 
@@ -395,7 +483,7 @@ class ObjectiveTurret4PosController:
 
             changed = self._calibrate_init_params()
             if changed:
-                self._save_to_eeprom()
+                save_to_eeprom(self._modbus, self._slave_id)
             # RAM-only runtime parameter, written AFTER the EEPROM save so it is not
             # persisted (the save command snapshots current RAM; the manual forbids
             # persisting the direction register, which moves rewrite dynamically).
@@ -494,8 +582,7 @@ class ObjectiveTurret4PosController:
                 self._restore_z_if_captured(captured_z)
 
     def clear_alarm(self) -> None:
-        self._write_control(CW_CLEAR_FAULT)
-        self._write_holding(REG_CLEAR_ERROR_STORAGE, CLEAR_ERROR_STORAGE_MAGIC)
+        clear_drive_alarm(self._modbus, self._slave_id)
 
     def close(self) -> None:
         if not self._is_open and not self._modbus.is_connected:
@@ -587,8 +674,8 @@ class ObjectiveTurret4PosController:
     def _read_status_snapshot(self) -> tuple:
         """One batched input-register read -> (di1_triggered, status_word, position, alarm).
 
-        A single FC 0x04 frame keeps the sweep poll period tight and the DI/position
-        values consistent with each other (same block SingleMotor polls)."""
+        A single FC 0x04 frame keeps the poll loops tight and the values consistent with
+        each other (same block SingleMotor polls); used by homing and the move wait."""
         vals = self._modbus.read_input_registers(self._slave_id, STATUS_BLOCK_START, STATUS_BLOCK_COUNT)
         di1 = bool(vals[_OFS_DI] & 1)
         if self._di_invert:
@@ -625,6 +712,7 @@ class ObjectiveTurret4PosController:
         self._write_control(CW_RUN_ABSOLUTE)
         try:
             while True:
+                poll_started = time.monotonic()
                 self._check_deadline(deadline, "sweep")
                 di1, _, position, alarm = self._read_status_snapshot()
                 self._check_alarm(alarm)
@@ -632,7 +720,7 @@ class ObjectiveTurret4PosController:
                     return
                 if abs(position) > HOMING_MAX_TRAVEL:
                     raise RuntimeError("Homing sweep found no sensor within one revolution (direction/wiring?)")
-                time.sleep(HOMING_POLL_S)
+                time.sleep(max(0.0, HOMING_POLL_S - (time.monotonic() - poll_started)))  # fixed period
         finally:
             self._write_control(CW_ENABLE)  # decelerate-stop
             time.sleep(HOMING_STOP_SETTLE_S)
@@ -666,11 +754,11 @@ class ObjectiveTurret4PosController:
         near edge. When the decel-stop coast punched through the window's FAR edge
         instead, that same jog steps back toward the window, so the loop re-enters
         it and still exits past the near edge: _fine_search_to_edge approaches the
-        same edge and the home reference does not shift. The recovery is bounded by
-        one jog — a punch-through deeper than HOMING_BACKOFF_STEP leaves the first
-        read released with the turret still beyond the far edge, and the fine search
-        then walks away from the sensor until it overruns (SingleMotor has the same
-        bound).
+        same edge and the home reference does not shift. The recovery is bounded: a
+        punch-through deeper than HOMING_BACKOFF_STEP plus the window width (~110
+        pulses) leaves the first read released with the turret still beyond the far
+        edge, and the fine search then walks away from the sensor until it overruns
+        (SingleMotor has the same bound).
         """
         while True:
             self._check_deadline(deadline, "backoff")
@@ -718,44 +806,16 @@ class ObjectiveTurret4PosController:
             return
         self._stage.move_z_to(captured_z)
 
-    def _calibrate_one(
-        self,
-        addr: int,
-        expected: int,
-        label: str,
-        *,
-        is_32bit: bool = False,
-        signed: bool = False,
-        mask: Optional[int] = None,
-    ) -> bool:
-        if is_32bit:
-            current = self._modbus.read_register_32bit(self._slave_id, addr, signed=signed)
-        else:
-            current = self._modbus.read_register(self._slave_id, addr)
-        desired = (current & ~mask) | (expected & mask) if mask is not None else expected
-        fmt = "0x%08X" if mask is not None else "%d"
-        current_str, desired_str = fmt % current, fmt % desired
-        if current == desired:
-            logger.debug("%s @ 0x%04X: device=%s matches desired (no write)", label, addr, current_str)
-            return False
-        if is_32bit:
-            self._modbus.write_register_32bit(self._slave_id, addr, desired, signed=signed)
-        else:
-            self._modbus.write_register(self._slave_id, addr, desired)
-        logger.info("%s @ 0x%04X: %s -> %s (wrote)", label, addr, current_str, desired_str)
-        return True
+    def _calibrate_one(self, addr: int, expected: int, label: str, **kwargs) -> bool:
+        return calibrate_register(self._modbus, self._slave_id, addr, expected, label, **kwargs)[2]
 
     def _calibrate_init_params(self) -> bool:
-        """Bring every factory parameter in line with _INIT_PARAMS; return whether a
+        """Bring every factory parameter in line with INIT_PARAMS; return whether a
         write happened (i.e. whether the set should be persisted to EEPROM)."""
         changed = False
-        for addr, expected, label, kwargs in _INIT_PARAMS:
+        for addr, expected, label, kwargs in INIT_PARAMS:
             changed = self._calibrate_one(addr, expected, label, **kwargs) or changed
         return changed
-
-    def _save_to_eeprom(self) -> None:
-        self._write_holding(REG_SAVE_PARAMS, SAVE_PARAMS_MAGIC)
-        logger.info("Saved parameters to EEPROM")
 
     def _write_control(self, value: int) -> None:
         self._modbus.write_register(self._slave_id, REG_CONTROL_WORD, value)
@@ -775,31 +835,29 @@ class ObjectiveTurret4PosController:
     def _write_holding(self, address: int, value: int) -> None:
         self._modbus.write_register(self._slave_id, address, value)
 
-    def _read_status_word(self) -> int:
-        return self._modbus.read_input_register(self._slave_id, REG_STATUS_WORD)
-
     @staticmethod
     def _check_fault(status_word: int) -> None:
         if status_word & STATUS_BIT_FAULT:
             raise RuntimeError(f"Motor reported fault (status word=0x{status_word:04X})")
 
     def _wait_for_position(self, target_pulses: int, timeout_s: float) -> None:
-        # No leading sleep: seen_running prevents stall detection before the motor asserts RUNNING.
-        deadline = time.monotonic() + timeout_s
+        # No leading sleep: seen_running gates the stall check and, with MOVE_START_GRACE_S,
+        # the completion verdict, so polling can begin before the motor asserts RUNNING.
+        started = time.monotonic()
+        deadline = started + timeout_s
         seen_running = False
         last_pos: Optional[int] = None
         while time.monotonic() < deadline:
-            status = self._read_status_word()
+            _, status, last_pos, _ = self._read_status_snapshot()
             self._check_fault(status)
             running = bool(status & STATUS_BIT_RUNNING)
-            last_pos = self.current_position_pulses
             in_tolerance = abs(last_pos - target_pulses) <= POSITION_TOLERANCE_PULSES
 
             if running:
                 seen_running = True
-            if in_tolerance and not running:
-                return
-            if seen_running and not running and not in_tolerance:
+            elif in_tolerance and (seen_running or time.monotonic() - started >= MOVE_START_GRACE_S):
+                return  # idle at the target, and not just a pre-RUNNING idle frame
+            elif seen_running and not in_tolerance:
                 raise RuntimeError(
                     f"Motor stopped at {last_pos} pulses, target {target_pulses} "
                     f"(tolerance ±{POSITION_TOLERANCE_PULSES})"
