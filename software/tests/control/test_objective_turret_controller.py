@@ -6,6 +6,7 @@ import pytest
 
 import control._def
 import control.objective_turret_controller as otc
+from control.modbus_rtu import ModbusError
 from control._def import OBJECTIVE_TURRET_POSITIONS, OBJECTIVE_RETRACTED_POS_MM
 from control.objective_turret_controller import (
     ObjectiveTurret4PosController,
@@ -387,6 +388,42 @@ def test_home_timeout_leaves_motor_deenergized(monkeypatch):
     with pytest.raises(TimeoutError):
         controller.home(timeout_s=0.2)
     # Failure cleanup: stopped and de-energized, NOT left clamped.
+    assert fake.control_word_writes()[-1] == CW_DISABLE
+    controller.close()
+
+
+class _RestoreRejectingModbus(_FakeModbus):
+    """Once armed, accepts the temporary homing max-speed write (60) but rejects restoring the original (0)."""
+
+    reject_restore = False
+
+    def write_register_32bit(self, slave_id, address, value, signed=False):
+        if self.reject_restore and address == REG_MAX_SPEED and value != otc.HOMING_JOG_SPEED:
+            raise ModbusError("write rejected")
+        super().write_register_32bit(slave_id, address, value, signed)
+
+
+def test_home_raises_when_parameter_restore_fails_after_a_successful_run(monkeypatch):
+    # Silently returning would leave every later move at homing speed / acceleration.
+    controller, fake = _make_real_controller(monkeypatch, fake=_RestoreRejectingModbus())
+    fake.reject_restore = True
+    fake.writes.clear()
+    _fast_homing(monkeypatch)
+    fake.di_script = [1, 0, 1]
+    with pytest.raises(RuntimeError, match="restore"):
+        controller.home()
+    assert fake.control_word_writes()[-1] == CW_DISABLE  # not clamped
+    assert [v for (a, v) in fake.writes if a == REG_ACCEL] == [HOMING_FINE_ACCEL, 0]  # accel restore still attempted
+    controller.close()
+
+
+def test_home_failure_is_not_masked_by_a_failing_restore(monkeypatch):
+    controller, fake = _make_real_controller(monkeypatch, fake=_RestoreRejectingModbus())
+    fake.reject_restore = True
+    _fast_homing(monkeypatch)
+    fake.di_script = [0]  # sensor never triggers
+    with pytest.raises(TimeoutError):
+        controller.home(timeout_s=0.2)
     assert fake.control_word_writes()[-1] == CW_DISABLE
     controller.close()
 

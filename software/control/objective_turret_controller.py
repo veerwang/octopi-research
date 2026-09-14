@@ -524,6 +524,7 @@ class ObjectiveTurret4PosController:
         accel_lowered = False
         if orig_max_speed != HOMING_JOG_SPEED:
             self._modbus.write_register_32bit(self._slave_id, REG_MAX_SPEED, HOMING_JOG_SPEED)
+        restore_error: Optional[Exception] = None
         try:
             di1, _, _, alarm = self._read_status_snapshot()
             self._check_alarm(alarm)
@@ -541,19 +542,28 @@ class ObjectiveTurret4PosController:
             self._write_holding(REG_SET_ZERO, SET_ZERO_MAGIC)
             time.sleep(0.05)
         finally:
-            # Stop before restoring parameters (writes are rejected while enabled).
-            # Best-effort so cleanup never masks the fault/timeout that got us here.
+            # Stop before restoring parameters (writes are rejected while enabled). Restores
+            # are best-effort here so cleanup never masks the fault/timeout that got us here;
+            # after a successful run a failed restore is raised below instead of being
+            # swallowed, which would leave every later move at homing speed/acceleration.
             self._deenergize()
-            if orig_max_speed != HOMING_JOG_SPEED:
+            restores = [
+                (REG_MAX_SPEED, orig_max_speed, orig_max_speed != HOMING_JOG_SPEED),
+                (REG_ACCEL, orig_accel, accel_lowered),
+            ]
+            for addr, value, needed in restores:
+                if not needed:
+                    continue
                 try:
-                    self._modbus.write_register_32bit(self._slave_id, REG_MAX_SPEED, orig_max_speed)
+                    self._modbus.write_register_32bit(self._slave_id, addr, value)
                 except Exception as exc:
-                    logger.warning("Failed to restore max speed after homing: %s", exc)
-            if accel_lowered:
-                try:
-                    self._modbus.write_register_32bit(self._slave_id, REG_ACCEL, orig_accel)
-                except Exception as exc:
-                    logger.warning("Failed to restore acceleration after homing: %s", exc)
+                    logger.warning("Failed to restore register 0x%04X to %d after homing: %s", addr, value, exc)
+                    restore_error = restore_error or exc
+        if restore_error is not None:
+            raise RuntimeError(
+                "Homed, but could not restore the drive's max speed/acceleration; moves would run at homing "
+                "speed. Check the drive and home again."
+            ) from restore_error
         # Success: hold the turret at home with torque until the next move.
         self._hold_position_clamp()
         self._current_objective = None
